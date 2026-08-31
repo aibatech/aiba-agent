@@ -1,0 +1,47 @@
+# Changelog
+
+## 1.1.0 — 2026-08-03
+
+- Added unlimited persistent provider connections and model definitions.
+- Added encrypted API-key storage with environment-key alternatives.
+- Added presets for 15 major cloud, local, and compatible provider types.
+- Added remote model discovery and provider connection tests.
+- Added automatic task classification and Balanced, Quality, Cost, Latency, and Manual routing.
+- Added capability filtering, preferred models, cost ceilings, passive health states, and automatic failover.
+- Added token, estimated-cost, latency, success, and error accounting.
+- Added authenticated provider, model, routing, route-preview, discovery, and usage APIs.
+- Rebuilt the dashboard around Auto/Manual model selection and provider management.
+
+## 1.0.0 — 2026-08-03
+
+- Replaced simulated model tooling with native OpenAI, Anthropic, Ollama, and OpenAI-compatible tool calls.
+- Made task, job, skill, and event APIs bearer-authenticated.
+- Added rate limiting, request bounds, authenticated WebSockets, CORS allowlisting, and safe non-loopback startup checks.
+- Added SSRF defenses for browser navigation, redirects, DNS resolution, and subresources.
+- Refused local model-authored shell/Python execution; Docker isolation is now required.
+- Added tool-argument validation, exception containment, serialized agent execution, and clean shutdown.
+- Hardened Docker/Compose with a non-root user, read-only root filesystem, dropped capabilities, health checks, and required secrets.
+- Added a usable queue-and-poll dashboard, deployment/security runbooks, and v1.0 tests.
+# 1.2.0
+
+- Added Windows, macOS, Linux, and Docker guided installers.
+- Added automatic local security-key generation and a first-run provider wizard.
+- Added structured diagnostics with actionable fixes in CLI, API, and dashboard.
+- Added checksum-verified native automatic updates with staging and backups.
+- Added VPS console launch buttons and verified cloud-init generation.
+# 1.3.0
+
+- Added explicit SQLite schema migrations with checksums and integrity checks.
+- Added consistent online backups, verification, guarded restore, and automatic pre-restore safety snapshots.
+- Added local crash IDs, Prometheus-format metrics, readiness checks, security headers, and operations status.
+- Added Windows/macOS/Linux certification plus Docker, security, live-provider, load, concurrency, and failover test tooling.
+- Added credential-gated Authenticode and macOS signing jobs with build provenance and checksums.
+- Added portable Markdown skill discovery while preventing instruction-only skills from directly executing tools.
+- Hardened installers to fail on diagnosis errors and wait for readiness.
+# v1.4.0-rc.1
+
+- Added owner-allowlisted Telegram Bot API long-polling connector.
+- Added signed Meta WhatsApp Cloud API webhook and outbound replies.
+- Added duplicate WhatsApp delivery protection and bounded message splitting.
+- Added authenticated connector status API and connector diagnostics.
+- Preserved deny-by-default behavior for approval-requiring remote actions.

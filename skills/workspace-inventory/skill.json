@@ -1,0 +1,6 @@
+{
+  "name": "workspace-inventory",
+  "description": "List all files currently available in the AIBA workspace.",
+  "version": "0.1.0",
+  "steps": [{"tool": "list_files", "arguments": {"path": "."}}]
+}
