@@ -2,6 +2,7 @@ from __future__ import annotations
 import hashlib,json,os,shutil,sqlite3,tempfile,uuid
 from datetime import datetime,timezone
 from pathlib import Path
+from sqlite_utils import connect
 
 class BackupError(RuntimeError):pass
 def digest(path):
@@ -18,8 +19,8 @@ class BackupManager:
             stage=Path(temp);files=[]
             for source in sorted(self.data_dir.glob('*.db')):
                 target=stage/source.name
-                with sqlite3.connect(source) as src,sqlite3.connect(target) as dst:src.backup(dst)
-                with sqlite3.connect(target) as db:
+                with connect(source) as src,connect(target) as dst:src.backup(dst)
+                with connect(target) as db:
                     if db.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise BackupError(f'Integrity check failed for {source.name}')
                 files.append({'name':source.name,'sha256':digest(target),'bytes':target.stat().st_size})
             for name in ('setup.json',):
@@ -34,7 +35,7 @@ class BackupManager:
             path=folder/item['name']
             if not path.is_file() or digest(path)!=item['sha256']:raise BackupError(f"Backup verification failed: {item['name']}")
             if path.suffix=='.db':
-                with sqlite3.connect(f'file:{path}?mode=ro',uri=True) as db:
+                with connect(f'file:{path}?mode=ro',uri=True) as db:
                     if db.execute('PRAGMA integrity_check').fetchone()[0]!='ok':raise BackupError(f"Database is corrupt: {item['name']}")
         return {'verified':True,'backup_id':backup_id,'files':len(manifest['files'])}
     def restore(self,backup_id,confirm):

@@ -2,6 +2,7 @@ from __future__ import annotations
 import hashlib,json,sqlite3
 from datetime import datetime,timezone
 from pathlib import Path
+from sqlite_utils import connect
 
 class MigrationError(RuntimeError):pass
 def now():return datetime.now(timezone.utc).isoformat()
@@ -24,7 +25,7 @@ class MigrationManager:
         for name,migrations in MIGRATIONS.items():
             path=self.data_dir/name
             if not path.exists():continue
-            with sqlite3.connect(path,timeout=30) as db:
+            with connect(path,timeout=30) as db:
                 db.execute('PRAGMA foreign_keys=ON')
                 db.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,name TEXT NOT NULL,checksum TEXT NOT NULL,applied_at TEXT NOT NULL)')
                 applied={r[0]:r[1] for r in db.execute('SELECT version,checksum FROM schema_migrations')}
@@ -46,6 +47,6 @@ class MigrationManager:
         for name,migrations in MIGRATIONS.items():
             path=self.data_dir/name;current=0
             if path.exists():
-                with sqlite3.connect(path) as db:current=db.execute('PRAGMA user_version').fetchone()[0]
+                with connect(path) as db:current=db.execute('PRAGMA user_version').fetchone()[0]
             result.append({'database':name,'current':current,'target':migrations[-1][0],'exists':path.exists(),'ready':not path.exists() or current==migrations[-1][0]})
         return result

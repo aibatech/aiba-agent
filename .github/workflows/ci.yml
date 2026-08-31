@@ -42,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t aiba-agent:gate .
-      - uses: aquasecurity/trivy-action@0.33.1
+      - uses: aquasecurity/trivy-action@v0.36.0
         with: {image-ref: 'aiba-agent:gate', severity: 'HIGH,CRITICAL', exit-code: '1', ignore-unfixed: true}
       - name: Run container diagnostics with ephemeral test secrets
         run: |

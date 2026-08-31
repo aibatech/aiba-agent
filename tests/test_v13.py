@@ -1,5 +1,6 @@
 import json,sqlite3,tempfile,threading,unittest
 from pathlib import Path
+from sqlite_utils import connect
 from operations import BackupManager,CrashReporter,Metrics,MigrationManager
 from runtime.queue import JobQueue
 from skills.manager import SkillManager
@@ -8,16 +9,16 @@ class OperationsTests(unittest.TestCase):
     def test_backup_verify_restore_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             data=Path(tmp);db=data/'aiba.db'
-            with sqlite3.connect(db) as c:c.execute('CREATE TABLE sample(value TEXT)');c.execute("INSERT INTO sample VALUES('before')")
+            with connect(db) as c:c.execute('CREATE TABLE sample(value TEXT)');c.execute("INSERT INTO sample VALUES('before')")
             backups=BackupManager(data);created=backups.create('test');self.assertTrue(backups.verify(created['backup_id'])['verified'])
-            with sqlite3.connect(db) as c:c.execute("UPDATE sample SET value='after'")
+            with connect(db) as c:c.execute("UPDATE sample SET value='after'")
             restored=backups.restore(created['backup_id'],created['backup_id']);self.assertTrue(restored['restored'])
-            with sqlite3.connect(db) as c:self.assertEqual(c.execute('SELECT value FROM sample').fetchone()[0],'before')
+            with connect(db) as c:self.assertEqual(c.execute('SELECT value FROM sample').fetchone()[0],'before')
             self.assertNotEqual(restored['safety_backup_id'],created['backup_id'])
     def test_migrations_are_idempotent_and_checksummed(self):
         with tempfile.TemporaryDirectory() as tmp:
             data=Path(tmp)
-            with sqlite3.connect(data/'jobs.db') as c:c.execute('CREATE TABLE jobs(status TEXT,locked_at TEXT)')
+            with connect(data/'jobs.db') as c:c.execute('CREATE TABLE jobs(status TEXT,locked_at TEXT)')
             manager=MigrationManager(data);first=manager.apply();second=manager.apply();self.assertEqual(first,second);self.assertTrue(next(x for x in manager.status() if x['database']=='jobs.db')['ready'])
     def test_metrics_and_crash_ids(self):
         with tempfile.TemporaryDirectory() as tmp:

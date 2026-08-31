@@ -26,7 +26,8 @@ class SetupTests(unittest.TestCase):
             self.assertGreaterEqual(len(token), 48)
             self.assertGreaterEqual(len(master), 48)
             self.assertNotEqual(token, master)
-            self.assertEqual(root.joinpath(".env").stat().st_mode & 0o777, 0o600)
+            if os.name != "nt":
+                self.assertEqual(root.joinpath(".env").stat().st_mode & 0o777, 0o600)
 
     def test_setup_completion_state(self):
         with tempfile.TemporaryDirectory() as tmp:

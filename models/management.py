@@ -1,8 +1,10 @@
 from __future__ import annotations
 import json,sqlite3,uuid
+from contextlib import contextmanager
 from datetime import datetime,timezone,timedelta
 from pathlib import Path
 from typing import Any
+from sqlite_utils import connect as sqlite_connect
 from .credentials import CredentialCipher
 
 def now():return datetime.now(timezone.utc).isoformat()
@@ -27,8 +29,10 @@ PROVIDER_PRESETS={
 class ProviderStore:
     def __init__(self,path:Path,cipher:CredentialCipher|None=None):
         self.path=path;path.parent.mkdir(parents=True,exist_ok=True);self.cipher=cipher or CredentialCipher();self._init()
+    @contextmanager
     def connect(self):
-        c=sqlite3.connect(self.path,timeout=15);c.row_factory=sqlite3.Row;c.execute('PRAGMA journal_mode=WAL');c.execute('PRAGMA foreign_keys=ON');return c
+        with sqlite_connect(self.path,timeout=15) as c:
+            c.row_factory=sqlite3.Row;c.execute('PRAGMA journal_mode=WAL');c.execute('PRAGMA foreign_keys=ON');yield c
     def _init(self):
         with self.connect() as c:c.executescript('''
         CREATE TABLE IF NOT EXISTS providers(id TEXT PRIMARY KEY,name TEXT NOT NULL,kind TEXT NOT NULL,base_url TEXT,api_key_encrypted TEXT,api_key_env TEXT,enabled INTEGER NOT NULL DEFAULT 1,priority INTEGER NOT NULL DEFAULT 100,config TEXT NOT NULL DEFAULT '{}',health TEXT NOT NULL DEFAULT 'unknown',failure_count INTEGER NOT NULL DEFAULT 0,last_checked_at TEXT,last_error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);

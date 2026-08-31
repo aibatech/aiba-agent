@@ -1,6 +1,7 @@
 from __future__ import annotations
 import os,platform,shutil,socket,sqlite3,sys
 from pathlib import Path
+from sqlite_utils import connect
 
 class Doctor:
     def __init__(self,settings,provider_store=None):self.s=settings;self.providers=provider_store
@@ -15,7 +16,7 @@ class Doctor:
         docker=shutil.which('docker');add('DOCKER','Docker sandbox',bool(docker),'Available' if docker else 'Not installed','Install Docker Desktop or Docker Engine to enable isolated code execution.',severity='warning')
         if self.s.sandbox_mode=='docker':add('DOCKER_REQUIRED','Configured Docker sandbox',bool(docker),'Ready' if docker else 'Docker mode cannot start','Install and start Docker, or set AIBA_SANDBOX_MODE=local.')
         try:
-            with sqlite3.connect(self.s.providers_db_path) as c:c.execute('SELECT 1')
+            with connect(self.s.providers_db_path) as c:c.execute('SELECT 1')
             db_ok=True;db_detail='Database opened successfully'
         except Exception as exc:db_ok=False;db_detail=str(exc)
         add('DATABASE','Provider database',db_ok,db_detail,'Check disk space and folder permissions.')
