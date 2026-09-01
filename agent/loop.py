@@ -8,6 +8,7 @@ from tools.base import Tool,ToolResult
 from tools.sandbox import Sandbox
 from tools.browser import browser_fetch
 from tools.clarify import Clarify, ClarifyToolFactory
+from tools.web import WebTools, build_web_tools
 from tools.registry import ToolRegistry
 from memory.vault import MemoryVault
 from memory.retrieval import RetrievalEngine
@@ -38,6 +39,7 @@ class AgentLoop:
         self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
         self.computer=ComputerController(self.settings.desktop_enabled);self.vision=VisionAnalyzer(self.settings.vision_model)
         self.clarify=Clarify(on_pending=self._on_clarify_pending)
+        self.web_tools=build_web_tools(search_enabled=self.settings.web_enabled)
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy);self._register_tools()
         legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
         self._seed_legacy_provider();router=IntelligentRouter(self.providers,legacy)
@@ -70,6 +72,7 @@ class AgentLoop:
         self.registry.register(Tool('extract_archive','Extract a zip/tar archive into a workspace destination, blocking zip-slip.',self.sandbox.extract_archive,{'type':'object','properties':{'path':{'type':'string'},'dest':{'type':'string'}},'required':['path'],'additionalProperties':False}))
         self.registry.register(Tool('run_shell','Run command in sandbox.',self.sandbox.run_shell,{'type':'object','properties':{'command':{'type':'string'}},'required':['command'],'additionalProperties':False}))
         self.registry.register(Tool('run_python','Run Python in sandbox.',self.sandbox.run_python,{'type':'object','properties':{'code':{'type':'string'}},'required':['code'],'additionalProperties':False}))
+        for wt in self.web_tools:self.registry.register(wt)
         self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
         self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         self.registry.register(Tool('browser_fetch','Fetch rendered webpage text.',browser_fetch,{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
