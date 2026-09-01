@@ -21,10 +21,17 @@ def _valid(value,schema):
 class ToolRegistry:
     def __init__(self,audit,approvals,policy): self._tools={}; self.audit=audit; self.approvals=approvals; self.policy=policy
     def register(self,tool:Tool): self._tools[tool.name]=tool
-    def schemas(self): return [{'name':t.name,'description':t.description,'parameters':t.parameters} for t in self._tools.values() if self.policy.check_tool(t.name).allowed]
-    def execute(self,name:str,arguments:dict[str,Any]|None=None)->ToolResult:
-        args=arguments or {}; tool=self._tools.get(name); decision=self.policy.check_tool(name)
+    def schemas(self, excluded=None):
+        excluded=excluded or set()
+        return [{'name':t.name,'description':t.description,'parameters':t.parameters}
+                for t in self._tools.values()
+                if t.name not in excluded and self.policy.check_tool(t.name).allowed]
+    def blocked(self, name:str, extra=None):
+        return name in (extra or set()) or not self.policy.check_tool(name).allowed
+    def execute(self,name:str,arguments:dict[str,Any]|None=None,blocked:set[str]|None=None)->ToolResult:
+        args=arguments or {}; tool=self._tools.get(name); blocked=blocked or set(); decision=self.policy.check_tool(name)
         if not tool:return ToolResult(False,error=f'Unknown tool: {name}')
+        if name in blocked:return ToolResult(False,error=f'{name} is disabled for this conversation')
         if not decision.allowed:return ToolResult(False,error=decision.reason)
         if decision.requires_approval and not self.approvals.approve(name,str(args)[:500]):
             self.audit.record('tool_denied',tool=name,arguments=args); return ToolResult(False,error='User approval denied')

@@ -78,7 +78,7 @@ class AgentLoop:
     def start_conversation(self,user_id):return self.personal.start_conversation(user_id)
     def _handle(self,text,propose_skill=True,task_type=None,manual_model_id=None,user_id=None):
         task_id=self.tasks.create(text);self.events.publish('task_started',task_id=task_id,task=text)
-        try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id));self.tasks.finish(task_id,answer);status='complete'
+        try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id),blocked_tools=self.personal.blocked_tools(user_id));self.tasks.finish(task_id,answer);status='complete'
         except Exception as exc:
             crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status='failed';self.tasks.finish(task_id,answer,status)
         ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
