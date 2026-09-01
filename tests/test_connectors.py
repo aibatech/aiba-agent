@@ -17,10 +17,20 @@ class _Agent:
     def __init__(self):
         self.prompts = []
         self.crashes = _Crashes()
+        self.personal = _Personal()
 
-    def handle(self, prompt):
+    def handle(self, prompt, **kwargs):
         self.prompts.append(prompt)
         return "answer: " + prompt
+
+    def start_conversation(self, user_id):
+        return f"Hey, I'm AIBA. What should I call you? (starting {user_id})"
+
+
+class _Personal:
+    """Minimal double standing in for personality.PersonalExperience in tests."""
+    def intercept(self, user_id, text):
+        return None
 
 
 class TelegramTests(unittest.TestCase):
@@ -35,6 +45,14 @@ class TelegramTests(unittest.TestCase):
 
     def test_owner_allowlist_is_required(self):
         with self.assertRaises(ValueError):TelegramConnector(_Agent(), "token", set(), lambda *_: {})
+
+    def test_start_begins_personal_onboarding(self):
+        calls = []
+        transport = lambda method, data=None: calls.append((method, data)) or {"ok": True, "result": []}
+        agent = _Agent();connector = TelegramConnector(agent, "token", {42}, transport)
+        update = {"message": {"from": {"id": 42}, "chat": {"id": 42, "type": "private"}, "text": "/start"}}
+        self.assertTrue(connector.handle_update(update))
+        self.assertIn("What should I call you", calls[-1][1]["text"])
 
 
 class WhatsAppTests(unittest.TestCase):

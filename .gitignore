@@ -2,8 +2,10 @@ __pycache__/
 *.pyc
 .env
 
-# Local runtime / data directory (DBs, backups, vault, logs, workspace) — never commit
+# Local runtime / data directory (DBs, backups, vault, logs, workspace, user profiles) — never commit
 agent_system/
+# Private per-user personality profiles (name, work, goal, style) — never commit
+agent_system/profiles/
 
 # Virtualenv + build artifacts
 .venv/

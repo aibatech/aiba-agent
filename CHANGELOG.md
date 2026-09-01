@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.5.0 — 2026-09-01
+
+- Added a version-controlled `SOUL.md` character contract for AIBA's warm, playful,
+  plain-language voice.
+- Added private per-user profiles with human-readable local `*-USER.md` mirrors and a safe
+  repository example (`USER.example.md`); real profiles live only in the gitignored
+  `agent_system/profiles/` directory with 0600 permissions.
+- Added resumable, one-question-at-a-time onboarding wired into the Telegram and WhatsApp
+  connectors.
+- Added user-level tone, detail, initiative, humor, and memory settings.
+- Added `/profile`, `/memory pause`, `/memory resume`, and `/skip` conversation controls.
+- Injected AIBA's soul and the correct private user profile into model conversations without
+  exposing chain-of-thought, hidden prompts, credentials, or internal deliberation.
+
 ## 1.4.1 — 2026-09-01
 
 - Discovery-aware, atomic provider onboarding: the setup flow now queries the provider's live

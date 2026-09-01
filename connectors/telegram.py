@@ -62,10 +62,11 @@ class TelegramConnector:
             return False
         chat_id = int(chat["id"])
         if text.strip() == "/start":
-            self.send(chat_id, "AIBA Agent is online. Send me a task.")
+            answer = self.agent.start_conversation(f"telegram:{sender['id']}")
+            self.send(chat_id, answer)
             return True
         try:
-            answer = self.agent.handle(text.strip())
+            answer = self.agent.handle(text.strip(), user_id=f"telegram:{sender['id']}", onboard=True)
         except Exception as exc:
             crash_id = self.agent.crashes.capture(exc, {"connector": "telegram"})
             answer = f"AIBA could not complete that request. Crash ID: {crash_id}"

@@ -94,7 +94,7 @@ class WhatsAppConnector:
 
     def process(self, sender: str, text: str) -> None:
         try:
-            answer = self.agent.handle(text)
+            answer = self.agent.handle(text, user_id=f"whatsapp:{sender}", onboard=True)
         except Exception as exc:
             crash_id = self.agent.crashes.capture(exc, {"connector": "whatsapp"})
             answer = f"AIBA could not complete that request. Crash ID: {crash_id}"

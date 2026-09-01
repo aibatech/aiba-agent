@@ -15,8 +15,10 @@ class ReasoningEngine:
                 a=json.loads(m.group())
         if a.get('type') not in {'tool_call','final','delegate'}:raise ValueError('Unknown action type')
         return a
-    def run(self,task_id,user_input,task_type=None,manual_model_id=None):
-        memories=self.retrieval.retrieve(user_input,7);schemas=self.registry.schemas();messages=[{'role':'system','content':SYSTEM+'\nTools: '+json.dumps(schemas)},{'role':'user','content':user_input+'\nRelevant memory: '+json.dumps(memories,default=str)}];used=[]
+    def run(self,task_id,user_input,task_type=None,manual_model_id=None,prompt_context=None):
+        memories=self.retrieval.retrieve(user_input,7);schemas=self.registry.schemas()
+        persona=('\nPersonal context:\n'+prompt_context) if prompt_context else ''
+        messages=[{'role':'system','content':SYSTEM+persona+'\nTools: '+json.dumps(schemas)},{'role':'user','content':user_input+'\nRelevant memory: '+json.dumps(memories,default=str)}];used=[]
         for step in range(self.max_steps):
             action=self._parse(self.provider.complete(messages,schemas,task_type=task_type,manual_model_id=manual_model_id));self.tasks.event(task_id,{'step':step,'action':action,'route':getattr(self.provider,'last_route',None)})
             if action['type']=='final':return str(action.get('response','')),used
