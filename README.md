@@ -1,6 +1,12 @@
-# AIBA Agent v1.4 Release Candidate
+# AIBA Agent v1.5 Release Candidate
 
 AIBA is a self-hosted autonomous-agent runtime designed as a deployable alternative to OpenClaw and Hermes. It provides bounded model/tool reasoning, durable memory, workspace operations, human approvals, persistent jobs, schedules, reusable skills, an authenticated API, live events, a dashboard, Telegram and WhatsApp communication, and optional browser, vision, and desktop adapters.
+
+## Soul and personal profiles
+
+`SOUL.md` defines AIBA's shared character: warm, concise, capable, playful, honest, and nontechnical by default. Each Telegram or WhatsApp user receives a separate private profile in `agent_system/profiles/`. A human-readable `*-USER.md` mirror makes the remembered preferences inspectable while the JSON file provides reliable runtime state. The entire profiles directory is excluded from Git.
+
+On first contact, AIBA asks one short question at a time to learn the user's name, work, main goal, and communication preference. Onboarding resumes after restarts. Use `/profile` to review the profile, `/memory pause` or `/memory resume` to control learning, and `/skip` to defer onboarding. `USER.example.md` documents the format without containing personal information.
 
 ## Telegram and WhatsApp
 

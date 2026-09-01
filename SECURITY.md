@@ -2,7 +2,7 @@
 
 ## Supported release
 
-AIBA v1.4 receives security fixes. Do not expose older developer-preview releases.
+AIBA v1.5 receives security fixes. Do not expose older developer-preview releases.
 
 ## Required controls
 

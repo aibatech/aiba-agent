@@ -25,12 +25,14 @@ from onboarding import SetupManager
 from diagnostics import Doctor
 from updates import UpdateManager,UpdateChecker
 from operations import BackupManager,MigrationManager,CrashReporter,Metrics
+from personality import PersonalExperience
 class AgentLoop:
     def __init__(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
         self.settings=settings or Settings.load();self.audit=AuditLog(self.settings.logs_dir/'audit.jsonl');self.events=EventBus();self._run_lock=RLock();self.metrics=Metrics();self.crashes=CrashReporter(self.settings.logs_dir)
         self.approvals=ApprovalManager(interactive,auto_approve);self.policy=SecurityPolicy(self.settings.workspace_dir,self.settings.permissions_path,self.settings.require_approval)
         self.sandbox=Sandbox(self.settings.workspace_dir,self.settings.command_timeout,self.policy,self.settings.sandbox_mode,self.settings.docker_image,self.settings.docker_memory,self.settings.docker_cpus,self.settings.sandbox_network)
         self.vault=MemoryVault(self.settings.db_path,self.settings.vault_dir);self.tasks=TaskStore(self.settings.tasks_db_path);self.tasks.recover_interrupted()
+        self.personal=PersonalExperience(self.settings.root_dir,self.settings.data_dir)
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
         self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
         self.computer=ComputerController(self.settings.desktop_enabled);self.vision=VisionAnalyzer(self.settings.vision_model)
@@ -66,13 +68,17 @@ class AgentLoop:
         provider_id=self.providers.add_provider(kind.title(),kind,api_key_env={'openai':'OPENAI_API_KEY','anthropic':'ANTHROPIC_API_KEY','ollama':''}.get(kind,''))
         self.providers.add_model(provider_id,self.settings.model,capabilities=['text','tools','code'],priority=100)
         self.providers.set_rule('default','balanced',['text','tools'],[self.providers.list_models()[0]['id']])
-    def handle(self,text,propose_skill=True,task_type=None,manual_model_id=None):
+    def handle(self,text,propose_skill=True,task_type=None,manual_model_id=None,user_id=None,onboard=False):
         if not isinstance(text,str) or not text.strip():raise ValueError('Task prompt cannot be empty')
         if len(text)>100_000:raise ValueError('Task prompt exceeds 100,000 characters')
-        with self._run_lock:return self._handle(text.strip(),propose_skill,task_type,manual_model_id)
-    def _handle(self,text,propose_skill=True,task_type=None,manual_model_id=None):
+        if onboard and user_id:
+            intercepted=self.personal.intercept(user_id,text)
+            if intercepted is not None:return intercepted
+        with self._run_lock:return self._handle(text.strip(),propose_skill,task_type,manual_model_id,user_id)
+    def start_conversation(self,user_id):return self.personal.start_conversation(user_id)
+    def _handle(self,text,propose_skill=True,task_type=None,manual_model_id=None,user_id=None):
         task_id=self.tasks.create(text);self.events.publish('task_started',task_id=task_id,task=text)
-        try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id);self.tasks.finish(task_id,answer);status='complete'
+        try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id),blocked_tools=self.personal.blocked_tools(user_id));self.tasks.finish(task_id,answer);status='complete'
         except Exception as exc:
             crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status='failed';self.tasks.finish(task_id,answer,status)
         ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
@@ -80,7 +86,7 @@ class AgentLoop:
     def close(self):
         self.worker.stop();self.scheduler_runner.stop();self.update_checker.stop()
     def run(self):
-        print(f'AIBA Agent v1.4 | routing=auto | sandbox={self.settings.sandbox_mode} | /exit to quit')
+        print(f'AIBA Agent v1.5 | routing=auto | sandbox={self.settings.sandbox_mode} | /exit to quit')
         while True:
             try:text=input('You> ').strip()
             except (EOFError,KeyboardInterrupt):print();break
