@@ -80,6 +80,48 @@ class ProviderStore:
         self.get_provider(provider_id);i=str(uuid.uuid4());t=now();caps=sorted(set(capabilities or ['text','tools']))
         with self.connect() as c:c.execute('INSERT INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(i,provider_id,model_id,display_name or model_id,json.dumps(caps),context_window,float(price_input),float(price_output),int(enabled),int(priority),json.dumps(metadata or {}),t,t))
         return i
+    def get_provider_by_kind(self,kind:str,base_url:str|None=None)->str|None:
+        """Return the id of an existing provider matching kind (and optional base_url), or None."""
+        with self.connect() as c:
+            if base_url:r=c.execute('SELECT id FROM providers WHERE kind=? AND base_url=? LIMIT 1',(kind,base_url)).fetchone()
+            else:r=c.execute('SELECT id FROM providers WHERE kind=? LIMIT 1',(kind,)).fetchone()
+        return r['id'] if r else None
+    def get_model_by_key(self,provider_id:str,model_id:str)->str|None:
+        """Return the id of an existing model for a provider, or None (enables idempotent registration)."""
+        with self.connect() as c:r=c.execute('SELECT id FROM models WHERE provider_id=? AND model_id=? LIMIT 1',(provider_id,model_id)).fetchone()
+        return r['id'] if r else None
+    def upsert_provider(self,name:str,kind:str,base_url:str|None=None,api_key:str|None=None,api_key_env:str|None=None,enabled=True,priority=100,config=None)->str:
+        """Atomically create-or-reuse a provider. Prevents duplicate providers.
+        If a provider of the same kind (and matching base_url when given) exists, update it in place;
+        otherwise insert a new row. Returns the provider id."""
+        if kind not in PROVIDER_PRESETS:raise ValueError(f'Unsupported provider kind: {kind}')
+        existing=self.get_provider_by_kind(kind,base_url)
+        t=now();preset=PROVIDER_PRESETS[kind];enc=self.cipher.encrypt(api_key) if api_key is not None else None
+        with self.connect() as c:
+            if existing:
+                sets=['name=?','base_url=?','api_key_env=?','enabled=?','priority=?','config=?','updated_at=?']
+                vals=[(name.strip() or preset[0]),base_url if base_url is not None else preset[1],api_key_env if api_key_env is not None else preset[2],int(enabled),int(priority),json.dumps(config or {}),t]
+                if api_key is not None:
+                    # only overwrite the stored key when a new value was supplied
+                    sets.insert(2,'api_key_encrypted=?');vals.insert(2,enc)
+                c.execute(f"UPDATE providers SET {','.join(sets)} WHERE id=?",vals+[existing])
+            else:
+                existing=str(uuid.uuid4())
+                c.execute('INSERT INTO providers VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',(existing,name.strip() or preset[0],kind,base_url if base_url is not None else preset[1],enc,api_key_env if api_key_env is not None else preset[2],int(enabled),int(priority),json.dumps(config or {}),'unknown',0,None,None,t,t))
+        return existing
+    def upsert_model(self,provider_id:str,model_id:str,display_name:str|None=None,capabilities=None,context_window=None,price_input=0,price_output=0,enabled=True,priority=100,metadata=None)->str:
+        """Atomically create-or-reuse a model for a provider. Prevents duplicate models.
+        Returns the model id."""
+        self.get_provider(provider_id);t=now();caps=sorted(set(capabilities or ['text','tools']))
+        existing=self.get_model_by_key(provider_id,model_id)
+        with self.connect() as c:
+            if existing:
+                c.execute('UPDATE models SET display_name=?,capabilities=?,context_window=?,price_input=?,price_output=?,enabled=?,priority=?,updated_at=? WHERE id=?',(display_name or model_id,json.dumps(caps),context_window,float(price_input),float(price_output),int(enabled),int(priority),t,existing))
+            else:
+                existing=str(uuid.uuid4())
+                c.execute('INSERT INTO models VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',(existing,provider_id,model_id,display_name or model_id,json.dumps(caps),context_window,float(price_input),float(price_output),int(enabled),int(priority),json.dumps(metadata or {}),t,t))
+        return existing
+
     def update_model(self,i:str,**changes):
         allowed={'model_id','display_name','capabilities','context_window','price_input','price_output','enabled','priority','metadata'};sets=[];values=[]
         for k,v in changes.items():

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.1 — 2026-09-01
+
+- Discovery-aware, atomic provider onboarding: the setup flow now queries the provider's live
+  model-discovery endpoint before choosing a default model, so it registers a currently-available
+  model instead of a hardcoded (possibly deprecated) one.
+- Idempotent provider/model registration (`upsert_provider` / `upsert_model`): existing providers
+  and models are reused, and repeated calls never create duplicates.
+- Safe fallback plus sanitized `discovery_error` when discovery is unavailable; provider API keys
+  are redacted (`[REDACTED]`) and never printed or logged.
+- New `aiba --verify` command that verifies the **live running service** (process/port, /health,
+  /ready, authenticated API, database, provider, Telegram getMe + allow-list, backup create+verify,
+  metrics, installed version) and returns nonzero exit codes on failure.
+- Hardened `.gitignore` so the local data dir (`agent_system/`), `.venv`, build artifacts, and
+  certification output can never be accidentally committed.
+
 ## 1.1.0 — 2026-08-03
 
 - Added unlimited persistent provider connections and model definitions.

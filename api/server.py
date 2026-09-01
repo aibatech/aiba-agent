@@ -9,7 +9,7 @@ def create_app(agent):
         from fastapi.responses import HTMLResponse,JSONResponse,PlainTextResponse,Response
         from pydantic import BaseModel,Field
     except ImportError as exc:raise RuntimeError('Install API dependencies: pip install -e .[api]') from exc
-    app=FastAPI(title='AIBA Agent API',version='1.4.0',docs_url='/docs' if agent.settings.api_token else None)
+    app=FastAPI(title='AIBA Agent API',version='1.4.1',docs_url='/docs' if agent.settings.api_token else None)
     telegram=None;whatsapp=None
     if os.getenv('AIBA_TELEGRAM_ENABLED','false').lower() in {'1','true','yes','on'}:
         from connectors import TelegramConnector;telegram=TelegramConnector(agent)
@@ -82,7 +82,7 @@ def create_app(agent):
         for sender,text,_ in whatsapp.extract_messages(payload):background_tasks.add_task(whatsapp.process,sender,text)
         return {'received':True}
     @app.get('/health')
-    def health():return {'ok':True,'version':'1.4.0','provider':agent.settings.provider,'sandbox':agent.settings.sandbox_mode,'managed_models':len(agent.providers.list_models(enabled_only=True))}
+    def health():return {'ok':True,'version':'1.4.1','provider':agent.settings.provider,'sandbox':agent.settings.sandbox_mode,'managed_models':len(agent.providers.list_models(enabled_only=True))}
     @app.get('/ready')
     def ready():
         migrations=agent.migrations.status();ready=all(x['ready'] for x in migrations);return JSONResponse(status_code=200 if ready else 503,content={'ready':ready,'migrations':migrations})
@@ -92,7 +92,11 @@ def create_app(agent):
     def setup_status():return agent.setup.status(len(agent.providers.list_providers()))
     @app.post('/v1/setup/provider',status_code=201)
     def setup_provider(body:SetupProviderIn,authorization:str|None=Header(default=None)):
-        authorize(authorization);provider_id=agent.providers.add_provider(body.name,body.kind,body.base_url,body.api_key);model_id=agent.providers.add_model(provider_id,body.model_id,body.display_name,body.capabilities);return {'provider':agent.providers.get_provider(provider_id),'model':next(x for x in agent.providers.list_models() if x['id']==model_id)}
+        authorize(authorization)
+        from onboarding.providers import connect_provider_atomically
+        result=connect_provider_atomically(agent.providers,agent.engine.provider,body.kind,body.api_key,body.base_url,body.model_id,body.capabilities,None,body.display_name)
+        model=next((m for m in agent.providers.list_models() if m['id']==result['model_row_id']),None)
+        return {'provider':agent.providers.get_provider(result['provider_id']),'model':model,'discovery':{'available':result['discovered'],'model_count':result['discovery_model_count'],'selected_model':result['model_id'],'used_fallback':result['used_fallback'],'error':result['discovery_error']}}
     @app.post('/v1/setup/complete')
     def setup_complete(authorization:str|None=Header(default=None)):
         authorize(authorization)
