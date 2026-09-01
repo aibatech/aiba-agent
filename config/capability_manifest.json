@@ -1,0 +1,195 @@
+{
+  "$schema": "./capability_manifest.schema.json",
+  "version": 1,
+  "description": "Authoritative capability manifest for AIBA. Every registered tool MUST have an entry here before it can be enabled in config/permissions.json. Optional per-tool fields: feature_flag, optional_dependency (or 'needs:<executable>'), internal_only (bool, default false) to mark a tool as registered purely for internal use so it is never advertised to the model. See docs/PLAN_v1.6_capability_parity.md.",
+  "risk_classes": {
+    "read_only_local": "Read or inspect local workspace data; no mutation. Approval not required.",
+    "read_only_network": "Read-only public network access; strictly SSRF-safe against private/loopback/credential targets. Approval not required.",
+    "local_mutation": "Writes, edits, archives, or otherwise mutates data inside the AIBA workspace. Approval required.",
+    "external_mutation": "Causes a change on an external system (send, post, submit, purchase, authenticate). Approval required.",
+    "process_execution": "Starts processes, runs shell/code, or sends process input. Approval required.",
+    "destructive": "Deletes, terminates, or irreversibly destroys data or processes. Approval required."
+  },
+  "feature_flags": {
+    "AIBA_WEB_ENABLED": "Gates the web_search / web_extract tools (read-only network).",
+    "AIBA_BROWSER_ENABLED": "Gates browser tooling (browser_fetch today). Requires installed browser dependencies.",
+    "AIBA_DESKTOP_ENABLED": "Gates computer-control tooling (desktop_screenshot / desktop_click / desktop_type). Disabled until the paired-node security phase is complete.",
+    "AIBA_VISION_ENABLED": "Gates vision_analyze; requires a vision-capable model.",
+    "none": "No feature flag required (always available once enabled)."
+  },
+  "tools": {
+    "list_files": {
+      "description": "List workspace files.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "read_file": {
+      "description": "Read workspace text.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "write_file": {
+      "description": "Write workspace text.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "delete_file": {
+      "description": "Delete workspace file.",
+      "risk_class": "destructive",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "patch_file": {
+      "description": "Apply a find-and-replace edit to a workspace text file, atomically, returning the diff.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "archive": {
+      "description": "Create a zip or tarball of a workspace path, written inside the workspace.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "extract_archive": {
+      "description": "Extract a zip/tar archive into a workspace destination, blocking zip-slip.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "run_shell": {
+      "description": "Run command in sandbox.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "run_python": {
+      "description": "Run Python in sandbox.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "web_search": {
+      "description": "Search the public web for a topic and return title/url/snippet results.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_WEB_ENABLED"
+    },
+    "web_extract": {
+      "description": "Fetch readable text from one or more PUBLIC http(s) pages; SSRF-safe.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_WEB_ENABLED"
+    },
+    "remember": {
+      "description": "Store durable memory.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "search_memory": {
+      "description": "Search memory.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "browser_fetch": {
+      "description": "Fetch rendered webpage text.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "browser automation engine (playwright/nebuia)"
+    },
+    "desktop_screenshot": {
+      "description": "Capture desktop screenshot.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "paired computer-control node (AIBA_DESKTOP_ENABLED)"
+    },
+    "desktop_click": {
+      "description": "Click screen coordinates.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "paired computer-control node (AIBA_DESKTOP_ENABLED)"
+    },
+    "desktop_type": {
+      "description": "Type text into active window.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "paired computer-control node (AIBA_DESKTOP_ENABLED)"
+    },
+    "vision_analyze": {
+      "description": "Analyze a workspace image.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_VISION_ENABLED",
+      "optional_dependency": "vision-capable model"
+    },
+    "list_skills": {
+      "description": "List reusable skills.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "skill_instructions": {
+      "description": "Read a reviewed portable skill instruction contract.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "run_skill": {
+      "description": "Run a reviewed reusable skill.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "clarify": {
+      "description": "Ask the user one focused question with choices and tradeoffs.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "enqueue_task": {
+      "description": "Queue a background task.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "schedule_task": {
+      "description": "Schedule a recurring task.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    }
+  }
+}

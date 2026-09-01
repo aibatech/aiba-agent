@@ -1,0 +1,23 @@
+{
+  "typeshedPath": "/home/jay/.hermes/lsp/node_modules/pyright/dist/typeshed-fallback",
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "include": [
+    "diagnostics",
+    "agent",
+    "tools",
+    "config",
+    "scripts"
+  ],
+  "exclude": [
+    "build",
+    "**/.venv",
+    "**/node_modules",
+    "**/.pytest_cache"
+  ],
+  "ignore": [
+    "tests"
+  ]
+}

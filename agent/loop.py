@@ -40,7 +40,24 @@ class AgentLoop:
         self.computer=ComputerController(self.settings.desktop_enabled);self.vision=VisionAnalyzer(self.settings.vision_model)
         self.clarify=Clarify(on_pending=self._on_clarify_pending)
         self.web_tools=build_web_tools(search_enabled=self.settings.web_enabled)
-        self.registry=ToolRegistry(self.audit,self.approvals,self.policy);self._register_tools()
+        from diagnostics.capabilities import load_manifest
+        _mf=None
+        try:_mf=load_manifest(self.settings.root_dir/'config'/'capability_manifest.json')
+        except Exception:_mf=None
+        self.manifest=_mf
+        # Single authoritative runtime feature-flag map, built from Settings
+        # booleans (never strings). Passed to the registry, capability_report,
+        # and any readiness/doctor reporting so execution and reporting always
+        # resolve the same flag state. For each flag listed in the manifest but
+        # without a dedicated Settings bool, derive from the closest real
+        # setting (e.g. AIBA_VISION_ENABLED from the configured vision model).
+        self.runtime_flags: dict[str, bool] = {
+            'AIBA_WEB_ENABLED': bool(self.settings.web_enabled),
+            'AIBA_BROWSER_ENABLED': bool(self.settings.browser_enabled),
+            'AIBA_DESKTOP_ENABLED': bool(self.settings.desktop_enabled),
+            'AIBA_VISION_ENABLED': bool(self.settings.vision_model),
+        }
+        self.registry=ToolRegistry(self.audit,self.approvals,self.policy,feature_flags=self.runtime_flags,manifest=self.manifest);self._register_tools()
         legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
         self._seed_legacy_provider();router=IntelligentRouter(self.providers,legacy)
         self.engine=ReasoningEngine(router,self.registry,RetrievalEngine(self.vault),self.tasks,self.settings.max_steps);self.dream=DreamEngine(self.settings.vault_dir/'reflections',self.vault)
@@ -110,6 +127,27 @@ class AgentLoop:
             crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status='failed';self.tasks.finish(task_id,answer,status)
         ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
         self.metrics.increment('tasks_total',status=status);self.events.publish('task_finished',task_id=task_id,status=status,tools=used,reflection=str(ref),skill_proposal=str(proposal) if proposal else None);return answer
+    def capability_report(self, runtime_flags=None):
+        """Return a live per-tool capability report (see diagnostics/capabilities).
+
+        Merges the manifest, the run-time permissions policy, and the live
+        registry so callers can see, for every tool: registered / listed /
+        enabled / approval / feature flag / ready + the actionable reason it
+        is unavailable. Never silently advertises a dormant tool.
+
+        The report resolves feature flags from the same authoritative runtime
+        map used by the registry (self.runtime_flags), so reporting and
+        execution always agree. ``runtime_flags`` overrides that map for
+        tests; it must carry booleans.
+        """
+        from diagnostics.capabilities import build_report
+        perm = self.policy.config
+        registered = set(self.registry._tools.keys())
+        flags = dict(self.runtime_flags)
+        if runtime_flags:
+            flags.update(runtime_flags)
+        return build_report(self.manifest, perm, registered, flag_overrides=flags)
+
     def close(self):
         self.worker.stop();self.scheduler_runner.stop();self.update_checker.stop()
     def run(self):

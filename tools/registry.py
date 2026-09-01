@@ -19,20 +19,54 @@ def _valid(value,schema):
         if any(k in props and not _valid(v,props[k]) for k,v in value.items()):return False
     return True
 class ToolRegistry:
-    def __init__(self,audit,approvals,policy): self._tools={}; self.audit=audit; self.approvals=approvals; self.policy=policy
+    def __init__(self, audit, approvals, policy, feature_flags=None, manifest=None):
+        self._tools={}; self.audit=audit; self.approvals=approvals; self.policy=policy
+        # feature_flags: dict[str,bool] of runtime env flags (e.g. AGENT_WEB_ENABLED).
+        # manifest: dict from config/capability_manifest.json carrying each tool's
+        # feature_flag. A tool whose manifest feature flag is off is not advertised
+        # (schemas) and is denied (execute) with an actionable reason.
+        self.feature_flags=feature_flags or {}
+        self.manifest=(manifest or {}).get("tools", {}) if isinstance(manifest, dict) else {}
+    def _feature_flag_on(self, name: str) -> bool:
+        meta=self.manifest.get(name)
+        flag=(meta or {}).get("feature_flag") or ""
+        if not flag or flag=="none":
+            return True
+        return bool(self.feature_flags.get(flag, False))
+    def _availability(self, name: str) -> str:
+        """Return '' if a tool is safe to advertise/run, else a clear reason."""
+        if name not in self._tools:
+            return f"Unknown tool: {name}"
+        decision=self.policy.check_tool(name)
+        if not decision.allowed:
+            # Distinguish "not listed in policy" from "listed but disabled"
+            perm=self.policy.config.get("tools", {}).get(name)
+            if perm is None:
+                return f"{name} is registered but unavailable because it is missing from config/permissions.json."
+            return decision.reason or f"{name} is disabled in config/permissions.json."
+        if not self._feature_flag_on(name):
+            meta=self.manifest.get(name, {})
+            flag=(meta.get("feature_flag") or "")
+            return f"{name} requires feature flag {flag} to be enabled (set {flag}=true)."
+        return ""
     def register(self,tool:Tool): self._tools[tool.name]=tool
     def schemas(self, excluded=None):
         excluded=excluded or set()
         return [{'name':t.name,'description':t.description,'parameters':t.parameters}
                 for t in self._tools.values()
-                if t.name not in excluded and self.policy.check_tool(t.name).allowed]
+                if t.name not in excluded and self.policy.check_tool(t.name).allowed and self._feature_flag_on(t.name)]
     def blocked(self, name:str, extra=None):
-        return name in (extra or set()) or not self.policy.check_tool(name).allowed
+        return name in (extra or set()) or not self.policy.check_tool(name).allowed or not self._feature_flag_on(name)
     def execute(self,name:str,arguments:dict[str,Any]|None=None,blocked:set[str]|None=None)->ToolResult:
-        args=arguments or {}; tool=self._tools.get(name); blocked=blocked or set(); decision=self.policy.check_tool(name)
-        if not tool:return ToolResult(False,error=f'Unknown tool: {name}')
-        if name in blocked:return ToolResult(False,error=f'{name} is disabled for this conversation')
-        if not decision.allowed:return ToolResult(False,error=decision.reason)
+        args=arguments or {}; tool=self._tools.get(name); blocked=blocked or set()
+        if name in blocked:
+            return ToolResult(False,error=f'{name} is disabled for this conversation')
+        reason=self._availability(name)
+        if reason:
+            return ToolResult(False,error=reason)
+        decision=self.policy.check_tool(name)
+        if tool is None:
+            return ToolResult(False,error=f'Unknown tool: {name}')
         if decision.requires_approval and not self.approvals.approve(name,str(args)[:500]):
             self.audit.record('tool_denied',tool=name,arguments=args); return ToolResult(False,error='User approval denied')
         if not isinstance(args,dict):return ToolResult(False,error='Tool arguments must be an object')

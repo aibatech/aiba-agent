@@ -1,7 +1,7 @@
 # AIBA v1.6 — Capability Parity: Engineering Plan + Capability Matrix + Timeline
 
-**Status:** PLANNING (approved by Josh — no implementation yet)
-**Branch:** `feat/aiba-v1.6-capability-parity` (created, empty — code unchanged from v1.5.0)
+**Status:** IN PROGRESS — Phases 1, 2, 4, 6, 10 implemented and tested. See §"Implementation Status Log".
+**Branch:** `feat/aiba-v1.6-capability-parity` (06 commits + growing)
 **Live install:** v1.5.0 untouched. Not restarted, not modified.
 **Date:** 2026-09-01
 
@@ -329,3 +329,36 @@ Total effort is **large** (realistically multiple focused sessions). Recommend *
 ## 6. Files changed so far (this plan)
 - `capability_matrix.md`? → this document committed as **`docs/PLAN_v1.6_capability_parity.md`**.
 - Branch `feat/aiba-v1.6-capability-parity` created off `76da680`. No code changes.
+
+---
+
+## 7. Implementation Status Log (append-only, updated as phases land)
+
+Ground rule upheld: a phase is only marked **implemented** once its code is committed
+**and** passing tests exist on the v1.6 branch. Live v1.5 install untouched throughout.
+
+| Phase | Status | What actually shipped | Tests |
+|---|---|---|---|
+| **1 — Telegram UX** | ✅ Implemented | `connectors/ux/render.py` (markdown renderer, smart chunker, inline keyboards, typing-heartbeat); `connectors/telegram.py` typing heartbeat start/stop per task, `send_keyboard`/`send_payload`, callback-query routing + `on_callback` hook, `getUpdates` now accepts `callback_query` | `tests/test_ux.py` (16) |
+| **2 — Visible reasoning** | ✅ Implemented | `reasoning/protocol.py` — typed/versioned `aiba.reasoning` event envelope, 5 sanitised kinds (plan/tool/result/final/error), secret redaction + output truncation (no CoT leak); wired into `reasoning/engine.py` + `agent/loop.py` → emits to the existing `EventBus` on every task | `tests/test_protocol.py` (10) |
+| **3 — Real subagents** | ⬜ Not started | — (needs parallel worker architecture) | — |
+| **4 — Web + browser** | ✅ Implemented (web tools) | `tools/web.py` — `web_search` (DuckDuckGo no-API-key backend, fixed allowlisted host → no SSRF from query) + `web_extract` (up to 5 pages, reuses `_public_url` guard → blocks private/loopback/credential URLs); `AIBA_WEB_ENABLED` setting; registered in loop. Browser *session* model (persistent nav, allow/deny lists) still partial-future | `tests/test_web.py` (13) |
+| **5 — Computer control + nodes** | ⬜ Not started (5a)/manual (5b) | existing 3 tools unchanged | — |
+| **6 — Term/file/process parity** | ✅ Implemented (file additions) | `tools/sandbox.py` — `patch_file` (atomic find-and-replace + diff, block ambiguous/missing), `archive` (zip/tar/gztar, written inside workspace), `extract_archive` (zip/tar, **zip-slip blocked**); registered in loop. Terminal/process lifecycle (SSH, process mgmt) still future | `tests/test_sandbox.py` (10) |
+| **7 — MCP client** | ⬜ Not started | — | — |
+| **8 — Media/document processing** | ⬜ Not started | — | — |
+| **9 — Memory/skills/sessions** | ⬜ Not started | — | — |
+| **10 — Clarify tool** | ✅ Implemented | `tools/clarify.py` — focused questions with choices + tradeoffs, blocking (`answer_source`) and async **pending** flow (`ClarificationRequested`, `on_pending` → `clarify.pending` bus event); registered `clarify` tool; Telegram inline-button answering via `clar:<qid>:<choice>` callbacks + `connect_clarify()` | `tests/test_clarify.py` (11) |
+| **11 — CLI + dashboard** | ⬜ Not started | — | — |
+| **12 — Test + release** | 🔶 Partial | Full local suite **118 tests pass** (1 platform skip) across 14 test modules; CI matrix/version bump still pending | `tests/*` |
+
+**Suite report (this branch):** `unittest` → **118 tests, OK**, covering connectors, ux, protocol,
+clarify, sandbox, web, personality, providers, onboarding, and v02–v13 regressions.
+
+**Remaining to reach full 12-phase bar:** Phases 3 (subagents), 5 (computer control + paired node),
+7 (MCP client), 8 (media/docs), 11 (CLI/dashboard) are the multi-session subsystems. Phases 9 and
+container/CI evidence + version bump to v1.6.0-RC remain for the release milestone. Per the ground
+rule these are all honestly marked `not-started` — nothing claimed without passing tests.
+
+**Commits landed (chronological):** `921421c` plan doc → `d7ce497` P1 → `6eb8ad1` P2 →
+`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4.

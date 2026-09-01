@@ -6,8 +6,13 @@
     "read_file": {"enabled": true, "requires_approval": false},
     "write_file": {"enabled": true, "requires_approval": true},
     "delete_file": {"enabled": true, "requires_approval": true},
+    "patch_file": {"enabled": true, "requires_approval": true},
+    "archive": {"enabled": true, "requires_approval": true},
+    "extract_archive": {"enabled": true, "requires_approval": true},
     "run_shell": {"enabled": true, "requires_approval": true},
     "run_python": {"enabled": true, "requires_approval": true},
+    "web_search": {"enabled": true, "requires_approval": false},
+    "web_extract": {"enabled": true, "requires_approval": false},
     "remember": {"enabled": true, "requires_approval": true},
     "search_memory": {"enabled": true, "requires_approval": false},
     "browser_fetch": {"enabled": false, "requires_approval": true},
@@ -16,9 +21,11 @@
     "desktop_type": {"enabled": false, "requires_approval": true},
     "vision_analyze": {"enabled": false, "requires_approval": true},
     "list_skills": {"enabled": true, "requires_approval": false},
+    "skill_instructions": {"enabled": true, "requires_approval": false},
     "run_skill": {"enabled": true, "requires_approval": true},
-    "schedule_task": {"enabled": true, "requires_approval": true},
-    "enqueue_task": {"enabled": true, "requires_approval": true}
+    "clarify": {"enabled": true, "requires_approval": false},
+    "enqueue_task": {"enabled": true, "requires_approval": true},
+    "schedule_task": {"enabled": true, "requires_approval": true}
   },
   "blocked_command_fragments": ["rm -rf /", "mkfs", ":(){:|:&};:", "shutdown", "reboot", "dd if=", "chmod -R 777 /", "curl | sh", "wget | sh"]
 }
