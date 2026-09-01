@@ -63,6 +63,27 @@ Users can add unlimited provider connections and models from the dashboard or AP
 - Usage records capture provider, model, task type, tokens, estimated cost, latency, success, and errors.
 - Provider connection tests, remote model discovery, route previews, and 1–365 day usage summaries are available through authenticated endpoints.
 
+### Discovery-aware, atomic provider onboarding
+
+Connecting a provider via the dashboard (`POST /v1/setup/provider`) or the onboarding
+helper (`onboarding.providers.connect_provider_atomically`) is now **idempotent and
+discovery-aware**:
+
+- Before a default model is chosen, AIBA calls the provider's **live model-discovery
+  endpoint** (`/v1/providers/{id}/discover-models`) and registers a model that is
+  **currently available**, rather than relying on a hardcoded model id that may have
+  been deprecated by the vendor.
+- The provider is **reused when already present** and created only when absent; models
+  are likewise upserted by `provider_id + model_id`. Repeated calls never create
+  duplicate provider or model rows.
+- If discovery is unavailable (offline, bad credentials, empty result) AIBA falls back
+  to a safe, per-kind default model and reports `used_fallback` and a sanitized
+  `discovery_error` to the caller.
+- A requested `preferred_model` is honoured **only if** it appears in the live discovery
+  list; otherwise an available model is selected.
+- **Provider API keys are never printed or logged** — any key echoed back inside a
+  discovery error string is redacted to `[REDACTED]`.
+
 The Community Runtime has no artificial provider or model limits. It remains a single-owner, self-hosted AIBA runtime; multi-tenant organization policy belongs in the separate private AIBA Nexus platform.
 
 ## Security foundation

@@ -7,8 +7,12 @@ from onboarding import SetupManager
 from config.env import load_env
 from agent.loop import AgentLoop
 def main():
-    p=argparse.ArgumentParser(description='AIBA Agent v1.4');p.add_argument('--prompt');p.add_argument('--yes',action='store_true');p.add_argument('--serve',action='store_true');p.add_argument('--telegram',action='store_true');p.add_argument('--host');p.add_argument('--port',type=int);p.add_argument('--worker-once',action='store_true');p.add_argument('--setup',action='store_true');p.add_argument('--doctor',action='store_true');p.add_argument('--update-check',action='store_true');p.add_argument('--update-stage',action='store_true');p.add_argument('--migrate',action='store_true');p.add_argument('--backup',action='store_true');p.add_argument('--verify-backup');p.add_argument('--restore-backup');p.add_argument('--confirm-restore');args=p.parse_args()
+    p=argparse.ArgumentParser(description='AIBA Agent v1.4');p.add_argument('--prompt');p.add_argument('--yes',action='store_true');p.add_argument('--serve',action='store_true');p.add_argument('--telegram',action='store_true');p.add_argument('--host');p.add_argument('--port',type=int);p.add_argument('--worker-once',action='store_true');p.add_argument('--setup',action='store_true');p.add_argument('--doctor',action='store_true');p.add_argument('--verify',action='store_true');p.add_argument('--live-provider',action='store_true',help='with --verify, also run a harmless live provider request');p.add_argument('--update-check',action='store_true');p.add_argument('--update-stage',action='store_true');p.add_argument('--migrate',action='store_true');p.add_argument('--backup',action='store_true');p.add_argument('--verify-backup');p.add_argument('--restore-backup');p.add_argument('--confirm-restore');args=p.parse_args()
     source_root=Path(__file__).resolve().parent;load_env(source_root/'.env')
+    # `aiba --verify` tests the *live* service over HTTP; it must NOT spin up a second AgentLoop.
+    if args.verify:
+        from diagnostics.verify import main as verify_main
+        raise SystemExit(verify_main(['--live-provider'] if args.live_provider else []))
     root=Path(os.getenv('AIBA_ROOT',source_root)).resolve();data_dir=Path(os.getenv('AIBA_DATA_DIR',root/'agent_system')).resolve()
     if args.setup or args.serve:SetupManager(root,data_dir).ensure_configuration()
     agent=AgentLoop(interactive=not bool(args.prompt or args.serve or args.telegram),auto_approve=args.yes)
