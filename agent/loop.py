@@ -37,7 +37,7 @@ class AgentLoop:
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
         self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
         self.computer=ComputerController(self.settings.desktop_enabled);self.vision=VisionAnalyzer(self.settings.vision_model)
-        self.clarify=Clarify()
+        self.clarify=Clarify(on_pending=self._on_clarify_pending)
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy);self._register_tools()
         legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
         self._seed_legacy_provider();router=IntelligentRouter(self.providers,legacy)
@@ -45,6 +45,21 @@ class AgentLoop:
         self.worker=Worker(self.queue,{'agent_task':lambda payload:{'result':self.handle(payload['prompt'],propose_skill=False,task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'))}});self.scheduler_runner=SchedulerRunner(self.scheduler)
         if start_worker and self.settings.worker_enabled:self.worker.start();self.scheduler_runner.start();self.update_checker.start()
         self.events.subscribe('*',lambda e:self.audit.record('event',**e))
+    def _on_clarify_pending(self, q):
+        """A clarify question went pending awaiting async delivery. Publish it
+        on the event bus so any connector can render it (e.g. Telegram inline
+        buttons) and answer via ``self.clarify.answer(id, choice)``."""
+        try:
+            self.events.publish(
+                "clarify.pending",
+                question_id=q.id,
+                question=q.question,
+                options=q.options,
+            )
+            self.audit.record("clarify_pending", question_id=q.id, question=q.question)
+        except Exception:
+            pass
+
     def _register_tools(self):
         self.registry.register(Tool('list_files','List workspace files.',self.sandbox.list_files,{'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}))
         self.registry.register(Tool('read_file','Read workspace text.',self.sandbox.read_file,{'type':'object','properties':{'path':{'type':'string'}},'required':['path'],'additionalProperties':False}))

@@ -74,11 +74,12 @@ class PendingQuestion:
 
 class Clarify:
     def __init__(self, answer_source: Callable[[PendingQuestion], str] | None = None,
-                 blocking: bool = True, timeout: float = 30.0):
+                 blocking: bool = True, timeout: float = 30.0, on_pending: Callable[[PendingQuestion], None] | None = None):
         self._pending: dict[str, PendingQuestion] = {}
         self._answer_source = answer_source
         self._blocking = blocking
         self._timeout = timeout
+        self._on_pending = on_pending
         self._lock = threading.Lock()
 
     def ask(self, question: str, options: list[dict] | None = None,
@@ -87,8 +88,9 @@ class Clarify:
 
         * ``state == "answered"``: the choice is stored at ``self._pending[qid].answer``.
         * ``state == "pending"``: not answered within the blocking budget; the
-          question is persisted for async delivery and ``ClarificationRequested``
-          is raised so the caller can surface it.
+          question is persisted for async delivery, ``on_pending`` fires so a
+          connector can render it, and ``ClarificationRequested`` is raised so
+          the caller can surface it.
         """
         options = _normalise_options(options)
         q = PendingQuestion(question, options)
@@ -112,6 +114,11 @@ class Clarify:
             if q.wait(wait):
                 return "answered", q.id
         # Persisted pending for async connectors; tell caller to surface it.
+        if self._on_pending is not None:
+            try:
+                self._on_pending(q)
+            except Exception:
+                pass
         raise ClarificationRequested(q.id, f"Clarification pending: {question}")
 
     def answer(self, question_id: str, choice: str) -> bool:

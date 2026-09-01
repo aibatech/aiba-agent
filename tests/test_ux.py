@@ -101,11 +101,37 @@ class _Personal:
         return None
 
 
-class _Agent:
+class _ClarifyStore:
+    """Doubles tools.clarify.Clarify with just answer() for connector tests."""
     def __init__(self):
+        self.answered = []
+
+    def answer(self, question_id, choice):
+        self.answered.append((question_id, choice))
+        return True
+
+
+class _FakeBus:
+    """Minimal EventBus-compatible double shared by connector tests."""
+    def __init__(self):
+        self.handlers = []
+
+    def subscribe(self, t, h):
+        self.handlers.append(h)
+
+    def publish(self, t, **kw):
+        ev = {"type": t, **kw}
+        for h in self.handlers:
+            h(ev)
+
+
+class _Agent:
+    def __init__(self, clarify=None):
         self.prompts = []
         self.crashes = _Crashes()
         self.personal = _Personal()
+        self.clarify = clarify if clarify is not None else _ClarifyStore()
+        self.events = _FakeBus()
 
     def handle(self, prompt, **kwargs):
         self.prompts.append(prompt)
@@ -163,6 +189,44 @@ class TelegramUxTests(unittest.TestCase):
         sent = [d for m, d in calls if m == "sendMessage"]
         self.assertTrue(all(len(d["text"]) <= 4000 for d in sent))
         self.assertGreater(len(sent), 1)
+
+    def test_clarify_callback_answers_pending_question(self):
+        calls = []
+        store = _ClarifyStore()
+        transport = lambda m, d=None: calls.append((m, d)) or {"ok": True, "result": []}
+        c = TelegramConnector(_Agent(clarify=store), "token", {42}, transport)
+        update = {"callback_query": {
+            "id": "q1", "from": {"id": 42},
+            "message": {"chat": {"id": 42}},
+            "data": "clar:abc123:opt2",
+        }}
+        self.assertTrue(c.handle_update(update))
+        self.assertEqual(store.answered, [("abc123", "opt2")])
+
+    def test_clarify_callback_renders_buttons(self):
+        calls = []
+        c = self._conn(calls)
+        c._render_clarify(42, "qid9", "Which option?", [{"id": "a", "text": "Alpha"}, {"id": "b", "text": "Beta"}])
+        sent = [d for m, d in calls if m == "sendMessage"]
+        self.assertEqual(len(sent), 1)
+        markup = json.loads(sent[0]["reply_markup"])
+        rows = markup["inline_keyboard"]
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][0]["callback_data"], "clar:qid9:a")
+        self.assertEqual(rows[1][0]["callback_data"], "clar:qid9:b")
+
+    def test_connect_clarify_subscribes_and_renders(self):
+        calls = []
+        bus = _FakeBus()
+        agent = _Agent()
+        agent.events = bus
+        transport = lambda m, d=None: calls.append((m, d)) or {"ok": True, "result": []}
+        c = TelegramConnector(agent, "token", {42}, transport)
+        c.connect_clarify()
+        bus.publish("clarify.pending", question_id="q1", question="Pick", options=[{"id": "x", "text": "X"}])
+        sent = [d for m, d in calls if m == "sendMessage"]
+        self.assertEqual(len(sent), 1)
+        self.assertIn("inline_keyboard", sent[0]["reply_markup"])
 
 
 if __name__ == "__main__":

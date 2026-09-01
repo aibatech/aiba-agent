@@ -168,9 +168,68 @@ class TelegramConnector:
         return data
 
     def on_callback(self, chat_id: int, data: str) -> str | None:
-        """Extensible callback handler. Return a toast string to send as an
-        ``answerCallbackQuery`` reply, or None to just accept the press."""
+        """Extensible callback handler. Recognises ``clar:<qid>:<choice>`` and,
+        when it matches a pending clarify question, records the choice on the
+        agent so a blocked/in-flight task can resume. Returns a toast string for
+        answerCallbackQuery, or None to just accept the press."""
+        if data.startswith("clar:") and getattr(self.agent, "clarify", None) is not None:
+            parts = data.split(":", 2)
+            if len(parts) == 3:
+                _, qid, choice = parts
+                try:
+                    if self.agent.clarify.answer(qid, choice):
+                        return "Got it."
+                except Exception:
+                    return None
         return f"AIBA noted: {data[:80]}"
+
+    def _render_clarify(self, chat_id: int, question_id: str, question: str, options: list) -> None:
+        """Render a pending clarify question as an inline keyboard. Each option
+        becomes a button carrying ``clar:<qid>:<choice>`` callback data."""
+        from connectors.ux.render import InlineKey, InlineKeyboard
+
+        qid = question_id or ""
+        keys = []
+        for opt in options or []:
+            oid = opt.get("id") if isinstance(opt, dict) else str(opt)
+            text = opt.get("text") if isinstance(opt, dict) else str(opt)
+            if not oid:
+                continue
+            keys.append([InlineKey(text=str(text), callback_data=f"clar:{qid}:{oid}")])
+        if not keys:
+            return
+        kb = InlineKeyboard(keys)
+        try:
+            self.send_keyboard(chat_id, question, kb)
+        except Exception:
+            pass
+
+    def connect_clarify(self) -> None:
+        """Subscribe the connector to the agent's ``clarify.pending`` bus events
+        so inline questions are rendered as buttons in this chat (if the owner's
+        chat is known). Cheap and safe: only listeners, never sends unless a
+        question is actually pending."""
+        events = getattr(self.agent, "events", None)
+        if events is None:
+            return
+
+        def handler(event):
+            if not event:
+                return
+            owner_id = next(iter(self.allowed_users), None)
+            if owner_id is None:
+                return
+            self._render_clarify(
+                int(owner_id),
+                event.get("question_id", ""),
+                event.get("question", ""),
+                event.get("options", []),
+            )
+
+        try:
+            events.subscribe("clarify.pending", handler)
+        except Exception:
+            pass
 
     def run(self) -> None:
         delay = 1
@@ -186,6 +245,7 @@ class TelegramConnector:
     def start(self) -> None:
         if self.thread and self.thread.is_alive():
             return
+        self.connect_clarify()
         self.thread = threading.Thread(target=self.run, name="aiba-telegram", daemon=True)
         self.thread.start()
 
