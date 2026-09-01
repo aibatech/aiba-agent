@@ -7,6 +7,7 @@ from approvals.manager import ApprovalManager
 from tools.base import Tool,ToolResult
 from tools.sandbox import Sandbox
 from tools.browser import browser_fetch
+from tools.clarify import Clarify, ClarifyToolFactory
 from tools.registry import ToolRegistry
 from memory.vault import MemoryVault
 from memory.retrieval import RetrievalEngine
@@ -36,6 +37,7 @@ class AgentLoop:
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
         self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
         self.computer=ComputerController(self.settings.desktop_enabled);self.vision=VisionAnalyzer(self.settings.vision_model)
+        self.clarify=Clarify()
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy);self._register_tools()
         legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
         self._seed_legacy_provider();router=IntelligentRouter(self.providers,legacy)
@@ -60,6 +62,7 @@ class AgentLoop:
         self.registry.register(Tool('list_skills','List reusable skills.',lambda:ToolResult(True,self.skills.list()),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('skill_instructions','Read a reviewed portable skill instruction contract.',lambda name:ToolResult(True,self.skills.instructions(name)),{'type':'object','properties':{'name':{'type':'string'}},'required':['name'],'additionalProperties':False}))
         self.registry.register(Tool('run_skill','Run a reviewed reusable skill.',lambda name,variables=None:ToolResult(True,self.skills.execute(name,self.registry,variables or {})),{'type':'object','properties':{'name':{'type':'string'},'variables':{'type':'object'}},'required':['name'],'additionalProperties':False}))
+        self.registry.register(ClarifyToolFactory.make(self.clarify))
         self.registry.register(Tool('enqueue_task','Queue a background task.',lambda prompt:ToolResult(True,{'job_id':self.queue.enqueue('agent_task',{'prompt':prompt})}),{'type':'object','properties':{'prompt':{'type':'string'}},'required':['prompt'],'additionalProperties':False}))
         self.registry.register(Tool('schedule_task','Schedule a recurring task.',lambda name,prompt,interval_seconds:ToolResult(True,{'schedule_id':self.scheduler.add_interval(name,'agent_task',{'prompt':prompt},int(interval_seconds))}),{'type':'object','properties':{'name':{'type':'string'},'prompt':{'type':'string'},'interval_seconds':{'type':'integer'}},'required':['name','prompt','interval_seconds'],'additionalProperties':False}))
     def _seed_legacy_provider(self):
