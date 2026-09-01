@@ -1,0 +1,11 @@
+[Unit]
+Description=AIBA Agent
+After=network.target docker.service
+[Service]
+Type=simple
+WorkingDirectory=/opt/aiba-agent
+ExecStart=/opt/aiba-agent/.venv/bin/python aiba_launcher.py --serve --host 127.0.0.1 --port 8765
+Restart=always
+EnvironmentFile=/opt/aiba-agent/.env
+[Install]
+WantedBy=multi-user.target

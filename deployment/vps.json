@@ -1,0 +1,9 @@
+[
+  {"id":"digitalocean","name":"DigitalOcean","console_url":"https://cloud.digitalocean.com/droplets/new","minimum":"Ubuntu 24.04, 2 vCPU, 4 GB RAM"},
+  {"id":"aws","name":"AWS EC2","console_url":"https://console.aws.amazon.com/ec2/home#LaunchInstances:","minimum":"Ubuntu 24.04, t3.medium or larger"},
+  {"id":"gcp","name":"Google Cloud","console_url":"https://console.cloud.google.com/compute/instancesAdd","minimum":"Ubuntu 24.04, e2-medium or larger"},
+  {"id":"azure","name":"Microsoft Azure","console_url":"https://portal.azure.com/#create/Microsoft.VirtualMachine","minimum":"Ubuntu 24.04, B2s or larger"},
+  {"id":"hetzner","name":"Hetzner Cloud","console_url":"https://console.hetzner.cloud/","minimum":"Ubuntu 24.04, CPX21 or larger"},
+  {"id":"vultr","name":"Vultr","console_url":"https://my.vultr.com/deploy/","minimum":"Ubuntu 24.04, 2 vCPU, 4 GB RAM"},
+  {"id":"linode","name":"Akamai Linode","console_url":"https://cloud.linode.com/linodes/create","minimum":"Ubuntu 24.04, Shared 4 GB or larger"}
+]

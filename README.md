@@ -1,2 +1,148 @@
-# aiba-agent
-Free, self-hosted AI agent runtime with memory, tools, multiple AI providers and intelligent routing
+# AIBA Agent v1.4 Release Candidate
+
+AIBA is a self-hosted autonomous-agent runtime designed as a deployable alternative to OpenClaw and Hermes. It provides bounded model/tool reasoning, durable memory, workspace operations, human approvals, persistent jobs, schedules, reusable skills, an authenticated API, live events, a dashboard, Telegram and WhatsApp communication, and optional browser, vision, and desktop adapters.
+
+## Telegram and WhatsApp
+
+Telegram uses long polling, so it can run from a computer behind a home router without opening a public port. Create a bot with Telegram's official `@BotFather`, add its token and the numeric owner ID to `.env`, and then either run `python main.py --telegram` or set `AIBA_TELEGRAM_ENABLED=true` while running `python main.py --serve`.
+
+```env
+AIBA_TELEGRAM_ENABLED=true
+AIBA_TELEGRAM_BOT_TOKEN=replace_me
+AIBA_TELEGRAM_ALLOWED_USERS=123456789
+```
+
+WhatsApp uses Meta's official WhatsApp Cloud API. Configure a Meta app and business phone number, route an HTTPS webhook to `/v1/connectors/whatsapp/webhook`, subscribe it to WhatsApp `messages`, and use the same value for Meta's webhook verification token and `AIBA_WHATSAPP_VERIFY_TOKEN`.
+
+```env
+AIBA_WHATSAPP_ENABLED=true
+AIBA_WHATSAPP_ACCESS_TOKEN=replace_me
+AIBA_WHATSAPP_PHONE_NUMBER_ID=replace_me
+AIBA_WHATSAPP_VERIFY_TOKEN=replace_with_a_long_random_value
+AIBA_WHATSAPP_APP_SECRET=replace_me
+AIBA_WHATSAPP_ALLOWED_NUMBERS=15551234567
+```
+
+Both connectors accept private text only from explicit owner allowlists. WhatsApp webhooks require Meta's `X-Hub-Signature-256`, duplicate message IDs are ignored, connector secrets remain in the local `.env`, and replies are sent without rich-text parsing. Remote messages use AIBA's non-interactive security posture: approval-requiring tools remain denied rather than being automatically approved.
+
+## Production posture
+
+v1.4 includes the v1.3 production-gate automation plus owner-authenticated Telegram and WhatsApp communication. Its operational foundation includes versioned database migrations, verified backup/restore, local crash reports and metrics, readiness checks, cross-platform certification, opt-in live-provider tests, load/soak testing, security scanning, portable skill contracts, and credential-gated signed releases.
+
+The repository is release-candidate capable, not automatically Certified. `PRODUCTION_GATE.md` is authoritative. A platform or provider receives a Certified label only after its generated evidence passes on the actual target. Code-signing workflows intentionally fail when owner-controlled certificates are absent.
+
+## Install
+
+- **Windows:** double-click `Install-AIBA-Windows.bat` (Python 3.11+ required).
+- **macOS:** right-click `Install-AIBA-macOS.command`, choose Open, and approve it (Python 3.11+ required).
+- **Linux:** run `chmod +x install-linux.sh && ./install-linux.sh` (Python 3.11+ required).
+- **Docker:** run `install-aiba-docker.sh`, or double-click `Install-AIBA-Docker.bat` on Windows (Docker Desktop/Engine required).
+
+Every installer creates a private API token and credential-encryption key, performs a health diagnosis, starts AIBA, and opens the first-run provider wizard. Secrets remain on the installation.
+
+## Updates and VPS deployment
+
+Native installs can periodically check an HTTPS update manifest, verify the archive SHA-256, stage it, and apply it safely on restart while retaining a local backup. Configure `AIBA_UPDATE_MANIFEST_URL`; set `AIBA_AUTO_UPDATE=false` for notify-only mode.
+
+The dashboard includes launch buttons for major VPS providers. After publishing a release, set `AIBA_RELEASE_URL` and `AIBA_RELEASE_SHA256` to enable a downloadable cloud-init installer. Docker installations update by rebuilding or pulling the image, preserving the data volume.
+
+Run `python main.py --doctor` at any time for clear, machine-readable errors and suggested fixes.
+
+## Model Provider Manager
+
+Users can add unlimited provider connections and models from the dashboard or API. Supported presets include OpenAI, Anthropic, Google Gemini, xAI, OpenRouter, Groq, Mistral, DeepSeek, Together AI, Perplexity, Azure OpenAI, AWS Bedrock, Ollama, LM Studio, and custom OpenAI-compatible endpoints.
+
+- API keys can be read from environment variables or encrypted in `providers.db` with `AIBA_MASTER_KEY`.
+- Plaintext stored keys are never returned by the API or dashboard.
+- Models carry capabilities such as `text`, `tools`, `code`, and `vision`, context-window metadata, priorities, and per-million-token prices.
+- Auto routing classifies coding, research, vision, creative, reasoning, and general tasks.
+- Routing strategies include Balanced, Quality, Lowest Cost, Lowest Latency, and Manual.
+- Rules support required capabilities, preferred model order, and cost ceilings.
+- Failed requests automatically fall through to the next eligible model.
+- Provider health moves through unknown, healthy, degraded, and unhealthy states.
+- Usage records capture provider, model, task type, tokens, estimated cost, latency, success, and errors.
+- Provider connection tests, remote model discovery, route previews, and 1–365 day usage summaries are available through authenticated endpoints.
+
+The Community Runtime has no artificial provider or model limits. It remains a single-owner, self-hosted AIBA runtime; multi-tenant organization policy belongs in the separate private AIBA Nexus platform.
+
+## Security foundation
+
+- bearer authentication is mandatory for every task, job, skill, and event endpoint;
+- non-loopback API binding is rejected without a token;
+- WebSockets authenticate before accepting a connection;
+- API rate limits and prompt-size limits are enforced;
+- browser requests reject credentials, local addresses, private networks, and unsafe redirect/subresource targets;
+- shell and Python execution require the isolated Docker sandbox;
+- tool arguments are validated and tool failures are contained;
+- OpenAI, Anthropic, Ollama, and OpenAI-compatible providers receive native tool schemas;
+- the container runs as a non-root user with dropped capabilities and a read-only root filesystem;
+- data, tasks, jobs, schedules, reflections, and audit records survive restarts.
+
+No autonomous agent can be declared secure for every environment without an operator threat model. Before public deployment, put AIBA behind TLS, use a secrets manager, review `config/permissions.json`, keep computer control disabled unless needed, and run untrusted code only with `AIBA_SANDBOX_MODE=docker` on a host configured for nested containers.
+
+## Quick start
+
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install -e '.[api]'
+cp .env.example .env
+export AIBA_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export AIBA_MASTER_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+python main.py --serve
+```
+
+Open `http://127.0.0.1:8765`. The dashboard asks for the token in-memory and queues tasks through `/v1/tasks`.
+
+For model reasoning:
+
+```bash
+export AIBA_PROVIDER=openai
+export AIBA_MODEL=gpt-4.1-mini
+export OPENAI_API_KEY=...
+python main.py --prompt "Inspect the workspace and summarize it"
+```
+
+Legacy environment configuration still supports `local`, `openai`, `anthropic`, `openai_compatible`, and `ollama`. After startup, add any number of provider accounts and models from the dashboard. Local mode supports `/files`, `/remember TEXT`, and `/recall QUERY` without external services.
+
+## Docker deployment
+
+```bash
+cd deployment
+export AIBA_API_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+export AIBA_MASTER_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+docker compose up --build -d
+```
+
+Compose binds to localhost by default. Terminate TLS at a trusted reverse proxy before exposing it publicly.
+
+## API
+
+```bash
+curl http://127.0.0.1:8765/health
+curl -X POST http://127.0.0.1:8765/v1/tasks \
+  -H "Authorization: Bearer $AIBA_API_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"List the workspace files","background":true}'
+```
+
+Poll `/v1/jobs/{job_id}`. Live authenticated events are available at `/v1/events`.
+
+Provider management endpoints are available under `/v1/providers`, `/v1/models`, `/v1/routing/rules`, `/v1/routing/preview`, and `/v1/usage`. When an API token is configured, interactive OpenAPI documentation is available at `/docs`.
+
+## Execution and approvals
+
+File access is constrained to `agent_system/workspace`. Sensitive tools require approval by default. Non-interactive API jobs deny approval-requiring actions; this is intentional. Create reviewed skills or adjust the permissions policy for narrowly defined unattended workflows.
+
+Docker sandbox mode mounts only the workspace, disables networking by default, and applies CPU/memory limits. Do not mount the host root or a Docker socket into the AIBA application container.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+python -m compileall -q .
+```
+
+The suite covers path isolation, blocked commands, memory sync/retrieval, task persistence, token storage, queue recovery, scheduling, skills, model-native tool calls, argument validation, and private-network browser blocking.
+
+See `SECURITY.md`, `DEPLOYMENT.md`, and `VALIDATION.md` for the operational checklist and release evidence.

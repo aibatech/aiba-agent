@@ -1,0 +1,21 @@
+services:
+  aiba:
+    build: ..
+    init: true
+    ports: ["127.0.0.1:8765:8765"]
+    volumes: ["aiba-data:/app/agent_system"]
+    environment:
+      AIBA_API_TOKEN: ${AIBA_API_TOKEN:?Set a strong AIBA_API_TOKEN}
+      AIBA_MASTER_KEY: ${AIBA_MASTER_KEY:?Set a strong AIBA_MASTER_KEY}
+      AIBA_PROVIDER: ${AIBA_PROVIDER:-local}
+      AIBA_MODEL: ${AIBA_MODEL:-gpt-4.1-mini}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AIBA_SANDBOX_MODE: local
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=128m"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    restart: unless-stopped
+volumes:
+  aiba-data:

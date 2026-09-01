@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "defaults": {"requires_approval": true},
+  "tools": {
+    "list_files": {"enabled": true, "requires_approval": false},
+    "read_file": {"enabled": true, "requires_approval": false},
+    "write_file": {"enabled": true, "requires_approval": true},
+    "delete_file": {"enabled": true, "requires_approval": true},
+    "run_shell": {"enabled": true, "requires_approval": true},
+    "run_python": {"enabled": true, "requires_approval": true},
+    "remember": {"enabled": true, "requires_approval": true},
+    "search_memory": {"enabled": true, "requires_approval": false},
+    "browser_fetch": {"enabled": false, "requires_approval": true},
+    "desktop_screenshot": {"enabled": false, "requires_approval": true},
+    "desktop_click": {"enabled": false, "requires_approval": true},
+    "desktop_type": {"enabled": false, "requires_approval": true},
+    "vision_analyze": {"enabled": false, "requires_approval": true},
+    "list_skills": {"enabled": true, "requires_approval": false},
+    "run_skill": {"enabled": true, "requires_approval": true},
+    "schedule_task": {"enabled": true, "requires_approval": true},
+    "enqueue_task": {"enabled": true, "requires_approval": true}
+  },
+  "blocked_command_fragments": ["rm -rf /", "mkfs", ":(){:|:&};:", "shutdown", "reboot", "dd if=", "chmod -R 777 /", "curl | sh", "wget | sh"]
+}

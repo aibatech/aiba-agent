@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.env
+agent_system/aiba.db
+agent_system/logs/*.jsonl
+agent_system/workspace/*
+!agent_system/workspace/.gitkeep

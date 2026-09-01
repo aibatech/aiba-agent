@@ -1,0 +1,17 @@
+name: Authorized Live Provider Certification
+on: {workflow_dispatch: {inputs: {providers: {description: 'Comma-separated providers to test (incurs API usage)',required: true,type: string}}}}
+jobs:
+  live:
+    environment: live-provider-certification
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install -e .[api]
+      - run: python tests/e2e_live_providers.py --providers '${{ inputs.providers }}'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
