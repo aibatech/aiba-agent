@@ -1,5 +1,4 @@
 {
-  "typeshedPath": "/home/jay/.hermes/lsp/node_modules/pyright/dist/typeshed-fallback",
   "venvPath": ".",
   "venv": ".venv",
   "pythonVersion": "3.11",
@@ -13,11 +12,9 @@
   ],
   "exclude": [
     "build",
+    "tests",
     "**/.venv",
     "**/node_modules",
     "**/.pytest_cache"
-  ],
-  "ignore": [
-    "tests"
   ]
 }

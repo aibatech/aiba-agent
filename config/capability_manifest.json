@@ -1,7 +1,7 @@
 {
   "$schema": "./capability_manifest.schema.json",
   "version": 1,
-  "description": "Authoritative capability manifest for AIBA. Every registered tool MUST have an entry here before it can be enabled in config/permissions.json. Optional per-tool fields: feature_flag, optional_dependency (or 'needs:<executable>'), internal_only (bool, default false) to mark a tool as registered purely for internal use so it is never advertised to the model. See docs/PLAN_v1.6_capability_parity.md.",
+  "description": "Authoritative capability manifest for AIBA. Every registered tool MUST have an entry here before it can be enabled in config/permissions.json. Optional per-tool fields: feature_flag, optional_dependency (probe label: 'python:<module>' | 'binary:<exe>' | 'none'; unknown probe types FAIL CLOSED so a missing dependency can never report ready), internal_only (bool, default false) to mark a tool as registered purely for internal use so it is never advertised to the model. See docs/PLAN_v1.6_capability_parity.md.",
   "risk_classes": {
     "read_only_local": "Read or inspect local workspace data; no mutation. Approval not required.",
     "read_only_network": "Read-only public network access; strictly SSRF-safe against private/loopback/credential targets. Approval not required.",
@@ -115,7 +115,7 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_BROWSER_ENABLED",
-      "optional_dependency": "browser automation engine (playwright/nebuia)"
+      "optional_dependency": "python:playwright"
     },
     "desktop_screenshot": {
       "description": "Capture desktop screenshot.",
@@ -123,7 +123,7 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_DESKTOP_ENABLED",
-      "optional_dependency": "paired computer-control node (AIBA_DESKTOP_ENABLED)"
+      "optional_dependency": "python:pyautogui"
     },
     "desktop_click": {
       "description": "Click screen coordinates.",
@@ -131,7 +131,7 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_DESKTOP_ENABLED",
-      "optional_dependency": "paired computer-control node (AIBA_DESKTOP_ENABLED)"
+      "optional_dependency": "python:pyautogui"
     },
     "desktop_type": {
       "description": "Type text into active window.",
@@ -139,7 +139,7 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_DESKTOP_ENABLED",
-      "optional_dependency": "paired computer-control node (AIBA_DESKTOP_ENABLED)"
+      "optional_dependency": "python:pyautogui"
     },
     "vision_analyze": {
       "description": "Analyze a workspace image.",
@@ -147,7 +147,7 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_VISION_ENABLED",
-      "optional_dependency": "vision-capable model"
+      "optional_dependency": "none"
     },
     "list_skills": {
       "description": "List reusable skills.",

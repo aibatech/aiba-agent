@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from scripts.validate_capabilities import validate_files  # type: ignore[import-not-found]
-from diagnostics.capabilities import build_report, flag_is_on, load_manifest
+from diagnostics.capabilities import _dep_satisfied, build_report, flag_is_on, load_manifest
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -136,6 +136,70 @@ class CapabilityDiagnosticsTests(unittest.TestCase):
         self.assertTrue(report.by_name()["list_files"].ready)
         self.assertTrue(report.by_name()["read_file"].ready)
         self.assertTrue(report.by_name()["clarify"].ready)
+
+
+class DependencyProbeTests(unittest.TestCase):
+    """Task: optional-dependency labels must fail closed on unknown probe types
+    and reflect the real environment (importlib find_spec / shutil.which)."""
+
+    def test_installed_python_dependency_satisfied(self):
+        # importlib.util works right now -> satisfied.
+        self.assertTrue(_dep_satisfied("python:importlib.util"))
+
+    def test_installed_binary_dependency_satisfied(self):
+        self.assertTrue(_dep_satisfied("binary:python"))
+
+    def test_missing_python_dependency_unavailable(self):
+        self.assertFalse(_dep_satisfied("python:definitely_not_a_real_module_xyz"))
+
+    def test_missing_binary_dependency_unavailable(self):
+        self.assertFalse(_dep_satisfied("binary:definitely_not_a_real_binary_xyz"))
+
+    def test_none_dependency_always_satisfied(self):
+        self.assertTrue(_dep_satisfied("none"))
+        self.assertTrue(_dep_satisfied(""))
+
+    def test_unknown_probe_type_fails_closed(self):
+        # Unknown probe types must NOT silently report ready.
+        self.assertFalse(_dep_satisfied("needs:python"))           # legacy syntax
+        self.assertFalse(_dep_satisfied("frobnicate:python"))       # unknown type
+        self.assertFalse(_dep_satisfied("docker"))                  # no colon at all
+        self.assertFalse(_dep_satisfied("python:"))                 # empty target
+
+    def test_build_report_uses_probe_for_ready(self):
+        # A tool whose manifest declares a dependency on a missing module must
+        # be reported unavailable, not ready.
+        manifest = {"version": 1, "tools": {
+            "web_search": {
+                "description": "x", "risk_class": "read_only_network",
+                "default_enabled": True, "requires_approval": False,
+                "feature_flag": "none", "optional_dependency": "python:definitely_not_a_real_module_xyz",
+            }
+        }}
+        perms = {"version": 1, "tools": {"web_search": {"enabled": True, "requires_approval": False}}}
+        report = build_report(manifest, perms, {"web_search"})
+        e = report.by_name()["web_search"]
+        self.assertFalse(e.ready)
+        self.assertFalse(e.dep_satisfied)
+        self.assertIn("optional dependency", e.reason)
+
+    def test_build_report_probe_override_injected(self):
+        # Injecting a probe lets the caller control dependency resolution; a
+        # False probe must make the tool unavailable and not silently ready.
+        manifest = {"version": 1, "tools": {
+            "web_search": {
+                "description": "x", "risk_class": "read_only_network",
+                "default_enabled": True, "requires_approval": False,
+                "feature_flag": "none", "optional_dependency": "binary:whatever",
+            }
+        }}
+        perms = {"version": 1, "tools": {"web_search": {"enabled": True, "requires_approval": False}}}
+        report = build_report(manifest, perms, {"web_search"},
+                              dependency_probe=lambda dep: dep == "binary:whatever")
+        self.assertTrue(report.by_name()["web_search"].ready)
+        report2 = build_report(manifest, perms, {"web_search"},
+                               dependency_probe=lambda dep: False)
+        self.assertFalse(report2.by_name()["web_search"].ready)
 
 
 if __name__ == "__main__":

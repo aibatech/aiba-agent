@@ -17,6 +17,7 @@ states the single most actionable reason it is unavailable.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import shutil
@@ -97,18 +98,39 @@ class CapabilityReport:
 def _dep_satisfied(dependency: str) -> bool:
     """Return True if an optional dependency is present.
 
-    ``dependency`` may be ``""`` (always satisfied) or a label such as
-    ``"browser automation engine (playwright/nebuia)"``. We resolve a small
-    allowlist of known binaries/commands; anything else we conservatively
-    treat as satisfied (the dependency note is informational, not a hard gate)
-    unless a magic marker ``needs:<executable>`` is present.
+    ``dependency`` must be an explicit probe label of the form
+    ``<type>:<target>`` where type is one of:
+
+    * ``python:<module>``  — importable package (importlib.util.find_spec)
+    * ``binary:<exe>``      — executable on PATH (shutil.which)
+    * ``none``              — no dependency (always satisfied)
+    * ``""``                — no dependency (always satisfied)
+
+    Any unknown probe type FAILS CLOSED (returns False), so a mis-typed or
+    future probe can never silently report a tool ready when its runtime
+    dependency is actually missing. Callers should surface the failure as an
+    actionable diagnostic ("requires optional dependency X (unknown probe
+    type Y)") rather than treating the tool as available.
     """
-    if not dependency:
+    if not dependency or dependency.strip().lower() == "none":
         return True
-    if dependency.startswith("needs:"):
-        exe = dependency.split(":", 1)[1].strip()
-        return shutil.which(exe) is not None
-    return True
+    dep = dependency.strip()
+    if ":" not in dep:
+        # No colon => not a valid probe label => fail closed.
+        return False
+    probe_type, target = dep.split(":", 1)
+    probe_type = probe_type.strip().lower()
+    target = target.strip()
+    if not target:
+        return False
+    if probe_type == "python":
+        try:
+            return importlib.util.find_spec(target) is not None
+        except (ModuleNotFoundError, ValueError, ImportError):
+            return False
+    if probe_type == "binary":
+        return shutil.which(target) is not None
+    return False
 
 
 def load_manifest(path: Path | str | None = None) -> dict[str, Any]:

@@ -37,6 +37,16 @@ jobs:
       - run: python -m pip_audit --strict -r requirements.txt
       - run: bandit -q -lll -r . -x ./tests
       - run: python scripts/secret_scan.py
+  capabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12', cache: pip}
+      - run: python -m pip install -e ".[api]"
+      - run: python -m pip install "pyright==1.1.411"
+      - run: python scripts/validate_capabilities.py
+      - run: pyright
   container:
     runs-on: ubuntu-latest
     steps:
