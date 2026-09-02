@@ -1,6 +1,6 @@
 # AIBA v1.6 — Capability Parity: Engineering Plan + Capability Matrix + Timeline
 
-**Status:** IN PROGRESS — Phases 1, 2, 4, 5, 6, 10 implemented and tested. See §"Implementation Status Log".
+**Status:** IN PROGRESS — Phases 1, 2, 4, 4b, 5, 6, 10 implemented and tested. See §"Implementation Status Log".
 **Branch:** `feat/aiba-v1.6-capability-parity` (07 commits + growing)
 **Live install:** v1.5.0 untouched. Not restarted, not modified.
 **Date:** 2026-09-02
@@ -105,20 +105,20 @@ Legend: `A=AIBA v1.5 today` · `H=Hermes Agent` · `O=OpenClaw` · `T=v1.6 targe
 | Supervisor verifies consequential results | ◑ | ◑ | ◑ | **→** | Partial existing "verify" ethos; formalize. |
 | Full audit trail + failure recovery | ◑ | ✅ | ✅ | **→** | Reuse `AuditLog` + crash reporter. |
 
-### PHASE 4 — Web + browser tools
+### PHASE 4 — Web + browser  *(4b = opt-in browser session; ✅ implemented)*
 | Capability | A | H | O | T | Evidence |
 |---|---|---|---|---|---|
 | `web_search` (configurable provider; title/url/snippet/date/source) | ❌ | ✅ | ✅ | **→** | Provider abstraction (duckduckgo/brave/tavily/searx) + normalized result shape. |
 | `web_extract` / page extraction | ❌ | ✅ | ✅ | **→** | readability/Playwright text+markdown extraction. |
-| Browser persistent sessions | ❌ | ✅ | ✅ | **→** | Context storage/index on disk. |
-| Text/accessibility snapshot | ❌ | ◑ | ✅ | **→** | aria/accessibility snapshot where supported. |
+| Browser persistent sessions | ❌ | ✅ | ✅ | **→** | ✅ 4b `tools/browser_session.py` — persistent opt-in Playwright session. |
+| Text/accessibility snapshot | ❌ | ◑ | ✅ | **→** | ✅ 4b `browser_page_text` + `browser_state` (URL/title). |
 | Vision fallback | ◑ | ✅ | ✅ | **→** | Reuse `vision_analyze`. |
-| Download management | ❌ | ◑ | ✅ | **→** | Downloads dir + wait/list. |
-| Timeouts & cancellation | ◑ | ✅ | ✅ | **→** | AIBA has a 30s goto timeout; generalize. |
-| SSRF protection (block private/localhost by default) | ✅ | ✅ | ✅ | **→** | AIBA `_public_url` already blocks; keep + test. |
+| Download management | ❌ | ◑ | ✅ | **→** | ✅ 4b `browser_download` → saved into workspace only. |
+| Timeouts & cancellation | ◑ | ✅ | ✅ | **→** | ✅ 4b bounded timeouts (`timeout_ms`, default 20s). |
+| SSRF protection (block private/localhost by default) | ✅ | ✅ | ✅ | **→** | ✅ 4b — shared `security.urlguard` policy (identical to computer control). |
 | Domain allow/deny lists | ❌ | ✅ | ◑ | **→** | Policy lists. |
-| Approval before login/submit/purchase/delete/consequential | ◑ | ✅ | ✅ | **→** | Reuse `approvals`; extend to web actions. |
-| Don't leak cookies/credentials to model | ◑ | ✅ | ✅ | **→** | Redact from browser output. |
+| Approval before login/submit/purchase/delete/consequential | ◑ | ✅ | ✅ | **→** | ✅ 4b — mutations `requires_approval` + sensitive-page gate. |
+| Don't leak cookies/credentials to model | ◑ | ✅ | ✅ | **→** | ✅ 4b — secrets refused by default + never logged. |
 
 ### PHASE 5 — Computer control + paired node
 | Capability | A | H | O | T | Evidence |
@@ -245,6 +245,15 @@ General:
 - Extend `tools/browser.py` → `tools/web.py`: persistent session (on-disk storage), navigation, snapshot/accessibility, vision fallback (reuse vision_analyze), downloads dir, timeout/cancel, **SSRF guard (keep `_public_url`, now tested)**, domain allow/deny from policy, approval for consequential actions, cookie/credential redaction.
 - Tests: SSRF blocks localhost/private, approval enforced, domain lists, download flow, no-credential-leak.
 
+### Phase 4b (Opt-in automated browser session)
+- New `security/urlguard.py`: extract the SSRF/safe-URL policy out of `computer/controller.py` into the single authoritative module, and make computer control delegate to it — so browser navigation and computer control can never drift apart in their protections.
+- New `tools/browser_session.py`: a persistent, opt-in browser surface on Playwright behind an injectable `Driver` (the real driver opens a **headless** Chromium; automated tests inject fakes — never launch a real browser on CI). Capability family:
+  - read-only: `browser_open` (SSRF-guarded to public http(s)), `browser_state`, `browser_page_text`, `browser_screenshot`, `browser_wait`, `browser_status`
+  - mutations (approval required): `browser_scroll`, `browser_click`, `browser_type`, `browser_select`, `browser_submit`, `browser_download`, `browser_upload`
+- Disabled by default (feature flag `AIBA_BROWSER_ENABLED` + manifest `default_enabled:false` + `permissions.json` all `enabled:false`). Mutations additionally `requires_approval` and refuse on sensitive (auth/payment/checkout/account/purchase) pages unless the owner opts into `sensitive_actions`; secret-bearing typed text is refused by default and never logged (length + redacted flag only). Downloads land only in the approved workspace (basename sanitised); uploads read only files already in the workspace; all navigation and every subresource request is routed through the shared URL guard (forbidden targets aborted); bounded timeouts; full audit.
+- Keep `browser_fetch` registered for backwards compatibility alongside the new family.
+- Tests: same-policy-as-computer-control, blocked/allowed target lists, disabled-by-default registration/denial at the AgentLoop layer (13 tools registered, hidden from model schemas, clear denial on direct execute, feature flag AND permissions each independently block), read/mutation separation, sensitive-page refusal, secret handling (refused by default + never logged; allowed-then-still-redacted when opted in), upload/download workspace containment.
+
 ### Phase 5 (Computer + Node) — largest, split into two steps
 - 5a (local): expand `computer/controller.py` to full toolset (screen_snapshot, accessibility_tree, list/focus windows, click/double/right/type/keypress/hotkey/scroll/drag/move_pointer, clipboard read/write, wait_for_element, locate_text). Keep disabled-by-default; per-tool perms; **emergency stop**, **max-action count**, screen/clipboard privacy + secret-field detection; never read password/credential fields; full audit. `doctor` tells user when no GUI session.
 - Tests: disabled-by-default, per-tool perm, e-stop, max-actions, secret-field detection, audit.
@@ -342,7 +351,8 @@ Ground rule upheld: a phase is only marked **implemented** once its code is comm
 | **1 — Telegram UX** | ✅ Implemented | `connectors/ux/render.py` (markdown renderer, smart chunker, inline keyboards, typing-heartbeat); `connectors/telegram.py` typing heartbeat start/stop per task, `send_keyboard`/`send_payload`, callback-query routing + `on_callback` hook, `getUpdates` now accepts `callback_query` | `tests/test_ux.py` (16) |
 | **2 — Visible reasoning** | ✅ Implemented | `reasoning/protocol.py` — typed/versioned `aiba.reasoning` event envelope, 5 sanitised kinds (plan/tool/result/final/error), secret redaction + output truncation (no CoT leak); wired into `reasoning/engine.py` + `agent/loop.py` → emits to the existing `EventBus` on every task | `tests/test_protocol.py` (10) |
 | **3 — Real subagents** | ⬜ Not started | — (needs parallel worker architecture) | — |
-| **4 — Web + browser** | ✅ Implemented (web tools) | `tools/web.py` — `web_search` (DuckDuckGo no-API-key backend, fixed allowlisted host → no SSRF from query) + `web_extract` (up to 5 pages, reuses `_public_url` guard → blocks private/loopback/credential URLs); `AIBA_WEB_ENABLED` setting; registered in loop. Browser *session* model (persistent nav, allow/deny lists) still partial-future | `tests/test_web.py` (13) |
+| **4 — Web + browser** | ✅ Implemented (web tools) | `tools/web.py` — `web_search` (DuckDuckGo no-API-key backend, fixed allowlisted host → no SSRF from query) + `web_extract` (up to 5 pages, reuses `_public_url` guard → blocks private/loopback/credential URLs); `AIBA_WEB_ENABLED` setting; registered in loop. Browser *session* model shipped as **Phase 4b** below | `tests/test_web.py` (13) |
+| **4b — Opt-in browser automation** | ✅ Implemented | `security/urlguard.py` — single shared SSRF/safe-URL policy (schemes: only http(s); blocks loopback/link-local/RFC-1918 private/CGNAT/multicast/reserved + numeric/hex/octal/flat-int IPv4 aliases + IPv6 loopback/link-local/ULA + `localhost`/`*.localhost`/`metadata.google.internal`/`*.local`), extracted from `computer/controller.py` which now delegates to it so **browser navigation and computer control share one policy**. `tools/browser_session.py` — persistent opt-in Playwright session behind injectable `Driver` (real headless Chromium; subresource requests to forbidden targets aborted via `page.route`): read-only family (`browser_open`/`_state`/`_page_text`/`_screenshot`/`_wait`/`_status`) is separated from site-altering mutations (`_scroll`/`_click`/`_type`/`_select`/`_submit`/`_download`/`_upload`). Defaults: disabled (feature flag `AIBA_BROWSER_ENABLED` + manifest `default_enabled:false` + `permissions.json` all `enabled:false`); mutations `requires_approval:true`; sensitive-page guard refuses mutations on auth/payment/checkout/account pages unless owner opts `sensitive_actions`; secret-like typed text refused by default and **never logged** (length only, `redacted` flag); downloads saved into workspace with basename sanitisation; uploads read only files already inside the workspace; bounded timeouts; full audit. `browser_fetch` kept for backward compatibility. | `tests/test_browser_security.py` (19) + `tests/test_capability_integration.py` Phase4b wiring (5) |
 | **5 — Computer control + nodes** | ✅ Implemented (5a local gate+node; 5b remote-node manual) | `computer/node.py` — `ComputerNodeGate` (pair-only-digest, enable/disable, emergency stop persisted across reload, revoke, max-action budget, clipboard/process opt-in), `computer/controller.py` — full opt-in safe toolset (screen/move/click/drag/scroll/key/hotkey/type/open_url/clipboard/process) behind the gate; argv-only dispatch (no shell strings), SSRF-safe `_forbidden_open_target` (loopback/RFC-1918/metadata/aliases/non-http), clipboard returns length marker not content, secret-typed text never logged; `computer/__init__.py` `make_computer(settings, audit)`; 13 `desktop_*` tools registered in loop, all disabled by default (feature-flag + `permissions.json` master gate + gate refuses until paired+enabled); CLI `--computer-pair/status/enable/disable/stop/reset-budget`. Pairing of a real remote node (5b) remains manual/CI-optional — needs a real target machine. | `tests/test_computer.py` (22) + `tests/test_capability_integration.py` Phase5 wiring (4) |
 | **6 — Term/file/process parity** | ✅ Implemented (file additions) | `tools/sandbox.py` — `patch_file` (atomic find-and-replace + diff, block ambiguous/missing), `archive` (zip/tar/gztar, written inside workspace), `extract_archive` (zip/tar, **zip-slip blocked**); registered in loop. Terminal/process lifecycle (SSH, process mgmt) still future | `tests/test_sandbox.py` (10) |
 | **7 — MCP client** | ⬜ Not started | — | — |
@@ -350,10 +360,11 @@ Ground rule upheld: a phase is only marked **implemented** once its code is comm
 | **9 — Memory/skills/sessions** | ⬜ Not started | — | — |
 | **10 — Clarify tool** | ✅ Implemented | `tools/clarify.py` — focused questions with choices + tradeoffs, blocking (`answer_source`) and async **pending** flow (`ClarificationRequested`, `on_pending` → `clarify.pending` bus event); registered `clarify` tool; Telegram inline-button answering via `clar:<qid>:<choice>` callbacks + `connect_clarify()` | `tests/test_clarify.py` (11) |
 | **11 — CLI + dashboard** | ⬜ Not started | — | — |
-| **12 — Test + release** | 🔶 Partial | Full local suite **186 tests pass** (1 platform skip) across test modules incl. computer/node-gate + Phase5 capability wiring; CI matrix/version bump still pending | `tests/*` |
+| **12 — Test + release** | 🔶 Partial | Full local suite **209 tests pass** (1 platform skip) across test modules incl. computer/node-gate, browser-session security, + Phase4b/Phase5 capability wiring; CI matrix/version bump still pending | `tests/*` |
 
-**Suite report (this branch):** `unittest` → **186 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
-clarify, sandbox, web, computer/node-gate, capability wiring, personality, providers, onboarding, and v02–v13 regressions.
+**Suite report (this branch):** `unittest` → **209 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
+clarify, sandbox, web, computer/node-gate, **browser-session security**, capability wiring (incl. Phase4b/Phase5),
+personality, providers, onboarding, and v02–v13 regressions.
 
 **Remaining to reach full 12-phase bar:** Phases 3 (subagents), 7 (MCP client), 8 (media/docs), 11 (CLI/dashboard)
 are the multi-session subsystems still to do; Phase 5b's real remote-node pairing and Phase 9/container/CI evidence +
@@ -361,4 +372,4 @@ version bump to v1.6.0-RC remain for the release milestone. Per the ground rule 
 `not-started` — nothing claimed without passing tests.
 
 **Commits landed (chronological):** `921421c` plan doc → `d7ce497` P1 → `6eb8ad1` P2 →
-`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → P5 pending commit.
+`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → Phase 4b commit pending after CI.

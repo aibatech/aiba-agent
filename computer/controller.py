@@ -69,99 +69,33 @@ def _redact_url(url: str) -> str:
         return "<url>"
 
 
-# Forbidden URL hosts for the browser-opener guard. We block loopback, link-local,
-# metadata, and RFC-1918 private ranges so a crafted or naive request cannot open
-# a router/admin/metadata page on the paired node. IPv4 literals are normalised
-# (decimal/hex/octal/int shorthand) to defeat bypass tricks. IPv6 loopback/ULA/
-# link-local are blocked too. Hostnames such as localhost / .localhost / metadata
-# are refused by name.
-_BLOCKED_HOST_NAMES = frozenset(
-    {"localhost", "metadata.google.internal", "metadata", "kubernetes.default.svc"}
-)
+# Forbidden URL hosts for the browser-opener guard. This is shared with
+# browser automation via security/urlguard so desktop-open-URL and browser
+# navigation can never drift apart. We block loopback, link-local, metadata,
+# RFC-1918 private ranges (plus canonical numeric aliases), and non-http(s)
+# schemes so a crafted or naive request cannot open a router/admin/metadata
+# page on the paired node.
+import security.urlguard as _urlguard
+
+# Backwards-compatible re-exports kept so existing policy imports resolve.
+_BLOCKED_HOST_NAMES = _urlguard._BLOCKED_HOST_NAMES
 
 
 def _parse_ip_int(host: str):
-    """Best-effort integer form of an IPv4 literal (incl. hex/octal/int shorthands).
-
-    Returns None when *host* is not a flat IPv4-like literal.
-    """
-    try:
-        return int(host, 0)
-    except Exception:
-        return None
+    return _urlguard.parse_ip_int(host)
 
 
 def _ipv4_to_int(host: str):
-    """Parse dotted 'a.b.c.d' into a 32-bit int.
-
-    Octets may be decimal, hex (0x..), or octal (leading 0), matching the loose
-    numeric grammar browsers accept, so aliases like ``0177.0.0.1`` still map to
-    loopback. Returns None when not exactly a 4-part dotted IPv4 literal.
-    """
-    try:
-        parts = host.split(".")
-        if len(parts) != 4:
-            return None
-        octets = []
-        for p in parts:
-            if not p:
-                return None
-            if p.lower().startswith("0x"):
-                o = int(p, 16)
-            elif len(p) > 1 and p.startswith("0"):
-                o = int(p, 8)
-            else:
-                o = int(p, 10)
-            if o < 0 or o > 255:
-                return None
-            octets.append(o)
-        return (octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]
-    except Exception:
-        return None
+    return _urlguard.ipv4_to_int(host)
 
 
 def _in_rfc1918_or_special(n: int) -> bool:
-    # 0.0.0.0/8 'this network', 10/8 private, 100.64.0.0/10 CGNAT,
-    # 127/8 loopback, 169.254.0.0/16 link-local, 172.16.0.0/12 private,
-    # 192.168.0.0/16 private, and 224/4 multicast + 240/4 reserved.
-    return (
-        ((n >> 24) in (0, 10, 127))
-        or ((n >> 22) == 0x19101)              # 100.64.0.0/10
-        or (0xAC100000 <= n <= 0xAC1FFFFF)     # 172.16.0.0/12
-        or (0xC0A80000 <= n <= 0xC0A8FFFF)     # 192.168.0.0/16
-        or ((n >> 16) == 0xA9FE)               # 169.254.0.0/16 link-local
-        or (((n >> 28) & 0xF) in (0xE, 0xF))   # multicast 224/4 + reserved 240/4
-    )
+    return _urlguard.in_rfc1918_or_special(n)
 
 
 def _forbidden_open_target(url: str):
-    """Return a reason string if ``url`` targets a forbidden host, else None.
-
-    Handles bare IPs and normalised aliases (e.g. ``0x7f000001``, ``2130706433``,
-    octal dotted ``0177.0.0.1``) plus the standard special ranges. IPv6 loopback,
-    link-local and ULA are refused. Everything resolves to no network call here —
-    hostname lookups for ordinary public sites are left to the browser.
-    """
-    from urllib.parse import urlsplit
-    host = (urlsplit(url).hostname or "").strip().lower().strip("[]")
-    if not host:
-        return "URL has no host."
-    if host in _BLOCKED_HOST_NAMES or host.endswith(".localhost") or host.endswith(".local"):
-        return "Opening loopback/metadata/local URLs is not allowed."
-    # IPv6 literal (contains ':').
-    if ":" in host:
-        # Only explicitly block the scopes a desktop-control opener must not reach.
-        if host in ("::1", "::", "0:0:0:0:0:0:0:1"):
-            return "Opening loopback IPv6 addresses is not allowed."
-        low = host.split("%")[0].lower()
-        if low.startswith("fe80:") or low.startswith("fc") or low.startswith("fd"):
-            return "Opening link-local/private IPv6 addresses is not allowed."
-        return None
-    # IPv4 & numeric shorthands.
-    n = _ipv4_to_int(host) if ("." in host) else _parse_ip_int(host)
-    if n is not None and _in_rfc1918_or_special(n):
-        return "Opening loopback/private/internal URLs is not allowed."
-    return None
+    """Return a reason string if ``url`` targets a forbidden host, else None."""
+    return _urlguard.forbidden_host(url)
 
 
 class _PyAutoGuiBackend:

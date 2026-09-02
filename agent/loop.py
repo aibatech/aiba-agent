@@ -7,6 +7,7 @@ from approvals.manager import ApprovalManager
 from tools.base import Tool,ToolResult
 from tools.sandbox import Sandbox
 from tools.browser import browser_fetch
+from tools.browser_session import BrowserSession, build_browser_tools
 from tools.clarify import Clarify, ClarifyToolFactory
 from tools.web import WebTools, build_web_tools
 from tools.registry import ToolRegistry
@@ -41,6 +42,17 @@ class AgentLoop:
         self.vision=VisionAnalyzer(self.settings.vision_model)
         self.clarify=Clarify(on_pending=self._on_clarify_pending)
         self.web_tools=build_web_tools(search_enabled=self.settings.web_enabled)
+        # Opt-in persistent browser automation. Disabled until AIBA_BROWSER_ENABLED
+        # is true; downloads/uploads are confined to the workspace. Mutations
+        # (click/type/select/submit/download/upload) carry requires_approval in
+        # permissions.json and are further gated off sensitive pages.
+        self.browser=BrowserSession(
+            enabled=bool(self.settings.browser_enabled),
+            workspace=self.settings.workspace_dir,
+            audit=self.audit,
+            sensitive_actions=False,
+            secret_typing=False,
+        )
         from diagnostics.capabilities import load_manifest
         _mf=None
         try:_mf=load_manifest(self.settings.root_dir/'config'/'capability_manifest.json')
@@ -94,6 +106,7 @@ class AgentLoop:
         self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
         self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         self.registry.register(Tool('browser_fetch','Fetch rendered webpage text.',browser_fetch,{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
+        for bt in build_browser_tools(self.browser):self.registry.register(bt)
         wsc = str(self.settings.workspace_dir)
         self.registry.register(Tool('desktop_screenshot','Capture desktop screenshot into the workspace.',lambda path='desktop.png':self.computer.screenshot(str(Path(wsc)/path)),{'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}))
         self.registry.register(Tool('desktop_click','Click screen coordinates.',self.computer.click,{'type':'object','properties':{'x':{'type':'integer'},'y':{'type':'integer'},'button':{'type':'string'},'clicks':{'type':'integer'}},'required':['x','y'],'additionalProperties':False}))

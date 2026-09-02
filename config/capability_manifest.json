@@ -12,7 +12,7 @@
   },
   "feature_flags": {
     "AIBA_WEB_ENABLED": "Gates the web_search / web_extract tools (read-only network).",
-    "AIBA_BROWSER_ENABLED": "Gates browser tooling (browser_fetch today). Requires installed browser dependencies.",
+    "AIBA_BROWSER_ENABLED": "Gates browser tooling: browser_fetch and the Phase 4b browser_session family (browser_open/state/page_text/screenshot/wait/status/scroll/click/type/select/submit/download/upload). Requires installed browser dependencies (playwright + chromium). Disabled by default.",
     "AIBA_DESKTOP_ENABLED": "Gates computer-control tooling (desktop_screenshot / desktop_click / desktop_type). Disabled until the paired-node security phase is complete.",
     "AIBA_VISION_ENABLED": "Gates vision_analyze; requires a vision-capable model.",
     "none": "No feature flag required (always available once enabled)."
@@ -116,6 +116,109 @@
       "requires_approval": true,
       "feature_flag": "AIBA_BROWSER_ENABLED",
       "optional_dependency": "python:playwright"
+    },
+    "browser_open": {
+      "description": "Navigate the managed browser to a PUBLIC http(s) URL (SSRF-safe) and return the final URL.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_state": {
+      "description": "Read the current browser page's structured state (URL + title).",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_page_text": {
+      "description": "Read visible text from the current browser page.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_screenshot": {
+      "description": "Capture the current browser viewport to a PNG inside the approved workspace.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_wait": {
+      "description": "Wait up to a bounded timeout for an element selector to appear.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_scroll": {
+      "description": "Scroll the current browser page. Read-only viewport action.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_click": {
+      "description": "Click an element by selector or visible text. Alters the site; approval required.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_type": {
+      "description": "Type text into a field. Secret-like text is never logged and is refused on auth/payment pages.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_select": {
+      "description": "Select an option in a <select> element by value. Approval required.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_submit": {
+      "description": "Submit the current form. Approval required.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_download": {
+      "description": "Save a download triggered in the browser into the approved workspace. Approval required.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_upload": {
+      "description": "Upload a file ALREADY inside the approved workspace to a file input. Approval required.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_status": {
+      "description": "Report whether the automated browser session is enabled and open.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED"
     },
     "desktop_screenshot": {
       "description": "Capture desktop screenshot.",

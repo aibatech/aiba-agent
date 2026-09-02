@@ -347,5 +347,83 @@ class Phase5DesktopWiringTests(unittest.TestCase):
         )
 
 
+BROWSER_TOOLS = [
+    "browser_open", "browser_state", "browser_page_text", "browser_screenshot",
+    "browser_wait", "browser_status", "browser_scroll", "browser_click",
+    "browser_type", "browser_select", "browser_submit", "browser_download",
+    "browser_upload",
+]
+
+
+class Phase4bBrowserWiringTests(unittest.TestCase):
+    """Registration/visibility/denial of the Phase 4b browser tool family at the
+    real AgentLoop layer, with the feature flag off by default.
+
+    These prove the checklist items that framing tests cannot: the 13 browser
+    tools are *registered* (so capability reporting sees them) yet must NOT
+    appear in the model-visible schema list, and any direct execute() call while
+    disabled must return a clear, actionable denial. Both the feature flag
+    (AIBA_BROWSER_ENABLED) and permissions.json must independently gate the tools.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="aiba_browser_")
+        self.tmp = Path(self._tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def make_loop_and_assert_registered_disabled(self):
+        loop = make_loop(self.tmp, make_settings(self.tmp, browser=False))
+        names = set(loop.registry._tools.keys())
+        for name in BROWSER_TOOLS:
+            self.assertIn(name, names, f"{name} must be registered so reporting sees it")
+        return loop
+
+    def test_all_13_registered_but_absent_from_model_schemas(self):
+        loop = self.make_loop_and_assert_registered_disabled()
+        visible = {s["name"] for s in loop.registry.schemas()}
+        for name in BROWSER_TOOLS:
+            self.assertNotIn(name, visible, f"{name} must not be model-visible when disabled")
+
+    def test_every_browser_tool_denied_when_disabled(self):
+        loop = self.make_loop_and_assert_registered_disabled()
+        for name in BROWSER_TOOLS:
+            res = loop.registry.execute(name, {})
+            self.assertFalse(res.ok, f"{name} must be denied while disabled")
+            self.assertTrue(res.error, f"{name} denial must carry an actionable reason")
+
+    def test_feature_flag_off_blocks_even_if_permissions_flipped(self):
+        """Defense-in-depth: with browser_enabled False the AIBA_BROWSER_ENABLED
+        runtime flag is off, which denies the tools regardless of any
+        permissions.json state."""
+        loop = self.make_loop_and_assert_registered_disabled()
+        for name in BROWSER_TOOLS:
+            self.assertFalse(loop.registry._feature_flag_on(name))
+        # And the capability report explains the dormant state.
+        by = loop.capability_report().by_name()
+        for name in BROWSER_TOOLS:
+            self.assertFalse(by[name].ready, f"{name} must be reported not-ready")
+
+    def test_permissions_gate_wins_even_when_feature_flag_on(self):
+        """The feature flag being ON is necessary but NOT sufficient. While
+        config/permissions.json keeps the browser tools disabled (enabled:false,
+        the Phase 4b posture matching desktop), execute() still denies them —
+        proving the permission layer is authoritative and never silently opens
+        a mutation/read surface."""
+        loop = make_loop(self.tmp, make_settings(self.tmp, browser=True))
+        # BrowserSession was constructed enabled (flag on)...
+        self.assertTrue(loop.browser.enabled)
+        # ...yet permissions.json keeps the tools gated at the registry.
+        for name in BROWSER_TOOLS:
+            res = loop.registry.execute(name, {})
+            self.assertFalse(res.ok, f"{name} must stay denied by permissions.json")
+            self.assertTrue(res.error, f"{name} denial must carry a reason")
+        # And they remain hidden from the model-visible list.
+        visible = {s["name"] for s in loop.registry.schemas()}
+        for name in BROWSER_TOOLS:
+            self.assertNotIn(name, visible, f"{name} must not be model-visible")
+
+
 if __name__ == "__main__":
     unittest.main()
