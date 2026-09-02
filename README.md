@@ -102,6 +102,7 @@ The Community Runtime has no artificial provider or model limits. It remains a s
 - shell and Python execution require the isolated Docker sandbox;
 - tool arguments are validated and tool failures are contained;
 - OpenAI, Anthropic, Ollama, and OpenAI-compatible providers receive native tool schemas;
+- **internal subagents are disabled by default** (`AIBA_SUBAGENTS_ENABLED` + `permissions.json` `delegate_task` `enabled:false`); when enabled they are bounded background workers only — never user-facing, never recursive, each confined to an explicitly allowed tool list, step/time/cost budgets and global+per-parent concurrency, and returning only a concise result summary (no raw prompts/transcripts/CoT);
 - the container runs as a non-root user with dropped capabilities and a read-only root filesystem;
 - data, tasks, jobs, schedules, reflections, and audit records survive restarts.
 
@@ -160,6 +161,8 @@ Provider management endpoints are available under `/v1/providers`, `/v1/models`,
 ## Execution and approvals
 
 File access is constrained to `agent_system/workspace`. Sensitive tools require approval by default. Non-interactive API jobs deny approval-requiring actions; this is intentional. Create reviewed skills or adjust the permissions policy for narrowly defined unattended workflows.
+
+`delegate_task` (internal subagents) is disabled by default. To enable it, set `AIBA_SUBAGENTS_ENABLED=true` **and** flip `config/permissions.json` `delegate_task.enabled` to `true` — both must be on, mirroring the browser/computer gate posture. When enabled, AIBA remains the single assistant you talk to; the workers it spawns are invisible, bounded, non-recursive internal workhorses that return only a concise result summary for AIBA to fold into its reply.
 
 Docker sandbox mode mounts only the workspace, disables networking by default, and applies CPU/memory limits. Do not mount the host root or a Docker socket into the AIBA application container.
 

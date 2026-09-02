@@ -48,7 +48,8 @@
     "run_skill": {"enabled": true, "requires_approval": true},
     "clarify": {"enabled": true, "requires_approval": false},
     "enqueue_task": {"enabled": true, "requires_approval": true},
-    "schedule_task": {"enabled": true, "requires_approval": true}
+    "schedule_task": {"enabled": true, "requires_approval": true},
+    "delegate_task": {"enabled": false, "requires_approval": true}
   },
   "blocked_command_fragments": ["rm -rf /", "mkfs", ":(){:|:&};:", "shutdown", "reboot", "dd if=", "chmod -R 777 /", "curl | sh", "wget | sh"]
 }

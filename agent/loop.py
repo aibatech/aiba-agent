@@ -29,6 +29,7 @@ from diagnostics import Doctor
 from updates import UpdateManager,UpdateChecker
 from operations import BackupManager,MigrationManager,CrashReporter,Metrics
 from personality import PersonalExperience
+from agent.subagent_manager import SubagentManager
 class AgentLoop:
     def __init__(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
         self.settings=settings or Settings.load();self.audit=AuditLog(self.settings.logs_dir/'audit.jsonl');self.events=EventBus();self._run_lock=RLock();self.metrics=Metrics();self.crashes=CrashReporter(self.settings.logs_dir)
@@ -69,11 +70,29 @@ class AgentLoop:
             'AIBA_BROWSER_ENABLED': bool(self.settings.browser_enabled),
             'AIBA_DESKTOP_ENABLED': bool(self.settings.desktop_enabled),
             'AIBA_VISION_ENABLED': bool(self.settings.vision_model),
+            'AIBA_SUBAGENTS_ENABLED': bool(self.settings.subagents_enabled),
         }
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy,feature_flags=self.runtime_flags,manifest=self.manifest);self._register_tools()
         legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
-        self._seed_legacy_provider();router=IntelligentRouter(self.providers,legacy)
-        self.engine=ReasoningEngine(router,self.registry,RetrievalEngine(self.vault),self.tasks,self.settings.max_steps);self.dream=DreamEngine(self.settings.vault_dir/'reflections',self.vault)
+        self._seed_legacy_provider();self.router=IntelligentRouter(self.providers,legacy)
+        self.engine=ReasoningEngine(self.router,self.registry,RetrievalEngine(self.vault),self.tasks,self.settings.max_steps);self.dream=DreamEngine(self.settings.vault_dir/'reflections',self.vault)
+        # Opt-in bounded internal subagents (Phase 3). Disabled until
+        # AIBA_SUBAGENTS_ENABLED; workers are permission-narrowed, non-recursive
+        # and budgeted. Uses the same registry (tool metadata/handlers), policy,
+        # audit, event bus and provider router as the main agent.
+        self.subagents=SubagentManager(
+            self.settings.subagents_db_path or (self.settings.data_dir/'subagents.db'),
+            enabled=bool(self.settings.subagents_enabled),
+            audit=self.audit,
+            events=self.events,
+            resolve_tools=self._subagent_resolve_tools,
+            call_provider=self._subagent_call_provider,
+            policy_allows=self._subagent_policy_allows,
+            global_concurrency=int(self.settings.subagent_global_concurrency),
+            per_parent_concurrency=int(self.settings.subagent_per_parent_concurrency),
+            step_cap_default=int(self.settings.max_steps),
+            time_limit_default=int(max(self.settings.command_timeout*4, 120)),
+        )
         self.worker=Worker(self.queue,{'agent_task':lambda payload:{'result':self.handle(payload['prompt'],propose_skill=False,task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'))}});self.scheduler_runner=SchedulerRunner(self.scheduler)
         if start_worker and self.settings.worker_enabled:self.worker.start();self.scheduler_runner.start();self.update_checker.start()
         self.events.subscribe('*',lambda e:self.audit.record('event',**e))
@@ -128,6 +147,87 @@ class AgentLoop:
         self.registry.register(ClarifyToolFactory.make(self.clarify))
         self.registry.register(Tool('enqueue_task','Queue a background task.',lambda prompt:ToolResult(True,{'job_id':self.queue.enqueue('agent_task',{'prompt':prompt})}),{'type':'object','properties':{'prompt':{'type':'string'}},'required':['prompt'],'additionalProperties':False}))
         self.registry.register(Tool('schedule_task','Schedule a recurring task.',lambda name,prompt,interval_seconds:ToolResult(True,{'schedule_id':self.scheduler.add_interval(name,'agent_task',{'prompt':prompt},int(interval_seconds))}),{'type':'object','properties':{'name':{'type':'string'},'prompt':{'type':'string'},'interval_seconds':{'type':'integer'}},'required':['name','prompt','interval_seconds'],'additionalProperties':False}))
+        # Internal subagents (Phase 3): the ONLY model-advertised entry point.
+        # It spawns bounded, permission-narrowed, non-recursive background
+        # workers in parallel, waits (bounded), and returns concise structured
+        # results + a synthesis. Unsafe status/cancellation operations are kept
+        # OFF the model surface (internal API: self.subagents). Gated by feature
+        # flag AIBA_SUBAGENTS_ENABLED + permissions.json.
+        self.registry.register(Tool('delegate_task','Run bounded internal background workers in parallel for research/verification/planning/review. Provide a list of concrete, self-contained objectives.',
+            lambda objectives, tools=None, allow_approved=False, wait_s=120: self._delegate_subagents(objectives, allowed_tools=tools, allow_approved=bool(allow_approved), wait_s=float(wait_s)),
+            {'type':'object','properties':{'objectives':{'type':'array','items':{'type':'string'}},'tools':{'type':'array','items':{'type':'string'}},'wait_s':{'type':'number'}},'required':['objectives'],'additionalProperties':False}))
+    # -- internal subagent bridges -------------------------------------------
+    def _subagent_policy_allows(self, name: str) -> bool:
+        """Whether *name* is enabled at the shared SecurityPolicy level."""
+        try:
+            return self.policy.check_tool(name).allowed
+        except Exception:
+            return False
+
+    def _subagent_resolve_tools(self, names: list[str]):
+        """Expose registered tool metadata + handlers for a worker's narrowed
+        set. Only tools already registered on the MAIN registry are returned, so
+        a worker can never broaden beyond the main agent's own tool surface."""
+        out = {}
+        for name in names:
+            tool = self.registry._tools.get(name)
+            if tool is None:
+                continue
+            req = False
+            try:
+                req = bool(self.policy.check_tool(name).requires_approval)
+            except Exception:
+                req = True
+            out[name] = {
+                "description": tool.description,
+                "parameters": tool.parameters,
+                "handler": tool.run,
+                "requires_approval": req,
+            }
+        return out
+
+    def _subagent_call_provider(self, messages, schemas) -> str:
+        """Run one provider call for a worker through the shared router."""
+        try:
+            return str(self.router.complete(messages, schemas or []))
+        except Exception as exc:
+            return f"provider_error: {type(exc).__name__}: {exc}"
+
+    def _delegate_subagents(self, objectives, allowed_tools=None,
+                            allow_approved=False, wait_s: float = 120.0):
+        """Create + run N internal workers in parallel and return concise
+        structured results + a synthesis text (used by the delegate_task tool)."""
+        if isinstance(objectives, str):
+            objectives = [objectives]
+        objectives = [o for o in (objectives or []) if isinstance(o, str) and o.strip()]
+        if not objectives:
+            return ToolResult(False, error="No subagent objectives provided.")
+        effective_tools = list(allowed_tools or []) if allowed_tools else None
+        out = self.subagents.run_many(
+            objectives,
+            parent_task_id=None,
+            allowed_tools=effective_tools or [],
+            allow_approved=bool(allow_approved),
+            wait_s=float(wait_s),
+        )
+        results = out.get("results", [])
+        pending = out.get("pending", [])
+        synthesis = self.subagents.synthesize(results)
+        # Emit a concise structured payload so the main AIBA can form its final
+        # synthesis. No prompts / transcripts / internal deliberation included.
+        summary = {
+            "worker_count": len(results),
+            "worker_results": results,
+            "still_pending": pending,
+            "synthesis": synthesis,
+        }
+        self.subagents._audit_record("synthesis", worker_count=len(results),
+                                     pending=len(pending))
+        if pending:
+            summary["note"] = ("Some workers were still running when the wait "
+                               "budget elapsed; check them via status.")
+        return ToolResult(True, summary)
+
     def _seed_legacy_provider(self):
         if self.providers.list_providers() or self.settings.provider=='local':return
         kind='custom' if self.settings.provider=='openai_compatible' else self.settings.provider
@@ -175,6 +275,12 @@ class AgentLoop:
 
     def close(self):
         self.worker.stop();self.scheduler_runner.stop();self.update_checker.stop()
+        # Shut down bounded internal subagents (idempotent + safe even if the
+        # manager failed to construct earlier in __init__).
+        subagents=getattr(self,'subagents',None)
+        if subagents is not None:
+            try:subagents.close()
+            except Exception:pass
     def run(self):
         print(f'AIBA Agent v1.5 | routing=auto | sandbox={self.settings.sandbox_mode} | /exit to quit')
         while True:

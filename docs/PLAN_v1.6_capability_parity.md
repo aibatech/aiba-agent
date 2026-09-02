@@ -1,6 +1,6 @@
 # AIBA v1.6 — Capability Parity: Engineering Plan + Capability Matrix + Timeline
 
-**Status:** IN PROGRESS — Phases 1, 2, 4, 4b, 5, 6, 10 implemented and tested. See §"Implementation Status Log".
+**Status:** IN PROGRESS — Phases 1, 2, 3, 4, 4b, 5, 6, 10 implemented and tested. See §"Implementation Status Log".
 **Branch:** `feat/aiba-v1.6-capability-parity` (07 commits + growing)
 **Live install:** v1.5.0 untouched. Not restarted, not modified.
 **Date:** 2026-09-02
@@ -91,19 +91,19 @@ Legend: `A=AIBA v1.5 today` · `H=Hermes Agent` · `O=OpenClaw` · `T=v1.6 targe
 | Detailed trace → audit log; summary → user | ◑ | ✅ | ✅ | **→** | AIBA already audits `tool_start/end`; add user-facing summaries. |
 | No raw CoT / hidden prompts / reasoning tokens exposed | ✅ | ◑ | ◑ | **→** | AIBA already forbids CoT in SYSTEM; add event-filtered safe summaries + tests. |
 
-### PHASE 3 — Real subagents
+### PHASE 3 — Real subagents ✅
 | Capability | A | H | O | T | Evidence |
 |---|---|---|---|---|---|
-| Supervisor/Worker real separate model calls | ❌ | ✅ | ✅ | **→** | Replace simulated `delegate`. |
-| Isolated context + parallel independent tasks | ❌ | ✅ | ✅ | **→** | Thread/process pool + isolated prompt/task state. |
-| Roles researcher/builder/reviewer | ❌ | ◑ | ◑ | **→** | Role templates. |
-| Max workers (default 3) | ❌ | ✅ | ◑ | **→** | Configurable, default 3. |
-| Token/time/cost budgets | ❌ | ◑ | ◑ | **→** | Budget guards per worker + global. |
-| Cancellation & timeout | ❌ | ✅ | ◑ | **→** | 
-| Recursion depth limit | ❌ | ✅ | ✅ | **→** | Cap depth (matches openclaw depth limits). |
-| No secret access unless granted | ❌ | ✅ | ✅ | **→** | Inherit policy; explicit grants. |
-| Supervisor verifies consequential results | ◑ | ◑ | ◑ | **→** | Partial existing "verify" ethos; formalize. |
-| Full audit trail + failure recovery | ◑ | ✅ | ✅ | **→** | Reuse `AuditLog` + crash reporter. |
+| Supervisor/Worker real separate model calls | ❌ | ✅ | ✅ | ✅ | `agent/subagents.py` pool issues real per-worker provider calls over the shared router |
+| Isolated context + parallel independent tasks | ❌ | ✅ | ✅ | ✅ | `SubagentPool` (ThreadPoolExecutor) + isolated per-worker objective/toolset; barrier-proven overlap test |
+| Roles researcher/builder/reviewer | ❌ | ◑ | ◑ | ◑ | single generic worker prompt; role templates future |
+| Max workers (default 3) | ❌ | ✅ | ◑ | ✅ | global `global_concurrency` + per-parent `per_parent` caps (settings-default) |
+| Token/time/cost budgets | ❌ | ◑ | ◑ | ✅ | step cap + wall-clock timeout hard; **best-effort cost cap** when provider reports usage |
+| Cancellation & timeout | ❌ | ✅ | ◑ | ✅ | cooperative cancel at loop boundaries + queued-cancel; wall-clock timeout |
+| Recursion depth limit | ❌ | ✅ | ✅ | ✅ | recursion depth zero: no delegate/spawn/clarify tool on worker surface |
+| No secret access unless granted | ❌ | ✅ | ✅ | ✅ | tool-narrowing + explicit consent; audit redacts objectives/secrets/transcripts |
+| Supervisor verifies consequential results | ◑ | ◑ | ◑ | ◑ | worker instructed to verify consequential results; no hard gate yet |
+| Full audit trail + failure recovery | ◑ | ✅ | ✅ | ✅ | SQLite store: interrupts→timed_out recovery; audit events; failure isolation |
 
 ### PHASE 4 — Web + browser  *(4b = opt-in browser session; ✅ implemented)*
 | Capability | A | H | O | T | Evidence |
@@ -350,7 +350,7 @@ Ground rule upheld: a phase is only marked **implemented** once its code is comm
 |---|---|---|---|
 | **1 — Telegram UX** | ✅ Implemented | `connectors/ux/render.py` (markdown renderer, smart chunker, inline keyboards, typing-heartbeat); `connectors/telegram.py` typing heartbeat start/stop per task, `send_keyboard`/`send_payload`, callback-query routing + `on_callback` hook, `getUpdates` now accepts `callback_query` | `tests/test_ux.py` (16) |
 | **2 — Visible reasoning** | ✅ Implemented | `reasoning/protocol.py` — typed/versioned `aiba.reasoning` event envelope, 5 sanitised kinds (plan/tool/result/final/error), secret redaction + output truncation (no CoT leak); wired into `reasoning/engine.py` + `agent/loop.py` → emits to the existing `EventBus` on every task | `tests/test_protocol.py` (10) |
-| **3 — Real subagents** | ⬜ Not started | — (needs parallel worker architecture) | — |
+| **3 — Real subagents** | ✅ Implemented (internal subagents, disabled by default) | `agent/subagents.py` (worker engine: SQLite-backed `SubagentStore` with thread-safe per-call connections/transactions/bounded queries/recovery; `SubagentPool` bounded `ThreadPoolExecutor` with global + per-parent concurrency; `_worker_loop` with step cap, wall-clock timeout and **best-effort cost cap** — binds only when the provider reports per-call usage — plus permission-narrowing, audit redaction and secrets-free persistence) + `agent/subagent_manager.py` (facade: `delegate`/`run_many`/`cancel`/`status`/`list_for_parent`/`synthesize`; `_collect_terminated` returns only terminal-state rows). Wired into `agent/loop.py`: `AIBA_SUBAGENTS_ENABLED` runtime flag (default off), `SubagentManager` construction, safe/idempotent `close()`, and a single model-visible **`delegate_task`** tool — **disabled by default**, gated by the feature flag AND `permissions.json` (`enabled:false`, `requires_approval:true`). AIBA remains the only user-facing assistant; subagents are bounded internal workers (tool-narrowed to the parent's explicit allowed list, run through the shared policy, cannot recurse — recursion depth zero, admin/spawn/clarify surfaces never offered, browser/desktop/process/shell capabilities withheld unless separately enabled AND explicitly consented). Only a concise structured synthesis returns to the planner; no raw prompts/transcripts/CoT. | `tests/test_subagents.py` (31) + `tests/test_subagents_loop.py` (8) |
 | **4 — Web + browser** | ✅ Implemented (web tools) | `tools/web.py` — `web_search` (DuckDuckGo no-API-key backend, fixed allowlisted host → no SSRF from query) + `web_extract` (up to 5 pages, reuses `_public_url` guard → blocks private/loopback/credential URLs); `AIBA_WEB_ENABLED` setting; registered in loop. Browser *session* model shipped as **Phase 4b** below | `tests/test_web.py` (13) |
 | **4b — Opt-in browser automation** | ✅ Implemented | `security/urlguard.py` — single shared SSRF/safe-URL policy (schemes: only http(s); blocks loopback/link-local/RFC-1918 private/CGNAT/multicast/reserved + numeric/hex/octal/flat-int IPv4 aliases + IPv6 loopback/link-local/ULA + `localhost`/`*.localhost`/`metadata.google.internal`/`*.local`), extracted from `computer/controller.py` which now delegates to it so **browser navigation and computer control share one policy**. `tools/browser_session.py` — persistent opt-in Playwright session behind injectable `Driver` (real headless Chromium; subresource requests to forbidden targets aborted via `page.route`): read-only family (`browser_open`/`_state`/`_page_text`/`_screenshot`/`_wait`/`_status`) is separated from site-altering mutations (`_scroll`/`_click`/`_type`/`_select`/`_submit`/`_download`/`_upload`). Defaults: disabled (feature flag `AIBA_BROWSER_ENABLED` + manifest `default_enabled:false` + `permissions.json` all `enabled:false`); mutations `requires_approval:true`; sensitive-page guard refuses mutations on auth/payment/checkout/account pages unless owner opts `sensitive_actions`; secret-like typed text refused by default and **never logged** (length only, `redacted` flag); downloads saved into workspace with basename sanitisation; uploads read only files already inside the workspace; bounded timeouts; full audit. `browser_fetch` kept for backward compatibility. | `tests/test_browser_security.py` (19) + `tests/test_capability_integration.py` Phase4b wiring (5) |
 | **5 — Computer control + nodes** | ✅ Implemented (5a local gate+node; 5b remote-node manual) | `computer/node.py` — `ComputerNodeGate` (pair-only-digest, enable/disable, emergency stop persisted across reload, revoke, max-action budget, clipboard/process opt-in), `computer/controller.py` — full opt-in safe toolset (screen/move/click/drag/scroll/key/hotkey/type/open_url/clipboard/process) behind the gate; argv-only dispatch (no shell strings), SSRF-safe `_forbidden_open_target` (loopback/RFC-1918/metadata/aliases/non-http), clipboard returns length marker not content, secret-typed text never logged; `computer/__init__.py` `make_computer(settings, audit)`; 13 `desktop_*` tools registered in loop, all disabled by default (feature-flag + `permissions.json` master gate + gate refuses until paired+enabled); CLI `--computer-pair/status/enable/disable/stop/reset-budget`. Pairing of a real remote node (5b) remains manual/CI-optional — needs a real target machine. | `tests/test_computer.py` (22) + `tests/test_capability_integration.py` Phase5 wiring (4) |
@@ -360,16 +360,16 @@ Ground rule upheld: a phase is only marked **implemented** once its code is comm
 | **9 — Memory/skills/sessions** | ⬜ Not started | — | — |
 | **10 — Clarify tool** | ✅ Implemented | `tools/clarify.py` — focused questions with choices + tradeoffs, blocking (`answer_source`) and async **pending** flow (`ClarificationRequested`, `on_pending` → `clarify.pending` bus event); registered `clarify` tool; Telegram inline-button answering via `clar:<qid>:<choice>` callbacks + `connect_clarify()` | `tests/test_clarify.py` (11) |
 | **11 — CLI + dashboard** | ⬜ Not started | — | — |
-| **12 — Test + release** | 🔶 Partial | Full local suite **209 tests pass** (1 platform skip) across test modules incl. computer/node-gate, browser-session security, + Phase4b/Phase5 capability wiring; CI matrix/version bump still pending | `tests/*` |
+| **12 — Test + release** | 🔶 Partial | Full local suite **248 tests pass** (1 platform skip) across test modules incl. computer/node-gate, browser-session security, internal subagents, + Phase3/Phase4b/Phase5 capability wiring; CI matrix/version bump still pending | `tests/*` |
 
-**Suite report (this branch):** `unittest` → **209 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
-clarify, sandbox, web, computer/node-gate, **browser-session security**, capability wiring (incl. Phase4b/Phase5),
+**Suite report (this branch):** `unittest` → **248 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
+clarify, sandbox, web, computer/node-gate, **browser-session security**, **internal subagents (store/pool/manager 31 + AgentLoop wiring 8)**, capability wiring (incl. Phase3/Phase4b/Phase5),
 personality, providers, onboarding, and v02–v13 regressions.
 
-**Remaining to reach full 12-phase bar:** Phases 3 (subagents), 7 (MCP client), 8 (media/docs), 11 (CLI/dashboard)
+**Remaining to reach full 12-phase bar:** Phases 7 (MCP client), 8 (media/docs), 11 (CLI/dashboard)
 are the multi-session subsystems still to do; Phase 5b's real remote-node pairing and Phase 9/container/CI evidence +
 version bump to v1.6.0-RC remain for the release milestone. Per the ground rule these are all honestly marked
 `not-started` — nothing claimed without passing tests.
 
 **Commits landed (chronological):** `921421c` plan doc → `d7ce497` P1 → `6eb8ad1` P2 →
-`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → Phase 4b commit pending after CI.
+`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → `f8660c7` P4b (opt-in browser session + SSRF guard). This phase's Internal Subagents (P3) commit follows and is reported at push time.

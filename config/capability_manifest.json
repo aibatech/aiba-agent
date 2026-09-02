@@ -15,6 +15,7 @@
     "AIBA_BROWSER_ENABLED": "Gates browser tooling: browser_fetch and the Phase 4b browser_session family (browser_open/state/page_text/screenshot/wait/status/scroll/click/type/select/submit/download/upload). Requires installed browser dependencies (playwright + chromium). Disabled by default.",
     "AIBA_DESKTOP_ENABLED": "Gates computer-control tooling (desktop_screenshot / desktop_click / desktop_type). Disabled until the paired-node security phase is complete.",
     "AIBA_VISION_ENABLED": "Gates vision_analyze; requires a vision-capable model.",
+    "AIBA_SUBAGENTS_ENABLED": "Gates delegate_task: bounded internal background workers (subagents) for parallel research/verification/planning/review. Disabled by default. Workers are permission-narrowed (never broader than the main agent), non-recursive, and run under hard step/time budgets.",
     "none": "No feature flag required (always available once enabled)."
   },
   "tools": {
@@ -370,6 +371,13 @@
       "default_enabled": true,
       "requires_approval": true,
       "feature_flag": "none"
+    },
+    "delegate_task": {
+      "description": "Run bounded internal background workers in parallel for research/verification/planning/review. Disabled by default (AIBA_SUBAGENTS_ENABLED + permissions.json). AIBA stays the single user-facing assistant; workers are invisible, each bounded by its own objective, allowed-tool list, step/time/cost budget and global+per-parent concurrency. Workers cannot spawn further workers (no recursion); each runs within the shared policy and returns only a concise result summary (no raw prompts/transcripts/CoT). Provide concrete, self-contained objectives.",
+      "risk_class": "process_execution",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_SUBAGENTS_ENABLED"
     }
   }
 }
