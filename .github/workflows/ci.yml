@@ -43,10 +43,24 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: '3.12', cache: pip}
-      - run: python -m pip install -e ".[api]"
-      - run: python -m pip install "pyright==1.1.411"
-      - run: python scripts/validate_capabilities.py
-      - run: pyright
+      # Deterministic, isolated type-check environment that matches
+      # pyrightconfig.json's declared venv (venvPath=".", venv=".venv") AND the
+      # local dev venv. A bare `pip install -e .[api]` into the setup-python
+      # environment leaves no `.venv`, so pyright cannot resolve project or
+      # optional-capability imports (e.g. playwright in tools/browser.py) and
+      # reports reportMissingImports. Install the project with the `all` extra
+      # (covers every capability module's optional deps) plus the pinned pyright
+      # into a single `.venv`, then run the validator and type-check from it.
+      - name: Build deterministic venv
+        run: |
+          python -m venv .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install -e ".[all]"
+          .venv/bin/python -m pip install "pyright==1.1.411"
+      - name: Validate capability manifest & permissions
+        run: .venv/bin/python scripts/validate_capabilities.py
+      - name: Pyright (pinned, same env)
+        run: .venv/bin/pyright
   container:
     runs-on: ubuntu-latest
     steps:

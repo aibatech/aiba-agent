@@ -100,9 +100,13 @@ class ArchiveTests(SandboxFixture):
         archive_rel = res.output["archive"]
         archive = self.ws / archive_rel
         self.assertTrue(archive.exists())
-        # Archive is inside workspace
+        # Archive is inside workspace. Resolve the workspace root the same way
+        # the sandbox/`_Policy` do (macOS /var -> /private/var, Windows
+        # RUNNER~1 -> full name) so unresolved-vs-resolved forms don't falsely
+        # reject a legitimate in-workspace path as "outside".
+        ws_root = self.ws.resolve()
         try:
-            archive.resolve().relative_to(self.ws)
+            archive.resolve().relative_to(ws_root)
         except ValueError:
             self.fail("archive written outside workspace")
 
