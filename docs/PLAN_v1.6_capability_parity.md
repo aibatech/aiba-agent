@@ -1,9 +1,9 @@
 # AIBA v1.6 — Capability Parity: Engineering Plan + Capability Matrix + Timeline
 
-**Status:** IN PROGRESS — Phases 1, 2, 4, 6, 10 implemented and tested. See §"Implementation Status Log".
-**Branch:** `feat/aiba-v1.6-capability-parity` (06 commits + growing)
+**Status:** IN PROGRESS — Phases 1, 2, 4, 5, 6, 10 implemented and tested. See §"Implementation Status Log".
+**Branch:** `feat/aiba-v1.6-capability-parity` (07 commits + growing)
 **Live install:** v1.5.0 untouched. Not restarted, not modified.
-**Date:** 2026-09-01
+**Date:** 2026-09-02
 
 ---
 
@@ -343,22 +343,22 @@ Ground rule upheld: a phase is only marked **implemented** once its code is comm
 | **2 — Visible reasoning** | ✅ Implemented | `reasoning/protocol.py` — typed/versioned `aiba.reasoning` event envelope, 5 sanitised kinds (plan/tool/result/final/error), secret redaction + output truncation (no CoT leak); wired into `reasoning/engine.py` + `agent/loop.py` → emits to the existing `EventBus` on every task | `tests/test_protocol.py` (10) |
 | **3 — Real subagents** | ⬜ Not started | — (needs parallel worker architecture) | — |
 | **4 — Web + browser** | ✅ Implemented (web tools) | `tools/web.py` — `web_search` (DuckDuckGo no-API-key backend, fixed allowlisted host → no SSRF from query) + `web_extract` (up to 5 pages, reuses `_public_url` guard → blocks private/loopback/credential URLs); `AIBA_WEB_ENABLED` setting; registered in loop. Browser *session* model (persistent nav, allow/deny lists) still partial-future | `tests/test_web.py` (13) |
-| **5 — Computer control + nodes** | ⬜ Not started (5a)/manual (5b) | existing 3 tools unchanged | — |
+| **5 — Computer control + nodes** | ✅ Implemented (5a local gate+node; 5b remote-node manual) | `computer/node.py` — `ComputerNodeGate` (pair-only-digest, enable/disable, emergency stop persisted across reload, revoke, max-action budget, clipboard/process opt-in), `computer/controller.py` — full opt-in safe toolset (screen/move/click/drag/scroll/key/hotkey/type/open_url/clipboard/process) behind the gate; argv-only dispatch (no shell strings), SSRF-safe `_forbidden_open_target` (loopback/RFC-1918/metadata/aliases/non-http), clipboard returns length marker not content, secret-typed text never logged; `computer/__init__.py` `make_computer(settings, audit)`; 13 `desktop_*` tools registered in loop, all disabled by default (feature-flag + `permissions.json` master gate + gate refuses until paired+enabled); CLI `--computer-pair/status/enable/disable/stop/reset-budget`. Pairing of a real remote node (5b) remains manual/CI-optional — needs a real target machine. | `tests/test_computer.py` (22) + `tests/test_capability_integration.py` Phase5 wiring (4) |
 | **6 — Term/file/process parity** | ✅ Implemented (file additions) | `tools/sandbox.py` — `patch_file` (atomic find-and-replace + diff, block ambiguous/missing), `archive` (zip/tar/gztar, written inside workspace), `extract_archive` (zip/tar, **zip-slip blocked**); registered in loop. Terminal/process lifecycle (SSH, process mgmt) still future | `tests/test_sandbox.py` (10) |
 | **7 — MCP client** | ⬜ Not started | — | — |
 | **8 — Media/document processing** | ⬜ Not started | — | — |
 | **9 — Memory/skills/sessions** | ⬜ Not started | — | — |
 | **10 — Clarify tool** | ✅ Implemented | `tools/clarify.py` — focused questions with choices + tradeoffs, blocking (`answer_source`) and async **pending** flow (`ClarificationRequested`, `on_pending` → `clarify.pending` bus event); registered `clarify` tool; Telegram inline-button answering via `clar:<qid>:<choice>` callbacks + `connect_clarify()` | `tests/test_clarify.py` (11) |
 | **11 — CLI + dashboard** | ⬜ Not started | — | — |
-| **12 — Test + release** | 🔶 Partial | Full local suite **118 tests pass** (1 platform skip) across 14 test modules; CI matrix/version bump still pending | `tests/*` |
+| **12 — Test + release** | 🔶 Partial | Full local suite **186 tests pass** (1 platform skip) across test modules incl. computer/node-gate + Phase5 capability wiring; CI matrix/version bump still pending | `tests/*` |
 
-**Suite report (this branch):** `unittest` → **118 tests, OK**, covering connectors, ux, protocol,
-clarify, sandbox, web, personality, providers, onboarding, and v02–v13 regressions.
+**Suite report (this branch):** `unittest` → **186 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
+clarify, sandbox, web, computer/node-gate, capability wiring, personality, providers, onboarding, and v02–v13 regressions.
 
-**Remaining to reach full 12-phase bar:** Phases 3 (subagents), 5 (computer control + paired node),
-7 (MCP client), 8 (media/docs), 11 (CLI/dashboard) are the multi-session subsystems. Phases 9 and
-container/CI evidence + version bump to v1.6.0-RC remain for the release milestone. Per the ground
-rule these are all honestly marked `not-started` — nothing claimed without passing tests.
+**Remaining to reach full 12-phase bar:** Phases 3 (subagents), 7 (MCP client), 8 (media/docs), 11 (CLI/dashboard)
+are the multi-session subsystems still to do; Phase 5b's real remote-node pairing and Phase 9/container/CI evidence +
+version bump to v1.6.0-RC remain for the release milestone. Per the ground rule these are all honestly marked
+`not-started` — nothing claimed without passing tests.
 
 **Commits landed (chronological):** `921421c` plan doc → `d7ce497` P1 → `6eb8ad1` P2 →
-`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4.
+`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → P5 pending commit.

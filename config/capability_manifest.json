@@ -141,6 +141,83 @@
       "feature_flag": "AIBA_DESKTOP_ENABLED",
       "optional_dependency": "python:pyautogui"
     },
+    "desktop_screen_size": {
+      "description": "Report the desktop screen size in pixels.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_move": {
+      "description": "Move the pointer to screen coordinates.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_drag": {
+      "description": "Drag the pointer between two screen coordinates.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_scroll": {
+      "description": "Scroll the focused window by a number of clicks.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_key": {
+      "description": "Press a single key (enter, tab, arrows, etc.).",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_hotkey": {
+      "description": "Press a modifier hotkey combination (e.g. ctrl+c).",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_open_url": {
+      "description": "Open an http(s) URL in the default browser.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "desktop_clipboard_read": {
+      "description": "Read the current clipboard (opt-in, approval-gated).",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "desktop_clipboard_write": {
+      "description": "Set the clipboard to a string.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "desktop_node_status": {
+      "description": "Report computer-node pairing status and remaining action budget.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "internal_only": false
+    },
     "vision_analyze": {
       "description": "Analyze a workspace image.",
       "risk_class": "read_only_local",

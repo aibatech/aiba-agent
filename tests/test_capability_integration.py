@@ -73,6 +73,8 @@ def make_settings(tmp: Path, *, web=True, browser=False, desktop=False) -> Setti
         worker_enabled=True, api_token="x" * 40, api_host="127.0.0.1",
         api_port=8765, allowed_origins=(), rate_limit_per_minute=60,
         web_enabled=web,
+        computer_node_path=data / "computer_node.json",
+        desktop_clipboard_enabled=False, desktop_process_enabled=False,
     )
 
 
@@ -265,6 +267,84 @@ class CapabilityIntegrationTests(unittest.TestCase):
         import os
         os.environ.pop(key, None)
         self.addCleanup(lambda: os.environ.pop(key, None))
+
+
+DESKTOP_TOOLS = [
+    "desktop_screenshot", "desktop_click", "desktop_type", "desktop_screen_size",
+    "desktop_move", "desktop_drag", "desktop_scroll", "desktop_key",
+    "desktop_hotkey", "desktop_open_url", "desktop_clipboard_read",
+    "desktop_clipboard_write", "desktop_node_status",
+]
+
+
+class Phase5DesktopWiringTests(unittest.TestCase):
+    """Registration/visibility/denial of the Phase 5 desktop tool family at the
+    real AgentLoop layer, with desktop disabled by default.
+
+    These prove the checklist items that framing tests cannot: the 13 desktop
+    tools are *registered* (so capability reporting sees them) yet must NOT
+    appear in the model-visible schema list, and any direct execute() call while
+    disabled must return a clear denial. We use the injectable/registry layer
+    only; the real desktop backend is never driven in these tests.
+    """
+
+    def setUp(self):
+        self._tmp = tempfile.mkdtemp(prefix="aiba_desk_")
+        self.tmp = Path(self._tmp)
+
+    def tearDown(self):
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def make_loop_and_assert_registered_disabled(self):
+        loop = make_loop(self.tmp, make_settings(self.tmp, desktop=False))
+        names = set(loop.registry._tools.keys())
+        for name in DESKTOP_TOOLS:
+            self.assertIn(name, names, f"{name} must be registered so reporting sees it")
+        return loop
+
+    def test_all_13_registered_but_absent_from_model_schemas(self):
+        loop = self.make_loop_and_assert_registered_disabled()
+        visible = {s["name"] for s in loop.registry.schemas()}
+        for name in DESKTOP_TOOLS:
+            self.assertNotIn(name, visible, f"{name} must not be model-visible when disabled")
+
+    def test_every_desktop_tool_denied_when_disabled(self):
+        loop = self.make_loop_and_assert_registered_disabled()
+        for name in DESKTOP_TOOLS:
+            res = loop.registry.execute(name, {})
+            self.assertFalse(res.ok, f"{name} must be denied while disabled")
+            self.assertTrue(res.error, f"{name} denial must carry an actionable reason")
+
+    def test_feature_flag_off_blocks_even_if_permissions_flipped(self):
+        """Defense-in-depth: with desktop_enabled False the AIBA_DESKTOP_ENABLED
+        runtime flag is off, which alone denies the tools regardless of any
+        permissions.json collision."""
+        loop = self.make_loop_and_assert_registered_disabled()
+        for name in DESKTOP_TOOLS:
+            self.assertFalse(loop.registry._feature_flag_on(name))
+        # And the capability report explains the dormant state.
+        by = loop.capability_report().by_name()
+        for name in DESKTOP_TOOLS:
+            self.assertFalse(by[name].ready, f"{name} must be reported not-ready")
+
+    def test_permission_gate_wins_even_after_node_paired_and_enabled(self):
+        """The registry permission layer is authoritative: pairing + enabling the
+        node gate is necessary but NOT sufficient. While config/permissions.json
+        keeps the desktop tools disabled, execute() still denies them — proving
+        tool execution is gated by permissions.json, never silently opened."""
+        loop = make_loop(self.tmp, make_settings(self.tmp, desktop=True))
+        gate = loop.computer_node
+        gate.pair("paired-cli-sim", capabilities=["mouse", "screen"])
+        gate.enable()  # _enabled was set by desktop=True; now paired -> usable
+        self.assertTrue(gate.enabled)
+        # Yet the registry still refuses because permissions.json is the master:
+        self.assertFalse(loop.registry.execute("desktop_node_status", {}).ok)
+        self.assertFalse(loop.registry.execute("desktop_click", {}).ok)
+        # And node status (the safe diagnostic) stays unusable too.
+        self.assertNotIn(
+            "desktop_node_status",
+            {s["name"] for s in loop.registry.schemas()},
+        )
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from reasoning.engine import ReasoningEngine
 from agent.tasks import TaskStore
 from runtime import EventBus,JobQueue,Worker,Scheduler,SchedulerRunner
 from skills import SkillManager,SkillImprover
-from computer import ComputerController
+from computer import ComputerController, make_computer
 from vision import VisionAnalyzer
 from threading import RLock
 from onboarding import SetupManager
@@ -37,7 +37,8 @@ class AgentLoop:
         self.personal=PersonalExperience(self.settings.root_dir,self.settings.data_dir)
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
         self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
-        self.computer=ComputerController(self.settings.desktop_enabled);self.vision=VisionAnalyzer(self.settings.vision_model)
+        self.computer_node, self.computer = make_computer(self.settings, self.audit)  # gate + controller
+        self.vision=VisionAnalyzer(self.settings.vision_model)
         self.clarify=Clarify(on_pending=self._on_clarify_pending)
         self.web_tools=build_web_tools(search_enabled=self.settings.web_enabled)
         from diagnostics.capabilities import load_manifest
@@ -93,9 +94,20 @@ class AgentLoop:
         self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
         self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         self.registry.register(Tool('browser_fetch','Fetch rendered webpage text.',browser_fetch,{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
-        self.registry.register(Tool('desktop_screenshot','Capture desktop screenshot.',lambda path='desktop.png':self.computer.screenshot(str(self.settings.workspace_dir/path)),{'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}))
-        self.registry.register(Tool('desktop_click','Click screen coordinates.',self.computer.click,{'type':'object','properties':{'x':{'type':'integer'},'y':{'type':'integer'}},'required':['x','y'],'additionalProperties':False}))
-        self.registry.register(Tool('desktop_type','Type text into active window.',self.computer.type_text,{'type':'object','properties':{'text':{'type':'string'},'interval':{'type':'number'}},'required':['text'],'additionalProperties':False}))
+        wsc = str(self.settings.workspace_dir)
+        self.registry.register(Tool('desktop_screenshot','Capture desktop screenshot into the workspace.',lambda path='desktop.png':self.computer.screenshot(str(Path(wsc)/path)),{'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}))
+        self.registry.register(Tool('desktop_click','Click screen coordinates.',self.computer.click,{'type':'object','properties':{'x':{'type':'integer'},'y':{'type':'integer'},'button':{'type':'string'},'clicks':{'type':'integer'}},'required':['x','y'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_type','Type text into active window (secret-like text is not logged).',self.computer.type_text,{'type':'object','properties':{'text':{'type':'string'},'interval':{'type':'number'}},'required':['text'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_screen_size','Report the desktop screen size in pixels.',lambda: self.computer.screen_size(),{'type':'object','properties':{},'additionalProperties':False}))
+        self.registry.register(Tool('desktop_move','Move the pointer to screen coordinates.',self.computer.move,{'type':'object','properties':{'x':{'type':'integer'},'y':{'type':'integer'},'duration':{'type':'number'}},'required':['x','y'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_drag','Drag between two points.',self.computer.drag,{'type':'object','properties':{'from_x':{'type':'integer'},'from_y':{'type':'integer'},'to_x':{'type':'integer'},'to_y':{'type':'integer'},'duration':{'type':'number'},'button':{'type':'string'}},'required':['from_x','from_y','to_x','to_y'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_scroll','Scroll the focused window.',self.computer.scroll,{'type':'object','properties':{'clicks':{'type':'integer'},'x':{'type':'integer'},'y':{'type':'integer'}},'required':['clicks'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_key','Press a single key.',self.computer.keypress,{'type':'object','properties':{'key':{'type':'string'}},'required':['key'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_hotkey','Press a modifier hotkey (e.g. ctrl+c).',lambda keys:self.computer.hotkey(*keys),{'type':'object','properties':{'keys':{'type':'array','items':{'type':'string'}}},'required':['keys'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_open_url','Open an http(s) URL in the default browser.',lambda url:self.computer.open_url(url),{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_clipboard_read','Read clipboard (opt-in).',lambda: self.computer.clipboard_read(),{'type':'object','properties':{},'additionalProperties':False}))
+        self.registry.register(Tool('desktop_clipboard_write','Set clipboard to a string.',lambda text:self.computer.clipboard_write(text),{'type':'object','properties':{'text':{'type':'string'}},'required':['text'],'additionalProperties':False}))
+        self.registry.register(Tool('desktop_node_status','Report node pairing + remaining budget.',lambda: ToolResult(True,self.computer_node.status()),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('vision_analyze','Analyze a workspace image.',lambda image_path,instruction='Describe actionable interface elements.':self.vision.analyze(str(self.sandbox.resolve(image_path)),instruction),{'type':'object','properties':{'image_path':{'type':'string'},'instruction':{'type':'string'}},'required':['image_path'],'additionalProperties':False}))
         self.registry.register(Tool('list_skills','List reusable skills.',lambda:ToolResult(True,self.skills.list()),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('skill_instructions','Read a reviewed portable skill instruction contract.',lambda name:ToolResult(True,self.skills.instructions(name)),{'type':'object','properties':{'name':{'type':'string'}},'required':['name'],'additionalProperties':False}))
