@@ -16,7 +16,15 @@ bedrock = ["boto3>=1.34"]
 # base AIBA install stays lightweight. Install with `pip install aiba-agent[media]`
 # (or the `all` extra) to enable PDF/DOCX/XLSX/PPTX text extraction.
 media = ["pypdf>=6.0,<7.0", "python-docx>=1.1,<2.0", "openpyxl>=3.1,<4.0", "python-pptx>=1.0,<2.0"]
-all = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.0", "httpx>=0.27", "playwright>=1.40", "pyautogui>=0.9.54", "pillow>=10.0", "boto3>=1.34", "pypdf>=6.0,<7.0", "python-docx>=1.1,<2.0", "openpyxl>=3.1,<4.0", "python-pptx>=1.0,<2.0"]
+# Optional MCP client (Phase 7). Pulls in the official client SDK for
+# operator-configured external MCP servers behind the (off-by-default)
+# `mcp_call` gateway. Pinned to the stable v2 line. Purposely a SEPARATE extra:
+# the base install and even `[all]` users generally do not need a running MCP
+# client, and the SDK (even client-only paths under v2) drags in server-adjacent
+# deps (starlette/uvicorn) that should stay optional. `all` below does include it
+# so one install gets parity with the full manifest.
+mcp = ["mcp>=2.1,<3"]
+all = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.0", "httpx>=0.27", "playwright>=1.40", "pyautogui>=0.9.54", "pillow>=10.0", "boto3>=1.34", "pypdf>=6.0,<7.0", "python-docx>=1.1,<2.0", "openpyxl>=3.1,<4.0", "python-pptx>=1.0,<2.0", "mcp>=2.1,<3"]
 # Pinned tooling for reproducible CI/local type checks. The exact pyright
 # version is shared between the local environment and the CI "capabilities"
 # job so type-check results cannot drift.

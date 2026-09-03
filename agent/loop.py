@@ -24,6 +24,12 @@ from runtime import EventBus,JobQueue,Worker,Scheduler,SchedulerRunner
 from skills import SkillManager,SkillImprover
 from computer import ComputerController, make_computer
 from vision import VisionAnalyzer
+
+# Phase 7 MCP optional client. Safe to import unconditionally: the PyPI `mcp`
+# SDK is only ever imported lazily inside mcp_client.client methods, so a base
+# install without the [mcp] extra remains unaffected. The package name
+# ``mcp_client`` (underscore) intentionally does not shadow the ``mcp`` SDK.
+from mcp_client.client import MCPClientController
 from threading import RLock
 from onboarding import SetupManager
 from diagnostics import Doctor
@@ -69,6 +75,18 @@ class AgentLoop:
             sensitive_actions=False,
             secret_typing=False,
         )
+        # Phase 7 MCP optional client (single gated `mcp_call` tool). Disabled
+        # by default on three independent axes (settings flag / permissions.json
+        # / manifest feature flag), inert until an operator opts in AND lists an
+        # enabled, allowlisted server in config/mcp_servers.json. Per-remote-tool
+        # operator approvals route through the same ApprovalManager as AIBA's
+        # own dangerous tools.
+        self.mcp=MCPClientController(
+            enabled=bool(self.settings.mcp_enabled),
+            root_dir=self.settings.root_dir,
+            audit=self.audit,
+            approver=self.approvals.approve,
+        )
         from diagnostics.capabilities import load_manifest
         _mf=None
         try:_mf=load_manifest(self.settings.root_dir/'config'/'capability_manifest.json')
@@ -87,6 +105,7 @@ class AgentLoop:
             'AIBA_VISION_ENABLED': bool(self.settings.vision_model),
             'AIBA_SUBAGENTS_ENABLED': bool(self.settings.subagents_enabled),
             'AIBA_MEDIA_ENABLED': bool(self.settings.media_enabled),
+            'AIBA_MCP_ENABLED': bool(self.settings.mcp_enabled),
         }
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy,feature_flags=self.runtime_flags,manifest=self.manifest);self._register_tools()
         legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
@@ -185,6 +204,15 @@ class AgentLoop:
         self.registry.register(Tool('delegate_task','Run bounded internal background workers in parallel for research/verification/planning/review. Provide a list of concrete, self-contained objectives.',
             lambda objectives, tools=None, allow_approved=False, wait_s=120: self._delegate_subagents(objectives, allowed_tools=tools, allow_approved=bool(allow_approved), wait_s=float(wait_s)),
             {'type':'object','properties':{'objectives':{'type':'array','items':{'type':'string'}},'tools':{'type':'array','items':{'type':'string'}},'wait_s':{'type':'number'}},'required':['objectives'],'additionalProperties':False}))
+        # Phase 7 MCP optional client: single gated `mcp_call` gateway tool.
+        # Not advertised/callable until AIBA_MCP_ENABLED is set (settings +
+        # manifest feature flag) AND `mcp_call` is enabled in permissions.json
+        # AND an allowlisted server exists in config/mcp_servers.json. The
+        # controller fail-closes on every one of those before any process or
+        # network is touched; remote (http) servers additionally need
+        # AIBA_MCP_REMOTE. Remote tool allow/deny never ships to the model here —
+        # the model sees one tool, server_id, tool name + args.
+        self.registry.register(Tool('mcp_call','Call a tool on an operator-configured external MCP server. Pass server_id (the configured server key), tool (the server-side tool name), and arguments (a JSON object). Only servers and tools the operator has allowlisted are reachable; MCP is off by default.',self.mcp.execute,{'type':'object','properties':{'server_id':{'type':'string'},'tool':{'type':'string'},'arguments':{'type':'object'}},'required':['server_id','tool'],'additionalProperties':False}))
     # -- internal subagent bridges -------------------------------------------
     def _subagent_policy_allows(self, name: str) -> bool:
         """Whether *name* is enabled at the shared SecurityPolicy level."""

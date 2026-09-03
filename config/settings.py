@@ -41,6 +41,13 @@ class Settings:
     # Read-only extraction defaults ON (low-risk); the operator may set
     # AIBA_MEDIA_ENABLED=false to hide these tools entirely.
     media_enabled:bool=True
+    # --- MCP client (Phase 7 / v1.6) ---
+    # Disabled by default. Each MCP server additionally requires the optional
+    # `mcp` extra (the client SDK), an explicit entry in config/mcp_servers.json
+    # (enabled:true) and per-tool policy allowlist; stdio servers run as
+    # external child processes. Remote (http) transports are gated behind the
+    # AIBA_MCP_REMOTE feature flag and security.urlguard.
+    mcp_enabled:bool=False
     @classmethod
     def load(cls):
         root=Path(os.getenv('AIBA_ROOT',Path(__file__).resolve().parents[1])).resolve();load_env(root/'.env');data=Path(os.getenv('AIBA_DATA_DIR',root/'agent_system')).resolve()
@@ -54,6 +61,7 @@ class Settings:
         s=cls(root,data,data/'workspace',data/'vault',data/'logs',root/'skills',data/'aiba.db',data/'tasks.db',data/'jobs.db',data/'schedules.db',data/'auth.db',data/'providers.db',provider,fallback,os.getenv('AIBA_MODEL','gpt-4.1-mini'),os.getenv('AIBA_FALLBACK_MODEL','local-v1'),_int('AIBA_MAX_STEPS',20),_int('AIBA_COMMAND_TIMEOUT',30),_bool('AIBA_REQUIRE_APPROVAL',True),sandbox,os.getenv('AIBA_DOCKER_IMAGE','python:3.12-slim'),os.getenv('AIBA_DOCKER_MEMORY','512m'),os.getenv('AIBA_DOCKER_CPUS','1.0'),_bool('AIBA_SANDBOX_NETWORK',False),root/'config'/'permissions.json',_bool('AIBA_BROWSER_ENABLED',False),_bool('AIBA_DESKTOP_ENABLED',False),os.getenv('AIBA_VISION_MODEL','gpt-4.1-mini'),_bool('AIBA_WORKER_ENABLED',True),token,os.getenv('AIBA_API_HOST','127.0.0.1'),_int('AIBA_API_PORT',8765),origins,_int('AIBA_RATE_LIMIT_PER_MINUTE',60),_bool('AIBA_WEB_ENABLED',False),data/'computer_node.json',_bool('AIBA_DESKTOP_CLIPBOARD',False),_bool('AIBA_DESKTOP_PROCESS',False),
             _bool('AIBA_SUBAGENTS_ENABLED',False),data/'subagents.db',_int('AIBA_SUBAGENT_CONCURRENCY',3,minimum=1),_int('AIBA_SUBAGENT_PER_PARENT',2,minimum=1),
             None,_bool('AIBA_MEDIA_ENABLED',True),
+            _bool('AIBA_MCP_ENABLED',False),
             )
         for d in (s.data_dir,s.workspace_dir,s.vault_dir,s.logs_dir,s.skills_dir):d.mkdir(parents=True,exist_ok=True)
         return s

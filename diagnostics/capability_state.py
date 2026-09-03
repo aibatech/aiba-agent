@@ -200,17 +200,24 @@ def subagents_state(loop) -> dict[str, Any]:
 
 
 def mcp_state() -> dict[str, Any]:
-    """MCP server state.
+    """MCP client state (Phase 7 landed).
 
-    Phase 7 (the MCP client) is a separate, not-yet-landed subsystem. Until it
-    exists AIBA truthfully reports zero servers and unavailability rather than
-    fabricating a manager — this row is intentionally honest.
+    AIBA exposes a single gated ``mcp_call`` gateway to operator-configured
+    external MCP servers. It is OPTIONAL and DISABLED by default on three
+    independent axes (the ``AIBA_MCP_ENABLED`` feature flag, an ``enabled:true``
+    ``mcp_call`` entry in permissions.json, and at least one enabled allowlisted
+    server in config/mcp_servers.json). This pure collector has no live server
+    manager handle, so it truthfully reports the opt-in posture + configuration
+    file location rather than fabricating a running-manager state.
     """
     return {
-        "available": False,
+        "available": False,  # fail-closed default: not enabled until operator opts in
+        "disabled_by_default": True,
         "servers": [],
-        "note": "MCP is not implemented on this branch yet (v1.6 Phase 7). No servers can be configured or started.",
-        "enable": "aiba mcp add <server> (not available until Phase 7 lands)",
+        "note": "Optional MCP client (Phase 7) is landed but off by default. Enable AIBA_MCP_ENABLED, list "
+                "mcp_call (enabled:true) in config/permissions.json, and add allowlisted servers in "
+                "config/mcp_servers.json (see mcp_servers.example.json).",
+        "enable": "set AIBA_MCP_ENABLED=true + enable 'mcp_call' in permissions.json + configure config/mcp_servers.json",
     }
 
 

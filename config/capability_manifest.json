@@ -17,7 +17,9 @@
     "AIBA_VISION_ENABLED": "Gates vision_analyze; requires a vision-capable model.",
     "AIBA_SUBAGENTS_ENABLED": "Gates delegate_task: bounded internal background workers (subagents) for parallel research/verification/planning/review. Disabled by default. Workers are permission-narrowed (never broader than the main agent), non-recursive, and run under hard step/time budgets.",
     "none": "No feature flag required (always available once enabled).",
-    "AIBA_MEDIA_ENABLED": "Gates the media_extract tool (read-only local document/text extraction from workspace files: PDF/DOCX/XLSX/PPTX/CSV/markdown/image metadata). Defaults ON because it is read-only and workspace-confined; set AIBA_MEDIA_ENABLED=false to hide it. Each binary-format parser additionally depends on the optional [media] extra."
+    "AIBA_MEDIA_ENABLED": "Gates the media_extract tool (read-only local document/text extraction from workspace files: PDF/DOCX/XLSX/PPTX/CSV/markdown/image metadata). Defaults ON because it is read-only and workspace-confined; set AIBA_MEDIA_ENABLED=false to hide it. Each binary-format parser additionally depends on the optional [media] extra.",
+    "AIBA_MCP_ENABLED": "Gates the Phase 7 mcp_call tool (optional MCP client: call a tool on an operator-configured external MCP server). Disabled by default on three independent axes — this feature flag, enabled=false in permissions.json, and no enabled allowlisted server in config/mcp_servers.json. stdio/remote servers are configured only by the operator in config/mcp_servers.json; remote-tool allow/deny never ships to the model. Also requires the optional [mcp] extra.",
+    "AIBA_MCP_REMOTE": "Opt-in second feature flag for REMOTE (http / Streamable HTTP) MCP servers. Off by default; a remote server additionally must pass https-only + security-urlguard network policy at config-parse time and at call time, with redirect-following disabled (SSRF hardening)."
   },
   "tools": {
     "list_files": {
@@ -428,6 +430,14 @@
       "default_enabled": true,
       "requires_approval": false,
       "feature_flag": "AIBA_MEDIA_ENABLED"
+    },
+    "mcp_call": {
+      "description": "Phase 7 optional MCP client gateway. Calls a tool on an operator-configured external MCP server (stdio child process or, only when AIBA_MCP_REMOTE is set, a remote https server). Disabled by default on three independent axes: the AIBA_MCP_ENABLED feature flag, enabled=false in permissions.json, and the absence of an enabled, allowlisted server in config/mcp_servers.json. The model sees only this single gateway (server_id + tool name + arguments); per-server remote-tool allow/deny and operator approval live in the operator-owned config and never ship to the model. Fails closed before touching any process or network when MCP is disabled, the optional [mcp] SDK is absent, the config is invalid/absent, the server is unknown/disabled, the remote tool is not allowlisted, or (for remote http) AIBA_MCP_REMOTE is unset. All arguments are scrubbed before audit.",
+      "risk_class": "process_execution",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_MCP_ENABLED",
+      "optional_dependency": "python:mcp"
     }
   }
 }

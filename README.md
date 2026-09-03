@@ -177,6 +177,16 @@ AIBA can read the readable text out of common document formats so the model can 
 - **Posture:** every read is confined to the approved workspace; file size, page/sheet/slide/row and returned-character counts are bounded; document content is treated strictly as **untrusted data** — spreadsheet formulas are never evaluated, links and macros are never followed or run, and source files are never modified.
 - **Not (yet) functional:** OCR, audio transcription, text-to-speech, and image generation. AIBA surfaces these honestly as capability probes that report not-available until a real backend and its tests are wired in — it does not pretend to offer them.
 
+## Optional MCP client (`mcp_call`)
+
+AIBA can call tools on **operator-configured external MCP servers** through a single, gated gateway tool — it never runs an MCP server and never auto-trusts third-party servers.
+
+- **Optional + off by default.** Requires the `[mcp]` extra (`pip install -e '.[mcp]'` or `'.[all]'`) AND the `AIBA_MCP_ENABLED` feature flag AND an explicit `enabled:true` entry for `mcp_call` in `config/permissions.json` AND at least one enabled server in `config/mcp_servers.json`. With any of those unset, `mcp_call` is not advertised and every call is refused before any process or network is touched.
+- **One tool, operator-owned policy.** The model sees only `mcp_call(server_id, tool, arguments)`. Per-server remote-tool allow/deny and per-tool approval live in the operator-owned `config/mcp_servers.json` (see `config/mcp_servers.example.json`), never on the model surface; dynamic per-server tool names are intentionally not exposed because they cannot be policy-gated.
+- **Stdio and remote.** Local stdio servers run as explicit `command`+`argv` child processes (never through a shell), with `working_dir` confined to the config tree, bounded timeouts/output, and process-group teardown. Remote (http/Streamable HTTP) servers additionally require the **`AIBA_MCP_REMOTE`** flag (off by default) and are confined to HTTPS URLs that pass AIBA's shared SSRF/network policy, with redirect-following disabled.
+- **Secrets never in config.** Only allowlisted **env-var names** may be declared (resolved from the process environment at launch); secret-looking names and raw credential values are refused by the validator.
+- **Audit.** Call arguments are redacted before they are written to the audit log.
+
 ## Tests
 
 ```bash
