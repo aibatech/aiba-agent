@@ -385,4 +385,140 @@ version bump to v1.6.0-RC remain for the release milestone. Per the ground rule 
 **implemented** once its matrix rows are done with passing tests — nothing claimed beyond that.
 
 **Commits landed (chronological):** `921421c` plan doc → `d7ce497` P1 → `6eb8ad1` P2 →
-`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → `f8660c7` P4b (opt-in browser session + SSRF guard) → `c85fa9e` P3 (internal subagents, CI-green 12/12) → `6f0c58a` P9a (SessionStore + AgentLoop session auto-log) → `481cd7c` P9b (vault memory maintenance + skill versioning/rollback) → `365acf5` P9c (session/memory model tools + AgentLoop session auto-log, manifest/permissions 48→54, CI-green 12/12) → `c7c762c` P8 (read-only media/document extraction core, manifest/permissions 54→55, CI-green 12/12) → `194f355` P11 (capability-management CLI + dashboard data endpoint: `aiba tools/nodes/mcp/sessions/subagents`, order-preserving permission writer, `GET /v1/capabilities`, 13 tests, local gate 302 pass/1 skip) → `86a60b8` P7 (optional MCP client gateway `mcp_call`, manifest/permissions 55→56, 18 tests, local gate 320 pass/1 skip, certify `certified:true`) → `6ab7644` P7 doc follow-up → `8129f1b` P7 CI-fix (force `sdk_available` in MCP policy-gate tests so they are deterministic without the optional `mcp` SDK in the base CI env; **all 12 CI jobs green** on GitHub run `33809984662`). See §"Implementation Status Log".
+`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → `f8660c7` P4b (opt-in browser session + SSRF guard) → `c85fa9e` P3 (internal subagents, CI-green 12/12) → `6f0c58a` P9a (SessionStore + AgentLoop session auto-log) → `481cd7c` P9b (vault memory maintenance + skill versioning/rollback) → `365acf5` P9c (session/memory model tools + AgentLoop session auto-log, manifest/permissions 48→54, CI-green 12/12) → `c7c762c` P8 (read-only media/document extraction core, manifest/permissions 54→55, CI-green 12/12) → `194f355` P11 (capability-management CLI + dashboard data endpoint: `aiba tools/nodes/mcp/sessions/subagents`, order-preserving permission writer, `GET /v1/capabilities`, 13 tests, local gate 302 pass/1 skip) → `86a60b8` P7 (optional MCP client gateway `mcp_call`, manifest/permissions 55→56, 18 tests, local gate 320 pass/1 skip, certify `certified:true`) → `6ab7644` P7 doc follow-up → `8129f1b` P7 CI-fix (force `sdk_available` in MCP policy-gate tests so they are deterministic without the optional `mcp` SDK in the base CI env; **all 12 CI jobs green** on GitHub run `33809984662`). See §8 below.
+
+---
+
+## §8 — Release milestone checkpoint (2026-09-03, authoritative live-state + completion checklist)
+
+This section is the persistent checkpoint for the **v1.6.0-rc.1 release task**. It was verified
+firsthand this session (see inline evidence) and MUST be re-read at the start of every future
+session on this branch. Resume from the checklist; do not re-derive from conversation history.
+
+### 8.1 Verified live installation state (current v1.5.0 — DO NOT modify/restart until §6 cutover)
+- **systemd**: USER unit `~/.config/systemd/user/aiba.service` (enabled; `default.target.wants`).
+  - `ExecStart=/home/jay/aiba-agent/.venv/bin/python aiba_launcher.py --serve`
+  - `WorkingDirectory=/home/jay/aiba-agent`; `Type=simple`; `Restart=on-failure`; restart-sec 5;
+    `NoNewPrivileges=true`; NOT network-exposed (`127.0.0.1`, no TCPListen for remote).
+- **Live process**: Main PID 2465933, running since **2026-09-01 05:07:53 EDT** (2+ days), under
+  `user@1000.service / app.slice / aiba.service`. On-disk code = whatever was checked out at launch;
+  module image is resident in memory (python import-at-startup). **Restart would load the CURRENT
+  checkout**, which is the v1.6 feature branch — so DO NOT restart until the release tree is in place.
+- **Health (verified 2026-09-03)**: `GET /health` → `{"ok":true,"version":"1.5.0","provider":"local",
+  "sandbox":"local","managed_models":1}`; `GET /ready` → `{"ready":true,...}` all migrations current
+  (providers/jobs/tasks/schedules …). Config/health env confirmed via `/proc/2465933/environ`:
+  `AIBA_REQUIRE_APPROVAL=true`, `AIBA_API_HOST=127.0.0.1`, `AIBA_API_PORT=8765`, provider=local,
+  worker+telegram enabled, `AIBA_TELEGRAM_ALLOWED_USERS=8352755584`. Credentials/keys NOT stored here.
+- **Data + paths** (all defaults under `data_dir=<root>/agent_system`, overridable via `AIBA_DATA_DIR`):
+  `agent_system/` = aiba.db, tasks.db, jobs.db, schedules.db, auth.db, providers.db (verified Feb layout),
+  plus (newer) sessions.db, subagents.db, computer_node.json, profiles/ (0600; 2 files for hashed user),
+  backups/, logs/. `.env` at repo root holds operator secrets (0600, gitignored). `VERSION`/pyproject/API
+  all read `1.5.0`.
+- **Deployment template** `deployment/aiba.service` targets `/opt/aiba-agent` (container/VPS); the live
+  install uses the per-user unit above at `/home/jay/aiba-agent`. They differ. `BACKUP_AND_RESTORE.md`
+  documents the vault/agent_system drill.
+
+### 8.2 CRITICAL SAFETY FINDING — dev/live data dir coupling (must fix before more work)
+- Development and tests run from the SAME checkout `/home/jay/aiba-agent` AND default to the SAME
+  `data_dir=/home/jay/aiba-agent/agent_system` as the live service (`AIBA_DATA_DIR` unset in dev shell).
+- Consequence already observed: `sessions.db`/`subagents.db` (v1.6-only tables, not in v1.5 `main`)
+  were created in the LIVE data dir on 2026-09-03 05:41 by local test runs during Phase 9/11 dev.
+  The shared core live DBs (aiba.db Sep-01 09:12, schedules Sep-01, tasks Sep-01) were NOT touched by
+  later test runs, but the coupling is real and unacceptable for release work.
+- **Mandate going forward**: every dev command, test run, and local smoke MUST export a private
+  `AIBA_DATA_DIR` (and `AIBA_ROOT` if a scratch checkout) so nothing writes into the live
+  `agent_system/`. Rehearsal/soak/restore drills use a throwaway dir + a git **worktree** or a scratch
+  clone so dev is fully separate from the running install, per the task brief's section 1.
+- Live `.env` and secret stores must never be committed or staged. `.gitignore` already excludes
+  `agent_system/`, `.venv`, build artifacts, certification output.
+
+### 8.3 Release gates status (audited 2026-09-03)
+- **CI workflow `Production Gate`**: 4 jobs — `test` (9-matrix: ubuntu/windows/macos × 3.11/3.12/3.13:
+  pip install `.[api]` + platform installer + `certify_install.py` + `tests/api_smoke.py`),
+  `security` (pip-audit --strict + bandit -lll + secret_scan), `capabilities` (builds `.venv`,
+  `.[all]`, pyright 1.1.411 + `validate_capabilities.py`), `container` (docker build + trivy + doctor).
+  **All 12 jobs green** at v1.6 branch head `8129f1b` (run 33809984662) and doc head `8a47acd`
+  (run 33810206003). = 12 jobs, not 9 (3 test + security + capabilities + container).
+- **MCP coverage gap in CI (to close, §2)**: CI test matrix installs `.[api]` (base, NO mcp SDK):
+  MCP integration tests correctly skip their real-SDK path there. There is currently NO CI job that
+  installs `.[all]`/`[mcp]` and RUNS the real protocol tests — only the `capabilities` job installs
+  `[all]` but it runs pyright/validate, not the unit suite. → add an `mcp` CI job (or extend matrix)
+  that installs `[mcp]` and runs the full suite so real-SDK tests execute (not skip).
+- **Branch protection**: `gh api …/branches/main/protection` → **404 "Branch not protected"**. Main has
+  NO required-status-checks/review-enforcement. Repo norm = merge via PR (git history: "Merge PR #4",
+  "Merge pull request #3"). Planned release path therefore = PR-merge (no auto-merge) relying on the
+  Production Gate being the effective gate on the PR, NOT GitHub-enforced branch rules.
+- **Prior prerelease precedent**: `gh release list` → only `v1.3.0-rc.1` "AIBA Agent v1.3 Release
+  Candidate" (Pre-release, 2026-08-09). No v1.4/v1.5 prereleases. Stale remote branch
+  `origin/release/v1.4.0-rc.1` exists unused. Certification dir holds only `api-smoke.json` +
+  `linux-x86_64.json` (CI machine artifacts). **No `certification/RELEASE_CANDIDATE.json` exists.**
+- **Signing per PRODUCTION_GATE.md**: authenticode/Apple-notarization identities are EXTERNAL
+  (AIBA Technologies supply). Not achievable on this host/account → the 1.6.0-rc.1 prerelease must be
+  created WITHOUT platform binary signing unless Josh provides credentials; an unsigned artifact must
+  NOT be labelled signed. A GitHub Prerelease (not a Production Certified stable tag) is the honest,
+  authorized lane here — PRODUCTION_GATE.md reserves "Production Certified" for full evidence incl.
+  signing; a Release **Candidate** is permitted before that evidence is complete.
+- **Open PRs**: NONE currently open; no PR exists yet for `feat/aiba-v1.6-capability-parity`. The v1.6
+  branch is 13k+ lines / 66 files ahead of `main` (`76da680`).
+
+### 8.4 Open documented gaps → work items (task §2 mapping)
+1. **Remote computer-node pairing (Phase 5b)** — currently only local `ComputerNodeGate` pair-digest;
+   NO real authenticated remote-node transport. Work items: real encrypted/authenticated node comms,
+   explicit pairing + revocation, replay protection, owner-bound auth, per-action approvals, persistent
+   e-stop, bounded execution, redacted audit; NO public unauthenticated desktop endpoint; test vs a
+   separate controlled node. **Blocker to validate honestly**: a separate controlled target machine is
+   required; absent one, record as validation blocker (per brief), do NOT claim success.
+2. **Memory/skills (Phase 9 open rows)** — per-user vault-ROW isolation (read/write/search/export/
+   subagent); auto memory suggestions requiring confirmation + respecting `/memory pause`; skill
+   drafting with review-before-activation; generated skills cannot self-grant permissions. Test
+   cross-user isolation + prompt-injection. (Sessions ARE user-scoped today; vault rows are not.)
+3. **Media/docs (Phase 8 probes)** — replace honest OCR/ASR/TTS/imagegen probes with real optional
+   backends (maintained libs or paid APIs). Preserve `media_extract` + doc extraction. Audit the
+   originally-requested doc/spreadsheet CREATE+EDIT capability; implement missing parts with workspace
+   confinement + overwrite approval. Lazy-load + exact missing-dep diagnostics. **Blocker**: OCR/ASR/
+   TTS/imagegen real backends that cost money need an explicit approved budget; local libs (tesseract,
+   faster-whisper, etc.) need explicit download-size approval (see brief: don't download large models or
+   buy APIs without approval).
+4. **MCP (Phase 7 hardening)** — (a) add CI coverage both WITH and WITHOUT the SDK; SDK job must RUN
+   the real protocol tests (not skip). (b) test remote transport vs a controlled HTTPS MCP server:
+   redirects, SSRF, auth, disconnects, output limits (loopback HTTPS server + real `mcp_call`).
+   (c) review the single `mcp_call` gateway vs intended DISCOVERY experience (tools/list, schema
+   validation, per-server/per-tool perms+approvals applied); keep only if tests prove discovery+schema+
+   perms; else implement discovery/schema integration.
+5. **Telegram + usability (Phase 1/2/10 hardening)** — isolated test bot or approved test chat: verify
+   typing-indicator refresh/stop, warm/concise/no-excess-markdown, numbered clarify choices, truthful
+   progress, authenticated approval replies tied to the exact pending action, document delivery through
+   the authorized connector, no hidden reasoning/secrets/prompts.
+6. **Security/real-exec review (task §3)** — cancelled/timed-out subagent must not continue tool calls;
+   thread timeouts not presented as guaranteed process termination; delegation consent not blanket
+   approval; browser redirects/subresources/DNS/downloads can't bypass network+workspace restrictions;
+   clipboard/screenshots out of logs; browser/desktop tools actually perform actions in a disposable env
+   (not fake backends), harmless reversible fixtures, keep risky capabilities disabled-by-default.
+
+### 8.5 Release-gate evidence to retain (task §4) + publish (§5) + upgrade (§6)
+- Full unit+integration suites; clean-install certify; capability validation; CI-matching pyright;
+  pip-audit; bandit; secret scan; compileall; diff-check; MCP present + absent env; real isolated
+  browser/desktop smoke; backup/restore + upgrade/rollback rehearsal; authenticated API + connector
+  tests; 1-hour soak with resource/concurrency monitoring. Inspect EVERY skip — required coverage must
+  not silently vanish.
+- Publish: bump to **1.6.0-rc.1** on ALL sources (VERSION, pyproject, api/server.py×2, changelog,
+  dashboard labels), reconcile with current `main` via PR, re-run checks on the final release tree, build
+  downloadable archive from the EXACT release commit, exclude secrets/runtime, verify archive integrity,
+  publish SHA-256, signing only if credentials present (never fabricate / mislabel). No "stable"/parity
+  comparison claim without evidence.
+- Upgrade personal install to the exact rc: record working version+health, consistent verified backup
+  (all db/profiles/memory/creds/workspace/config/service settings), preserve keys+file perms, cover NEW
+  subsystem data (subagents.db/sessions.db/computer_node.json/vault), rehearse restore + record rollback
+  commands, stage code+venv separately, cutover ONLY via `systemctl --user restart aiba` (never pkill),
+  preserve telegram/provider config, apply only tested migrations, keep browser/desktop/remote-MCP OFF
+  by default, verify health/ready/version/doctor/API/provider/telegram-poling/profile-memory/backup;
+  on failure run the tested rollback and report.
+
+### 8.6 Checkpoint / next-action (update this line each session end)
+STATE: Release task block-checkpointed at §8. All §8.1/8.2 verified. §8.3 audited. Ready to (a) fix the
+dev/live data-dir isolation and open a scratch worktree for release work, then (b) work through §8.4 work
+items 2/4(a/c)/6 that do not need external hardware or paid spend, and report blockers for 1/3/4(b)/5
+(remote test node, paid-API/local-model budget, test bot) to the owner. NOT yet: §8.5 publish (needs
+owner merge authorization + main-reconcile) or §8.5/S6cutover live upgrade (needs full gate pass).
+NEXT ACTION when resumed: export `AIBA_DATA_DIR` to a throwaway dir and create isolation fixture; run the
+full local gate there; then start §8.4 work item 4(a) (MCP CI job).
