@@ -99,6 +99,7 @@ The Community Runtime has no artificial provider or model limits. It remains a s
 - WebSockets authenticate before accepting a connection;
 - API rate limits and prompt-size limits are enforced;
 - browser requests reject credentials, local addresses, private networks, and unsafe redirect/subresource targets;
+- document/text extraction (`media_extract`) is read-only and workspace-confined: file size and page/sheet/row/return counts are bounded, and document contents are treated as untrusted data — spreadsheet formulas are never evaluated, links and macros are never followed or run, and originals are never modified;
 - shell and Python execution require the isolated Docker sandbox;
 - tool arguments are validated and tool failures are contained;
 - OpenAI, Anthropic, Ollama, and OpenAI-compatible providers receive native tool schemas;
@@ -165,6 +166,16 @@ File access is constrained to `agent_system/workspace`. Sensitive tools require 
 `delegate_task` (internal subagents) is disabled by default. To enable it, set `AIBA_SUBAGENTS_ENABLED=true` **and** flip `config/permissions.json` `delegate_task.enabled` to `true` — both must be on, mirroring the browser/computer gate posture. When enabled, AIBA remains the single assistant you talk to; the workers it spawns are invisible, bounded, non-recursive internal workhorses that return only a concise result summary for AIBA to fold into its reply.
 
 Docker sandbox mode mounts only the workspace, disables networking by default, and applies CPU/memory limits. Do not mount the host root or a Docker socket into the AIBA application container.
+
+## Media and document extraction
+
+AIBA can read the readable text out of common document formats so the model can inspect files dropped into its workspace — as **read-only, bounded, workspace-confined** extraction:
+
+- **Formats:** PDF, DOCX, XLSX, PPTX (via the optional `[media]` extra: pypdf / python-docx / openpyxl / python-pptx), plus CSV, plain text / markdown, and common image metadata (Pillow). All are pure-Python; the base `pip install -e '.[api]'` install stays lightweight and does not require them.
+- **Install:** `pip install -e '.[media]'` (or `'.[all]'`) to enable binary-format parsing. CSV / text / markdown always work; a missing optional library returns a clear "install optional support" diagnostic rather than a partial parse.
+- **Tool:** `media_extract` — read-only, registered through the capability manifest, permissions, the `AIBA_MEDIA_ENABLED` feature flag (default on), diagnostics, and audit. It requires no approval and never writes.
+- **Posture:** every read is confined to the approved workspace; file size, page/sheet/slide/row and returned-character counts are bounded; document content is treated strictly as **untrusted data** — spreadsheet formulas are never evaluated, links and macros are never followed or run, and source files are never modified.
+- **Not (yet) functional:** OCR, audio transcription, text-to-speech, and image generation. AIBA surfaces these honestly as capability probes that report not-available until a real backend and its tests are wired in — it does not pretend to offer them.
 
 ## Tests
 

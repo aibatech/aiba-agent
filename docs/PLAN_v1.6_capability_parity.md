@@ -1,6 +1,6 @@
 # AIBA v1.6 — Capability Parity: Engineering Plan + Capability Matrix + Timeline
 
-**Status:** IN PROGRESS — Phases 1, 2, 3, 4, 4b, 5, 6, 10 implemented and tested. Phase 9 sessions/memory/skills substantially implemented (session store+search, vault edit/delete/list/export, skill versioning/rollback, model tools in parity) — a few parity matrix rows (auto-suggestion confirmation, per-user vault-row isolation, skill-review formalization) remain outstanding. See §"Implementation Status Log".
+**Status:** IN PROGRESS — Phases 1, 2, 3, 4, 4b, 5, 6, 10 implemented and tested. Phase 9 sessions/memory/skills substantially implemented (session store+search, vault edit/delete/list/export, skill versioning/rollback, model tools in parity) — a few parity matrix rows (auto-suggestion confirmation, per-user vault-row isolation, skill-review formalization) remain outstanding. Phase 8 media extraction core implemented (PDF/DOCX/XLSX/PPTX/CSV/txt/markdown + image metadata, `media_extract` tool, honest per-format diagnostics; OCR/ASR/TTS/imagegen probe-only). See §"Implementation Status Log".
 **Branch:** `feat/aiba-v1.6-capability-parity` (07 commits + growing)
 **Live install:** v1.5.0 untouched. Not restarted, not modified.
 **Date:** 2026-09-02
@@ -154,19 +154,19 @@ Legend: `A=AIBA v1.5 today` · `H=Hermes Agent` · `O=OpenClaw` · `T=v1.6 targe
 | Dashboard + CLI management + audit logging | ❌ | ✅ | ✅ | **→** | 
 | Never auto-install/trust arbitrary MCP servers (source review + approval) | ❌ | ◑ | ◑ | **→** | Hard requirement; explicit approval gate. |
 
-### PHASE 8 — Media & documents
+### PHASE 8 — Media & documents ◑ *(extraction core implemented; OCR/ASR/TTS/imagegen honest probes only)*
 | Capability | A | H | O | T | Evidence |
 |---|---|---|---|---|---|
-| PDF / DOCX / XLSX / presentation extraction | ❌ | ✅ | ✅ | **→** | `pypdf`/`python-docx`/`openpyxl`/`python-pptx` optional. |
-| CSV reading | ◑ | ✅ | ✅ | **→** | stdlib `csv`. |
-| OCR | ❌ | ✅ | ✅ | **→** | tesseract (optional). |
-| Image analysis | ✅ | ✅ | ✅ | **→** | AIBA has `vision_analyze`. |
-| Audio transcription | ❌ | ✅ | ✅ | **→** | Whisper (optional). |
-| Voice-note input from Telegram | ❌ | ✅ | ✅ | **→** | getFile + transcribe. |
-| Text-to-speech | ❌ | ✅ | ✅ | **→** | TTS (optional; e.g. edge). |
-| Image generation | ❌ | ✅ | ✅ | **→** | optional image-gen endpoint. |
-| Telegram doc/photo/audio send+receive | ◑ | ✅ | ✅ | **→** | sendPhoto/Document/Voice + receive file. |
-| Optional deps + clear capability diagnosis | ◑ | ✅ | ◑ | **→** | doctor reports missing optional deps. |
+| PDF / DOCX / XLSX / presentation extraction | ❌ | ✅ | ✅ | ✅ | `media/extract.py` — genuine lazy-optional parsing via pypdf/python-docx/openpyxl/python-pptx under the `[media]` extra; per-format fixture-tested. |
+| CSV reading | ◑ | ✅ | ✅ | ✅ | stdlib `csv` in `media/extract.py`; formula cells returned as literal text, never evaluated. |
+| OCR | ❌ | ✅ | ✅ | ❌ | Honest capability probe only — not claimed functional until a backend + tests exist. |
+| Image analysis | ✅ | ✅ | ✅ | ✅ | AIBA `vision_analyze` + `media/extract.py` image-metadata (PIL, dims/format/mode). |
+| Audio transcription | ❌ | ✅ | ✅ | ❌ | Honest capability probe only. |
+| Voice-note input from Telegram | ❌ | ✅ | ✅ | ❌ | Not in this phase. |
+| Text-to-speech | ❌ | ✅ | ✅ | ❌ | Honest capability probe only. |
+| Image generation | ❌ | ✅ | ✅ | ❌ | Honest capability probe only. |
+| Telegram doc/photo/audio send+receive | ◑ | ✅ | ✅ | ◑ | Not in this phase. |
+| Optional deps + clear capability diagnosis | ◑ | ✅ | ◑ | ✅ | In-tool "install optional support" diagnostics + `media/capabilities.py` `media_capability_probe()` surfacing per-format readiness. |
 
 ### PHASE 9 — Memory / skills / sessions ◑ *(substantially implemented; see status log)*
 | Capability | A | H | O | T | Evidence |
@@ -274,9 +274,12 @@ General:
 - Tests: stdio discovery+filtering, streamable-HTTP (mock server), approval enforcement, no-trust-by-default, reconnection, timeout, audit.
 
 ### Phase 8 (Media/docs)
-- New `media/` package: `extract.py` (PDF/DOCX/XLSX/PPTX/CSV), `ocr.py`, `audio.py` (transcribe), `speech.py` (TTS), `imagegen.py`. All optional imports; `doctor` reports availability.
-- Extend Telegram: receive file (voice/photo/doc), `sendPhoto/Document/Voice`.
-- Tests: each extractor on small fixtures, optional-dep diagnosis, voice-note input mapping.
+- New `media/` package: `extract.py` (PDF/DOCX/XLSX/PPTX/CSV via lazy-optional pypdf/python-docx/openpyxl/python-pptx under the `[media]` extra; plus txt/markdown and image metadata via PIL), `capabilities.py` (honest per-format availability probes). OCR/ASR/TTS/imagegen are surfaced ONLY as capability probes that report not-available — no hollow placeholders claiming functionality without a backend + tests. `doctor`/in-tool diagnostics report missing optional deps.
+- Read-only security posture: workspace-confined reads (Sandbox policy), bounded size/page/sheet/slide/row/return limits, content always treated as untrusted data (never executed; spreadsheet formulas/links/macros never evaluated or run), originals never modified. Exports stay behind the existing approval-gated `write_file` space — the media surface writes nothing.
+- Optional `[media]` deps folded into the `[all]` extra and requirements.txt (supply-chain audited); base `[api]` install stays lightweight and unchanged.
+- A single model tool, `media_extract`, registered through manifest/permissions/feature-flag (`AIBA_MEDIA_ENABLED`, default on)/diagnostics/audit, read-only (no approval).
+- Not in this phase: Telegram doc/photo/audio send+receive, OCR, ASR, TTS, image generation (all honest-probe-only or deferred).
+- Tests: each extractor on small fixtures, boundary/limits, path-confinement, formula-not-evaluated, NUL handling, optional-dep diagnosis, loop registration + feature-flag gating.
 
 ### Phase 9 (Memory/skills/sessions)
 - `sessions` storage: new `agent/sessions.py` (SQLite session log + FTS search).
@@ -356,24 +359,27 @@ Ground rule upheld: a phase is only marked **implemented** once its code is comm
 | **5 — Computer control + nodes** | ✅ Implemented (5a local gate+node; 5b remote-node manual) | `computer/node.py` — `ComputerNodeGate` (pair-only-digest, enable/disable, emergency stop persisted across reload, revoke, max-action budget, clipboard/process opt-in), `computer/controller.py` — full opt-in safe toolset (screen/move/click/drag/scroll/key/hotkey/type/open_url/clipboard/process) behind the gate; argv-only dispatch (no shell strings), SSRF-safe `_forbidden_open_target` (loopback/RFC-1918/metadata/aliases/non-http), clipboard returns length marker not content, secret-typed text never logged; `computer/__init__.py` `make_computer(settings, audit)`; 13 `desktop_*` tools registered in loop, all disabled by default (feature-flag + `permissions.json` master gate + gate refuses until paired+enabled); CLI `--computer-pair/status/enable/disable/stop/reset-budget`. Pairing of a real remote node (5b) remains manual/CI-optional — needs a real target machine. | `tests/test_computer.py` (22) + `tests/test_capability_integration.py` Phase5 wiring (4) |
 | **6 — Term/file/process parity** | ✅ Implemented (file additions) | `tools/sandbox.py` — `patch_file` (atomic find-and-replace + diff, block ambiguous/missing), `archive` (zip/tar/gztar, written inside workspace), `extract_archive` (zip/tar, **zip-slip blocked**); registered in loop. Terminal/process lifecycle (SSH, process mgmt) still future | `tests/test_sandbox.py` (10) |
 | **7 — MCP client** | ⬜ Not started | — | — |
-| **8 — Media/document processing** | ⬜ Not started | — | — |
+| **8 — Media/document processing** | ◑ Extraction core delivered | `media/extract.py` — genuine read-only PDF (`pypdf`)/DOCX (`python-docx`)/XLSX (`openpyxl`)/PPTX (`python-pptx`)/CSV (stdlib)/txt+markdown + image-metadata (PIL) extraction, workspace-confined via the Sandbox policy, bounded (size/page/sheet/slide/row/return limits), content treated as untrusted data (formulas never evaluated, links/macros never run, originals never written). `media/capabilities.py` honest per-format probes. Optional `[media]` deps folded into `[all]` + requirements.txt; base `[api]` unchanged. Single `media_extract` tool registered through manifest/permissions/feature-flag (`AIBA_MEDIA_ENABLED`, default on)/diagnostics/audit, read-only no-approval. Config manifest+permissions **54→55 lockstep**. OCR/ASR/TTS/imagegen remain honest probe-only (not claimed functional without backend+tests); Telegram media send/receive deferred. | `tests/test_phase8_media.py` (16) |
 | **9 — Memory/skills/sessions** | ◑ Substantially delivered (see note) | `agent/sessions.py` — `SessionStore` (SQLite + FTS5, external-content triggers kept in sync; per-user rows; `open_session`/`append`/`close_session`/`delete`/`get`/`list_by_user`/`search`/`recover_interrupted`). `memory/vault.py` — added `get`/`update`/`remove`/`list`/`export` (FTS stays in sync via triggers). `skills` SkillManager — `revisions()`/`rollback()` snapshot-archive versioning (`revisions/<ver>.json`). `agent/loop.py` — SessionStore construction + per-turn session auto-log in `_handle` (best-effort, concise sanitised title/summary, closed on completion, no deliberation stored); 6 new model tools registered: `update_memory`, `delete_memory`, `list_memories`, `export_memories`, `session_search`, `session_history`. `config/capability_manifest.json` + `config/permissions.json` both grown **48→54 in lockstep** (destructive/`local_mutation` approval-gated; read-only no-approval). **Open rows for full phase completion:** per-user memory-*row* isolation inside the vault (sessions are user-scoped today), automatic memory suggestions requiring confirmation (DreamEngine→approval), skill auto-creation formalization + review workflow. Those are honestly recorded as outstanding rather than overclaimed. | `tests/test_sessions.py` (7) + `tests/test_memory_edit.py` (6) + `tests/test_skills_versioning.py` (5) + `tests/test_phase9_loop.py` (8) |
 | **10 — Clarify tool** | ✅ Implemented | `tools/clarify.py` — focused questions with choices + tradeoffs, blocking (`answer_source`) and async **pending** flow (`ClarificationRequested`, `on_pending` → `clarify.pending` bus event); registered `clarify` tool; Telegram inline-button answering via `clar:<qid>:<choice>` callbacks + `connect_clarify()` | `tests/test_clarify.py` (11) |
 | **11 — CLI + dashboard** | ⬜ Not started | — | — |
-| **12 — Test + release** | 🔶 Partial | Full local suite **274 tests pass** (1 platform skip) across test modules incl. computer/node-gate, browser-session security, internal subagents, Phase9 sessions/memory/skills modules + AgentLoop wiring; CI matrix/version bump still pending | `tests/*` |
+| **12 — Test + release** | 🔶 Partial | Full local suite **290 tests pass** (1 platform skip) across test modules incl. computer/node-gate, browser-session security, internal subagents, Phase9 sessions/memory/skills modules + AgentLoop wiring, and Phase8 media extraction + loop gating; CI matrix/version bump still pending | `tests/*` |
 
-**Suite report (this branch):** `unittest` → **274 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
+**Suite report (this branch):** `unittest` → **290 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
 clarify, sandbox, web, computer/node-gate, **browser-session security**, **internal subagents (store/pool/manager 31 + AgentLoop wiring 8)**,
-**Phase 9 (sessions store 7, memory edit 6, skills versioning 5, phase9 AgentLoop wiring 8)**, capability wiring (incl. Phase3/Phase4b/Phase5),
+**Phase 9 (sessions store 7, memory edit 6, skills versioning 5, phase9 AgentLoop wiring 8)**, **Phase 8 media (extraction + boundary/confinement + loop gating 16)**, capability wiring (incl. Phase3/Phase4b/Phase5),
 personality, providers, onboarding, and v02–v13 regressions.
 
-**Remaining to reach full 12-phase bar:** Phases 7 (MCP client) and 8 (media/docs) are multi-session subsystems still
-to do; Phase 11 (CLI/dashboard) likewise. Phase 9 is **substantially delivered** — the sessions store/search, vault
+**Remaining to reach full 12-phase bar:** Phase 7 (MCP client) is still a multi-session subsystem to do, Phase 11
+(CLI/dashboard) likewise. Phase 9 is **substantially delivered** — the sessions store/search, vault
 edit/delete/list/export and skill versioning/rollback rows are implemented and tested; the remaining Phase 9 rows
 (per-user vault-row isolation, automatic memory suggestions with confirmation, skill auto-creation/review
-formalization) are deliberately left open and honest rather than overclaimed. Phase 5b's real remote-node pairing,
-container/CI evidence and the version bump to v1.6.0-RC remain for the release milestone. Per the ground rule a phase
-is only marked fully **implemented** once its matrix rows are done with passing tests — nothing claimed beyond that.
+formalization) are deliberately left open and honest rather than overclaimed. Phase 8's **extraction core** (PDF/DOCX/
+XLSX/PPTX/CSV/txt/markdown + image metadata, `media_extract` tool, config 54→55 in parity) is implemented and tested;
+OCR/ASR/TTS/imagegen and Telegram media send+receive remain honest probe-only / deferred (not claimed functional
+without a real backend + tests, per scope). Phase 5b's real remote-node pairing, container/CI evidence and the
+version bump to v1.6.0-RC remain for the release milestone. Per the ground rule a phase is only marked fully
+**implemented** once its matrix rows are done with passing tests — nothing claimed beyond that.
 
 **Commits landed (chronological):** `921421c` plan doc → `d7ce497` P1 → `6eb8ad1` P2 →
-`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → `f8660c7` P4b (opt-in browser session + SSRF guard) → `c85fa9e` P3 (internal subagents, CI-green 12/12) → `6f0c58a` P9a (SessionStore + AgentLoop session auto-log) → `481cd7c` P9b (vault memory maintenance + skill versioning/rollback). This phase's P9c wiring commit (session/memory model tools + loop integration, manifest/permissions 48→54) follows and is reported at push time.
+`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → `f8660c7` P4b (opt-in browser session + SSRF guard) → `c85fa9e` P3 (internal subagents, CI-green 12/12) → `6f0c58a` P9a (SessionStore + AgentLoop session auto-log) → `481cd7c` P9b (vault memory maintenance + skill versioning/rollback) → `365acf5` P9c (session/memory model tools + AgentLoop session auto-log, manifest/permissions 48→54, CI-green 12/12). The Phase 8 commit (media extraction core, manifest/permissions 54→55) follows and is reported at push time.

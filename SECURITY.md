@@ -14,6 +14,7 @@ AIBA v1.5 receives security fixes. Do not expose older developer-preview release
 6. Back up `agent_system/`, restrict its filesystem permissions, and encrypt the host volume.
 7. Rotate provider keys, the AIBA token, and affected stored credentials after suspected exposure.
 8. Review `agent_system/logs/audit.jsonl` and container logs; never send secrets in prompts.
+9. Treat uploaded/workspace documents as **untrusted data** and parse them only with the optional, dependency-versioned `[media]` extractors (`media_extract`). These parsers never evaluate spreadsheet formulas, macros, or links and never modify the source file, but a malformed PDF/DOCX/XLSX/PPTX is still attacker-controlled parser input — keep pypdf/python-docx/openpyxl/python-pptx patched and, when processing untrusted documents at scale, run AIBA where it cannot reach resources a malicious parser could pivot toward. OCR/ASR/TTS/image-generation are not enabled until a reviewed backend + test suite exists.
 
 ## Threat boundaries
 

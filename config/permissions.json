@@ -4,6 +4,7 @@
   "tools": {
     "list_files": {"enabled": true, "requires_approval": false},
     "read_file": {"enabled": true, "requires_approval": false},
+    "media_extract": {"enabled": true, "requires_approval": false},
     "write_file": {"enabled": true, "requires_approval": true},
     "delete_file": {"enabled": true, "requires_approval": true},
     "patch_file": {"enabled": true, "requires_approval": true},

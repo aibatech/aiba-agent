@@ -16,7 +16,8 @@
     "AIBA_DESKTOP_ENABLED": "Gates computer-control tooling (desktop_screenshot / desktop_click / desktop_type). Disabled until the paired-node security phase is complete.",
     "AIBA_VISION_ENABLED": "Gates vision_analyze; requires a vision-capable model.",
     "AIBA_SUBAGENTS_ENABLED": "Gates delegate_task: bounded internal background workers (subagents) for parallel research/verification/planning/review. Disabled by default. Workers are permission-narrowed (never broader than the main agent), non-recursive, and run under hard step/time budgets.",
-    "none": "No feature flag required (always available once enabled)."
+    "none": "No feature flag required (always available once enabled).",
+    "AIBA_MEDIA_ENABLED": "Gates the media_extract tool (read-only local document/text extraction from workspace files: PDF/DOCX/XLSX/PPTX/CSV/markdown/image metadata). Defaults ON because it is read-only and workspace-confined; set AIBA_MEDIA_ENABLED=false to hide it. Each binary-format parser additionally depends on the optional [media] extra."
   },
   "tools": {
     "list_files": {
@@ -420,6 +421,13 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_SUBAGENTS_ENABLED"
+    },
+    "media_extract": {
+      "description": "Extract readable text/metadata from a workspace file (PDF, DOCX, XLSX, PPTX, CSV, markdown/text, or common image metadata). Content is treated as untrusted data and never executed.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "AIBA_MEDIA_ENABLED"
     }
   }
 }

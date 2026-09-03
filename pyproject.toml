@@ -12,7 +12,11 @@ api = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.0", "httpx>=0.27"]
 browser = ["playwright>=1.40"]
 desktop = ["pyautogui>=0.9.54", "pillow>=10.0"]
 bedrock = ["boto3>=1.34"]
-all = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.0", "httpx>=0.27", "playwright>=1.40", "pyautogui>=0.9.54", "pillow>=10.0", "boto3>=1.34"]
+# Document extraction (media/docs). Pure-Python, kept strictly optional so the
+# base AIBA install stays lightweight. Install with `pip install aiba-agent[media]`
+# (or the `all` extra) to enable PDF/DOCX/XLSX/PPTX text extraction.
+media = ["pypdf>=6.0,<7.0", "python-docx>=1.1,<2.0", "openpyxl>=3.1,<4.0", "python-pptx>=1.0,<2.0"]
+all = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.0", "httpx>=0.27", "playwright>=1.40", "pyautogui>=0.9.54", "pillow>=10.0", "boto3>=1.34", "pypdf>=6.0,<7.0", "python-docx>=1.1,<2.0", "openpyxl>=3.1,<4.0", "python-pptx>=1.0,<2.0"]
 # Pinned tooling for reproducible CI/local type checks. The exact pyright
 # version is shared between the local environment and the CI "capabilities"
 # job so type-check results cannot drift.

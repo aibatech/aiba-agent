@@ -10,6 +10,7 @@ from tools.browser import browser_fetch
 from tools.browser_session import BrowserSession, build_browser_tools
 from tools.clarify import Clarify, ClarifyToolFactory
 from tools.web import WebTools, build_web_tools
+from tools.media import MediaExtraction, build_media_tools
 from tools.registry import ToolRegistry
 from memory.vault import MemoryVault
 from memory.retrieval import RetrievalEngine
@@ -51,6 +52,12 @@ class AgentLoop:
         self.vision=VisionAnalyzer(self.settings.vision_model)
         self.clarify=Clarify(on_pending=self._on_clarify_pending)
         self.web_tools=build_web_tools(search_enabled=self.settings.web_enabled)
+        # Read-only document/text extraction (Phase 8). Reads workspace files
+        # confined through the Sandbox; optional [media] libs enable PDF/DOCX/
+        # XLSX/PPTX parsing, otherwise each returns an "install optional
+        # support" diagnostic. Never writes. Registry advertises/denies based
+        # on the AIBA_MEDIA_ENABLED feature flag below.
+        self.media=MediaExtraction(self.sandbox)
         # Opt-in persistent browser automation. Disabled until AIBA_BROWSER_ENABLED
         # is true; downloads/uploads are confined to the workspace. Mutations
         # (click/type/select/submit/download/upload) carry requires_approval in
@@ -79,6 +86,7 @@ class AgentLoop:
             'AIBA_DESKTOP_ENABLED': bool(self.settings.desktop_enabled),
             'AIBA_VISION_ENABLED': bool(self.settings.vision_model),
             'AIBA_SUBAGENTS_ENABLED': bool(self.settings.subagents_enabled),
+            'AIBA_MEDIA_ENABLED': bool(self.settings.media_enabled),
         }
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy,feature_flags=self.runtime_flags,manifest=self.manifest);self._register_tools()
         legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
@@ -130,6 +138,11 @@ class AgentLoop:
         self.registry.register(Tool('run_shell','Run command in sandbox.',self.sandbox.run_shell,{'type':'object','properties':{'command':{'type':'string'}},'required':['command'],'additionalProperties':False}))
         self.registry.register(Tool('run_python','Run Python in sandbox.',self.sandbox.run_python,{'type':'object','properties':{'code':{'type':'string'}},'required':['code'],'additionalProperties':False}))
         for wt in self.web_tools:self.registry.register(wt)
+        # Read-only document/text extraction (Phase 8). Availability (advertised
+        # or denied) follows the AIBA_MEDIA_ENABLED manifest feature flag; each
+        # format parser reports an "install optional support" diagnostic when a
+        # needed [media] library is absent.
+        for mt in build_media_tools(self.media):self.registry.register(mt)
         self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
         self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         # --- Memory maintenance + session search (Phase 9) ---
