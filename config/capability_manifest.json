@@ -110,6 +110,48 @@
       "requires_approval": false,
       "feature_flag": "none"
     },
+    "update_memory": {
+      "description": "Edit an existing memory row by id.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "delete_memory": {
+      "description": "Delete a memory row by id (destructive).",
+      "risk_class": "destructive",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "list_memories": {
+      "description": "List stored memories, optionally filtered by category.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "export_memories": {
+      "description": "Export memories (optionally one category) to a markdown file in the workspace.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "session_search": {
+      "description": "Search past AIBA task/session history (this user only); never returns internal deliberation.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "session_history": {
+      "description": "List recent AIBA sessions for this user.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
     "browser_fetch": {
       "description": "Fetch rendered webpage text.",
       "risk_class": "read_only_network",

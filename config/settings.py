@@ -30,6 +30,10 @@ class Settings:
     subagents_db_path:Path|None=None
     subagent_global_concurrency:int=3
     subagent_per_parent_concurrency:int=2
+    # --- Memory / sessions (Phase 9 / v1.6) ---
+    # Append at END with defaults (positional-safe like Phase 3). When None,
+    # the AgentLoop derives a default under data_dir.
+    sessions_db_path:Path|None=None
     @classmethod
     def load(cls):
         root=Path(os.getenv('AIBA_ROOT',Path(__file__).resolve().parents[1])).resolve();load_env(root/'.env');data=Path(os.getenv('AIBA_DATA_DIR',root/'agent_system')).resolve()

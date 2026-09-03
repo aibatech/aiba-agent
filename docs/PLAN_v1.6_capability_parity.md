@@ -1,6 +1,6 @@
 # AIBA v1.6 — Capability Parity: Engineering Plan + Capability Matrix + Timeline
 
-**Status:** IN PROGRESS — Phases 1, 2, 3, 4, 4b, 5, 6, 10 implemented and tested. See §"Implementation Status Log".
+**Status:** IN PROGRESS — Phases 1, 2, 3, 4, 4b, 5, 6, 10 implemented and tested. Phase 9 sessions/memory/skills substantially implemented (session store+search, vault edit/delete/list/export, skill versioning/rollback, model tools in parity) — a few parity matrix rows (auto-suggestion confirmation, per-user vault-row isolation, skill-review formalization) remain outstanding. See §"Implementation Status Log".
 **Branch:** `feat/aiba-v1.6-capability-parity` (07 commits + growing)
 **Live install:** v1.5.0 untouched. Not restarted, not modified.
 **Date:** 2026-09-02
@@ -168,18 +168,18 @@ Legend: `A=AIBA v1.5 today` · `H=Hermes Agent` · `O=OpenClaw` · `T=v1.6 targe
 | Telegram doc/photo/audio send+receive | ◑ | ✅ | ✅ | **→** | sendPhoto/Document/Voice + receive file. |
 | Optional deps + clear capability diagnosis | ◑ | ✅ | ◑ | **→** | doctor reports missing optional deps. |
 
-### PHASE 9 — Memory / skills / sessions
+### PHASE 9 — Memory / skills / sessions ◑ *(substantially implemented; see status log)*
 | Capability | A | H | O | T | Evidence |
 |---|---|---|---|---|---|
-| Session history | ❌ | ✅ | ✅ | **→** | task store exists; add session log table. |
-| Cross-session search | ◑ | ✅ | ✅ | **→** | FTS over tasks + audit; or session store. |
-| User-scoped memory retrieval | ✅ | ✅ | ✅ | **→** | AIBA has per-user profile; add user-scoped memory rows. |
-| Memory editing & deletion | ❌ | ✅ | ✅ | **→** | vault update/delete. |
-| Memory export | ❌ | ◑ | ◑ | **→** | 
-| Automatic memory suggestions (with confirmation) | ❌ | ✅ | ◑ | **→** | DreamEngine→vault suggestions requiring approval. |
-| Skills auto-created from repeated/successful work | ◑ | ✅ | ✅ | **→** | SkillImprover exists; formalize creation. |
-| Skill review, versioning, rollback | ◑ | ◑ | ◑ | **→** | version field exists; add review+rollback. |
-| Per-user memory isolation (no cross-user leak) | ✅ | ◑ | ✅ | **→** | AIBA opaque per-user profiles already isolate. |
+| Session history | ❌ | ✅ | ✅ | ✅ | `agent/sessions.py` session log table + AgentLoop per-turn auto-log (`kind='turn'`, per-user, closed on completion). |
+| Cross-session search | ◑ | ✅ | ✅ | ✅ | FTS5 over session store, user-scoped `session_search` tool + store `search`. |
+| User-scoped memory retrieval | ✅ | ✅ | ✅ | ◑ | vault wide (not per-user-row yet); `list`/`search` by category. Per-user vault rows outstanding. |
+| Memory editing & deletion | ❌ | ✅ | ✅ | ✅ | vault `update`/`remove` + `update_memory`/`delete_memory` tools (destructive gated). |
+| Memory export | ❌ | ◑ | ◑ | ✅ | vault `export(category)` + `export_memories` tool → sandbox-confined markdown. |
+| Automatic memory suggestions (with confirmation) | ❌ | ✅ | ◑ | **→** | DreamEngine→vault suggestion w/ approval not yet implemented. Outstanding. |
+| Skills auto-created from repeated/successful work | ◑ | ✅ | ✅ | ◑ | SkillImprover proposal path (unchanged this phase); formalization outstanding. |
+| Skill review, versioning, rollback | ◑ | ◑ | ◑ | ◑ | versioning + rollback added (revisions/<ver>.json, restore); review workflow outstanding. |
+| Per-user memory isolation (no cross-user leak) | ✅ | ◑ | ✅ | ◑ | sessions user-scoped (tested); vault rows not user-tagged yet. Outstanding. |
 
 ### PHASE 10 — Clarify tool
 | Capability | A | H | O | T | Evidence |
@@ -357,19 +357,23 @@ Ground rule upheld: a phase is only marked **implemented** once its code is comm
 | **6 — Term/file/process parity** | ✅ Implemented (file additions) | `tools/sandbox.py` — `patch_file` (atomic find-and-replace + diff, block ambiguous/missing), `archive` (zip/tar/gztar, written inside workspace), `extract_archive` (zip/tar, **zip-slip blocked**); registered in loop. Terminal/process lifecycle (SSH, process mgmt) still future | `tests/test_sandbox.py` (10) |
 | **7 — MCP client** | ⬜ Not started | — | — |
 | **8 — Media/document processing** | ⬜ Not started | — | — |
-| **9 — Memory/skills/sessions** | ⬜ Not started | — | — |
+| **9 — Memory/skills/sessions** | ◑ Substantially delivered (see note) | `agent/sessions.py` — `SessionStore` (SQLite + FTS5, external-content triggers kept in sync; per-user rows; `open_session`/`append`/`close_session`/`delete`/`get`/`list_by_user`/`search`/`recover_interrupted`). `memory/vault.py` — added `get`/`update`/`remove`/`list`/`export` (FTS stays in sync via triggers). `skills` SkillManager — `revisions()`/`rollback()` snapshot-archive versioning (`revisions/<ver>.json`). `agent/loop.py` — SessionStore construction + per-turn session auto-log in `_handle` (best-effort, concise sanitised title/summary, closed on completion, no deliberation stored); 6 new model tools registered: `update_memory`, `delete_memory`, `list_memories`, `export_memories`, `session_search`, `session_history`. `config/capability_manifest.json` + `config/permissions.json` both grown **48→54 in lockstep** (destructive/`local_mutation` approval-gated; read-only no-approval). **Open rows for full phase completion:** per-user memory-*row* isolation inside the vault (sessions are user-scoped today), automatic memory suggestions requiring confirmation (DreamEngine→approval), skill auto-creation formalization + review workflow. Those are honestly recorded as outstanding rather than overclaimed. | `tests/test_sessions.py` (7) + `tests/test_memory_edit.py` (6) + `tests/test_skills_versioning.py` (5) + `tests/test_phase9_loop.py` (8) |
 | **10 — Clarify tool** | ✅ Implemented | `tools/clarify.py` — focused questions with choices + tradeoffs, blocking (`answer_source`) and async **pending** flow (`ClarificationRequested`, `on_pending` → `clarify.pending` bus event); registered `clarify` tool; Telegram inline-button answering via `clar:<qid>:<choice>` callbacks + `connect_clarify()` | `tests/test_clarify.py` (11) |
 | **11 — CLI + dashboard** | ⬜ Not started | — | — |
-| **12 — Test + release** | 🔶 Partial | Full local suite **248 tests pass** (1 platform skip) across test modules incl. computer/node-gate, browser-session security, internal subagents, + Phase3/Phase4b/Phase5 capability wiring; CI matrix/version bump still pending | `tests/*` |
+| **12 — Test + release** | 🔶 Partial | Full local suite **274 tests pass** (1 platform skip) across test modules incl. computer/node-gate, browser-session security, internal subagents, Phase9 sessions/memory/skills modules + AgentLoop wiring; CI matrix/version bump still pending | `tests/*` |
 
-**Suite report (this branch):** `unittest` → **248 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
-clarify, sandbox, web, computer/node-gate, **browser-session security**, **internal subagents (store/pool/manager 31 + AgentLoop wiring 8)**, capability wiring (incl. Phase3/Phase4b/Phase5),
+**Suite report (this branch):** `unittest` → **274 tests, OK (1 platform skip)**, covering connectors, ux, protocol,
+clarify, sandbox, web, computer/node-gate, **browser-session security**, **internal subagents (store/pool/manager 31 + AgentLoop wiring 8)**,
+**Phase 9 (sessions store 7, memory edit 6, skills versioning 5, phase9 AgentLoop wiring 8)**, capability wiring (incl. Phase3/Phase4b/Phase5),
 personality, providers, onboarding, and v02–v13 regressions.
 
-**Remaining to reach full 12-phase bar:** Phases 7 (MCP client), 8 (media/docs), 11 (CLI/dashboard)
-are the multi-session subsystems still to do; Phase 5b's real remote-node pairing and Phase 9/container/CI evidence +
-version bump to v1.6.0-RC remain for the release milestone. Per the ground rule these are all honestly marked
-`not-started` — nothing claimed without passing tests.
+**Remaining to reach full 12-phase bar:** Phases 7 (MCP client) and 8 (media/docs) are multi-session subsystems still
+to do; Phase 11 (CLI/dashboard) likewise. Phase 9 is **substantially delivered** — the sessions store/search, vault
+edit/delete/list/export and skill versioning/rollback rows are implemented and tested; the remaining Phase 9 rows
+(per-user vault-row isolation, automatic memory suggestions with confirmation, skill auto-creation/review
+formalization) are deliberately left open and honest rather than overclaimed. Phase 5b's real remote-node pairing,
+container/CI evidence and the version bump to v1.6.0-RC remain for the release milestone. Per the ground rule a phase
+is only marked fully **implemented** once its matrix rows are done with passing tests — nothing claimed beyond that.
 
 **Commits landed (chronological):** `921421c` plan doc → `d7ce497` P1 → `6eb8ad1` P2 →
-`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → `f8660c7` P4b (opt-in browser session + SSRF guard). This phase's Internal Subagents (P3) commit follows and is reported at push time.
+`21afe9a` P10 → `6ee0608` P10b → `163ed22` P6 → `3dd9db8` P4 → `00ef452` CI/capabilities determinism → `061c6e2` P5 → `f8660c7` P4b (opt-in browser session + SSRF guard) → `c85fa9e` P3 (internal subagents, CI-green 12/12) → `6f0c58a` P9a (SessionStore + AgentLoop session auto-log) → `481cd7c` P9b (vault memory maintenance + skill versioning/rollback). This phase's P9c wiring commit (session/memory model tools + loop integration, manifest/permissions 48→54) follows and is reported at push time.

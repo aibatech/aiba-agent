@@ -30,12 +30,20 @@ from updates import UpdateManager,UpdateChecker
 from operations import BackupManager,MigrationManager,CrashReporter,Metrics
 from personality import PersonalExperience
 from agent.subagent_manager import SubagentManager
+from agent.sessions import SessionStore
 class AgentLoop:
     def __init__(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
         self.settings=settings or Settings.load();self.audit=AuditLog(self.settings.logs_dir/'audit.jsonl');self.events=EventBus();self._run_lock=RLock();self.metrics=Metrics();self.crashes=CrashReporter(self.settings.logs_dir)
         self.approvals=ApprovalManager(interactive,auto_approve);self.policy=SecurityPolicy(self.settings.workspace_dir,self.settings.permissions_path,self.settings.require_approval)
         self.sandbox=Sandbox(self.settings.workspace_dir,self.settings.command_timeout,self.policy,self.settings.sandbox_mode,self.settings.docker_image,self.settings.docker_memory,self.settings.docker_cpus,self.settings.sandbox_network)
         self.vault=MemoryVault(self.settings.db_path,self.settings.vault_dir);self.tasks=TaskStore(self.settings.tasks_db_path);self.tasks.recover_interrupted()
+        # Session history (Phase 9): per-user chronological log with FTS search,
+        # auto-populated as top-level handled turns complete. DB lives under
+        # data_dir unless settings.sessions_db_path overrides it (tests do).
+        self.sessions=SessionStore(self.settings.sessions_db_path or (self.settings.data_dir/'sessions.db'))
+        # Ambient user for session-search read tools (set per handled turn). The
+        # session/memory read tools scope to whoever last drove a handled turn.
+        self._current_user='default'
         self.personal=PersonalExperience(self.settings.root_dir,self.settings.data_dir)
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
         self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
@@ -124,6 +132,14 @@ class AgentLoop:
         for wt in self.web_tools:self.registry.register(wt)
         self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
         self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
+        # --- Memory maintenance + session search (Phase 9) ---
+        # Memory edits/mutations mirror write_file/delete_file approval posture.
+        self.registry.register(Tool('update_memory','Edit an existing memory row by id.',lambda memory_id,content=None,category=None,importance=None:ToolResult(True,self.vault.update(int(memory_id),content,category,None if importance is None else float(importance))),{'type':'object','properties':{'memory_id':{'type':'integer'},'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['memory_id'],'additionalProperties':False}))
+        self.registry.register(Tool('delete_memory','Delete a memory row by id (destructive).',lambda memory_id:ToolResult(self.vault.remove(int(memory_id))),{'type':'object','properties':{'memory_id':{'type':'integer'}},'required':['memory_id'],'additionalProperties':False}))
+        self.registry.register(Tool('list_memories','List stored memories, optionally filtered by category.',lambda limit=50,category=None:ToolResult(True,self.vault.list(int(limit),category)),{'type':'object','properties':{'limit':{'type':'integer'},'category':{'type':'string'}},'additionalProperties':False}))
+        self.registry.register(Tool('export_memories','Export memories (optionally one category) to a markdown file in the workspace.',lambda filename='memories_export.md',category=None:ToolResult(True,self._export_memories(str(filename),category)),{'type':'object','properties':{'filename':{'type':'string'},'category':{'type':'string'}},'additionalProperties':False}))
+        self.registry.register(Tool('session_search','Search past AIBA task/session history (this user only); never returns internal deliberation.',lambda query,limit=10:ToolResult(True,self.sessions.search((self._current_user or 'default'),query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
+        self.registry.register(Tool('session_history','List recent AIBA sessions for this user.',lambda limit=20:ToolResult(True,self.sessions.list_by_user((self._current_user or 'default'),int(limit))),{'type':'object','properties':{'limit':{'type':'integer'}},'additionalProperties':False}))
         self.registry.register(Tool('browser_fetch','Fetch rendered webpage text.',browser_fetch,{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
         for bt in build_browser_tools(self.browser):self.registry.register(bt)
         wsc = str(self.settings.workspace_dir)
@@ -245,13 +261,38 @@ class AgentLoop:
     def _handle(self,text,propose_skill=True,task_type=None,manual_model_id=None,user_id=None):
         from reasoning.protocol import VisibleReasoning
         task_id=self.tasks.create(text);self.events.publish('task_started',task_id=task_id,task=text)
+        # Session history (Phase 9): best-effort per-turn log row. Never stores
+        # deliberation; a concise sanitised title/summary only. Failures to
+        # persist must never break the handled task.
+        user_key=(user_id or 'default')
+        self._current_user=user_key
+        _sid=None
+        try:_sid=self.sessions.open_session(user_key,title=(text[:120] or ''),kind='turn')
+        except Exception:_sid=None
         self.engine._reasoning=VisibleReasoning(self.events.publish,task_id)
         self.engine._reasoning.plan(f"Task accepted: {text[:80]}", steps=self.engine.max_steps)
         try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id),blocked_tools=self.personal.blocked_tools(user_id));self.tasks.finish(task_id,answer);status='complete'
         except Exception as exc:
             crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status='failed';self.tasks.finish(task_id,answer,status)
+        # Best-effort session close/status: complete/failed both map to closed.
+        if _sid is not None:
+            try:self.sessions.append(_sid,summary=(answer[:400] or ''));self.sessions.close_session(_sid)
+            except Exception:pass
         ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
         self.metrics.increment('tasks_total',status=status);self.events.publish('task_finished',task_id=task_id,status=status,tools=used,reflection=str(ref),skill_proposal=str(proposal) if proposal else None);return answer
+    def _export_memories(self, filename, category=None):
+        """Export memories (optionally one category) to a markdown doc in the
+        workspace (sandbox-confined). Returns an ok summary dict or error str."""
+        rows=self.vault.export(category) if hasattr(self.vault,'export') else []
+        lines=[f"# AIBA memory export{(' — '+category) if category else ''}\n"]
+        for r in rows:
+            lines.append(f"- `{r.get('id','')}` [{r.get('category','general')}] ({r.get('created_at','')}): {r.get('content','')}")
+        md='\n'.join(lines)+'\n'
+        try:
+            result=self.sandbox.write_file(str(filename),md)
+            return {'file':str(filename),'count':len(rows)} if getattr(result,'ok',True) else {'error':getattr(result,'error','write failed')}
+        except Exception as exc:
+            return {'error':f'{type(exc).__name__}: {exc}'}
     def capability_report(self, runtime_flags=None):
         """Return a live per-tool capability report (see diagnostics/capabilities).
 
