@@ -522,45 +522,49 @@ isolated MCP tests). Commit `e883e6d`, pushed. Runs on HEAD `e883e6d`: Productio
 skipped=7 = platform/optional only; MCP `test_stdio_roundtrip` EXECUTED, not skipped** —
 log shows real SDK spawn reaching `/opt/fake/server.py`). So HEAD now green on **13 jobs**.
 Checkpoint §8.1/8.2/8.3 verified earlier; committed as `e639574`.
-STATUS of remaining gaps (3-delegated read-only audits DONE, no code written yet):
-- **Gap 2 (memory/skills/sessions)**: audit confirms `memories` table has NO owner column
-  (`memory/vault.py:8-10`); shared singleton AgentLoop carries ambient `self._current_user`
-  (`loop.py:53`, set `loop.py:309` per handled turn from `user_id` = `telegram:<id>`); the
-  exact per-user pattern to mirror = `SessionStore.user_key` (`agent/sessions.py:41`). 6
-  memory tool lambdas at `loop.py:165-172` + `_export_memories`(327) + `RetrievalEngine`
-  (`memory/retrieval.py:3`) + `engine.run` context injection (`engine.py:25-27`) ALL
-  user-agnostic → per-user-row isolation needs a **real aiba.db schema migration (v1→v2,
-  add owner col + FTS triggers)** via `operations/migrations.py`. `/memory pause` lives in
-  `personality/experience.py` (`memory_active`, `_memory_writes_allowed` 325, `blocked_tools`
-  391-402 returns ONLY `remember`) and only gates the `remember` tool. DreamEngine.reflect
-  (`loop.py:322`, user-agnostic) auto-writes memory each task — suggestion/confirmation must
-  wrap loop.py:322.
-- **Gap 6 (security/real-exec)**: audit verdict per concern = (1) cancel/timeout cooperative,
-  in-flight handler runs to completion — tests don't assert "call-count flat after terminal";
-  (2) timeout is soft-boundary, NOT process termination, docs honest but no explicit statement;
-  (3) delegation consent scoped PER-TOOL and model cannot self-grant (`allow_approved` not in
-  schema) — SAFE on main path, but shared main-workspace NOT folder-isolated (recorded
-  `workspace` unused); (4) redirects/subresources re-checked per request but Playwright path
-  LACKS `socket.getaddrinfo`/`ip.is_global` DNS check that `web_extract`/`browser_fetch` have
-  (DNS-rebinding bypass), and `computer/controller.py:screenshot` (250-262) does NOT
-  `.relative_to(workspace)` → `../../` escape; (5) clipboard content + screenshot bytes DO stay
-  out of logs/streams and are approval-gated, BUT `desktop_type`/`browser_type` typed text is
-  logged RAW at the registry `tool_start` (`tools/registry.py:78`); desktop screenshot saved
-  into approval-free `read_file` area; (6) browser/desktop tests are fake-driver only with
-  honest docstrings; real `_PlaywrightDriver`/`_PyAutoGuiBackend` never exercised → need opt-in
-  integration gate.
-- **Gap 4(c) (MCP discovery/schema)**: audit confirms NO `tools/list`/schema validation; pure
-  call-by-explicit-name through `mcp_call`; `policy.py` has dead `mcp_tool_name`/namespace code
-  never called; per-tool allowlist+approval IS operator-static via `config/mcp_servers.json`
-  (`McpServerConfig.tools`), fail-closed at `client.py:373-393`. Discovery/schema seam = top of
-  `MCPClientController.execute` (client.py:284).
-- **Gaps 1,3,4(b),5 = EXTERNAL blockers** needing owner input (see §8.4 notes): remote node
-  machine; paid-API/model budget for OCR/ASR/TTS/imagegen; reachable controlled HTTPS MCP
-  server + remote-MCP opt-in; isolated Telegram test bot token.
-NOT YET touched/done: everything in §8.5 (publish) and §8.5/S6 (live upgrade).
-NEXT ACTION when resumed (highest value, unblocked): Gap 6 item (5) hardening (redact
-`type_text`-class args at `registry.execute` `tool_start`; make `run_skill` propagate the
-model `blocked` set) — small, self-contained, test-first; then Gap 6 item (4) DNS/workspace
-confinement tests (some will reveal real gaps to fix); then Gap 2 isolation (needs the
-migration decision); then Gap 4(c) MCP discovery (sizing decision). Report external blockers
-for gaps 1/3/4(b)/5. Do NOT auto-bump/merge/upgrade without owner go on the §8.5 gates.
+Gap **6 (sec) first hardening DONE + CI-verified** — registry audit/approval-surface secret
+scrub (`_scrub_args_for_surface` in `tools/registry.py`, applied at tool_start/tool_denied/
+approval-preview; new `tests/test_registry_redaction.py`, 5 tests). Commit `78b56ca`, pushed.
+HEAD `78b56ca` green on **13 jobs**: Production Gate 33815030016 (conclusion success,
+12/12) + MCP Integration 33815030092 (`mcp-with-sdk` success). Full suite locally **326 OK
+(skipped=1)**; pyright 0, bandit LL, secret scan clean. **This closes audit concern #5's
+outer-layer typed-text leak end-to-end.**
+Remaining Gap 6 items from the audit (next, in order, all test-first):
+- #5b: desktop `screenshot` path NOT workspace-confined (`computer/controller.py:250-262`
+  lacks `.relative_to(workspace)`) → escape via `../../`; fix + test. Also the desktop
+  screenshot lands in an approval-free `read_file` area.
+- #2/#1: thread-timeout honesty + "no tool calls after terminal" — add tests asserting
+  call-count flat after `TIMED_OUT`/`CANCELLED`, and that a blocked handler is NOT
+  pre-emptively killed (soft-boundary truth). Note `SubagentPool.shutdown` has dead
+  "grace then cancel" comment (`subagents.py:522-530`) — align code+comment.
+- #3c: recorded subagent `workspace` is never used for confinement (shared main workspace);
+  add regression doc + decide if per-delegation folder isolation is wanted.
+- #4: Playwright browser path LACKS the `socket.getaddrinfo`/`ip.is_global` DNS check that
+  web_extract/browser_fetch have, and needs real-driver (opt-in) redirect/subresource/
+  download tests; how to close the DNS-rebinding gap.
+Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/commits):
+- Gap 2 memory/skills: `memory/vault.py:8-10` `memories` table has NO owner column; FTS
+  external-content triggers there drive FTS. Per-user isolation requires aiba.db migration
+  v1→v2 (owner col; triggers) via `operations/migrations.py`, then thread owner from ambient
+  `AgentLoop._current_user` (loop.py:53/309) through the 6 memory tool lambdas (loop.py:
+  165-172) + `_export_memories`(327) + `RetrievalEngine`(memory/retrieval.py:3) + context
+  injection (reasoning/engine.py:25-27, the sharpest cross-user leak). Mirror
+  `SessionStore.user_key` (agent/sessions.py:41). Suggestion-confirmation must wrap
+  `DreamEngine.reflect` (loop.py:322, currently user-agnostic + auto-writes) and respect
+  `/memory pause` (`memory_active` in personality/experience.py, `_memory_writes_allowed`325,
+  `blocked_tools`391-402 returns ONLY `remember`). Skill review/no-self-permission: gate
+  `SkillImprover.approve`(skills/improver.py:12) — the only activation choke-point; sandbox
+  already excludes config/ so skills cannot self-grant via write_file. `run_skill` does NOT
+  propagate the model `blocked` set (skills/manager.py:88-93).
+- Gap 4(c) MCP discovery/schema: absent — call-by-explicit-name only (`mcp_call`); no
+  tools/list/schema validation; per-tool allowlist+approval is operator-static (config/
+  mcp_servers.json `McpServerConfig.tools`), fail-closed (client.py:373-393). Discovery seam
+  = top of `MCPClientController.execute` (client.py:284). Dead namespace code in
+  `mcp_client/policy.py` (mcp_tool_name/split_mcp_tool_name) never called.
+- Gaps 1,3,4(b),5 = EXTERNAL blockers (remote node machine; paid-API/model budget for
+  OCR/ASR/TTS/imagegen; reachable HTTPS MCP server + remote-MCP opt-in; isolated test-bot
+  token).
+§8.5 publish + §8.5/S6 live upgrade NOT started — gated on full gate pass + owner go.
+NEXT ACTION when resumed: Gap 6 #5b — desktop screenshot workspace-confinement fix + test
+(computer/controller.py + test_computer.py); then #2/#1 subagent termination-honesty tests.
+Update this line each session. Do NOT auto-bump/merge/upgrade.
