@@ -19,6 +19,30 @@ class MemoryVault:
             c.row_factory=sqlite3.Row
             rows=c.execute('SELECT m.*,bm25(memories_fts) rank FROM memories_fts JOIN memories m ON m.id=memories_fts.rowid WHERE memories_fts MATCH ? ORDER BY rank,m.importance DESC LIMIT ?',(' OR '.join(f'"{x}"' for x in terms),int(limit))).fetchall()
             return [dict(r) for r in rows]
+    def get(self,memory_id:int):
+        with connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row;r=c.execute('SELECT * FROM memories WHERE id=?',(int(memory_id),)).fetchone();return dict(r) if r else None
+    def update(self,memory_id:int,content:str|None=None,category:str|None=None,importance:float|None=None,metadata:dict|None=None):
+        sets=[];vals=[]
+        if content is not None:sets.append('content=?');vals.append(str(content))
+        if category is not None:sets.append('category=?');vals.append(str(category))
+        if importance is not None:sets.append('importance=?');vals.append(float(importance))
+        if metadata is not None:sets.append('metadata=?');vals.append(json.dumps(metadata))
+        if not sets:raise ValueError('Provide at least one field to update')
+        vals.append(int(memory_id))
+        with connect(self.db_path) as c:c.execute(f'UPDATE memories SET {", ".join(sets)} WHERE id=?',vals)  # FTS stays in sync via memories_au trigger
+    def remove(self,memory_id:int)->bool:
+        with connect(self.db_path) as c:
+            cur=c.execute('DELETE FROM memories WHERE id=?',(int(memory_id),));return cur.rowcount>0  # FTS stays in sync via memories_ad trigger
+    def list(self,limit:int=100,category:str|None=None):
+        sql='SELECT * FROM memories';args=[]
+        if category:sql+=' WHERE category=?';args.append(category)
+        sql+=' ORDER BY id DESC LIMIT ?';args.append(int(limit))
+        with connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row;rows=c.execute(sql,args).fetchall();return [dict(r) for r in rows]
+    def export(self,category:str|None=None):
+        rows=self.list(limit=10000,category=category)
+        return [{'id':r['id'],'content':r['content'],'category':r['category'],'importance':r['importance'],'created_at':r['created_at'],'source_path':r.get('source_path')} for r in rows]
     def sync_markdown(self):
         for p in self.vault_dir.rglob('*.md'):
             rel=str(p.relative_to(self.vault_dir)); content=p.read_text(encoding='utf-8',errors='replace'); category=rel.split('/')[0] if '/' in rel else 'general'
