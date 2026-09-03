@@ -2,11 +2,28 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
 from config.env import load_env
 from onboarding import SetupManager
 from agent.loop import AgentLoop
+
+
+def _maybe_capability_cli(argv: list[str] | None = None) -> int | None:
+    """If the user typed ``aiba tools|nodes|mcp|sessions|subagents``, route to
+    the Phase 11 capability-management CLI and return its exit code. Otherwise
+    return None so main() falls through to the legacy flat-flag surface."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in {"tools", "nodes", "mcp", "sessions", "subagents"}:
+        from cli.capability import dispatch
+        return dispatch(argv)
+    return None
+
+
 def main():
+    routed = _maybe_capability_cli()
+    if routed is not None:
+        raise SystemExit(routed)
     p=argparse.ArgumentParser(description='AIBA Agent v1.5')
     p.add_argument('--prompt');p.add_argument('--yes',action='store_true')
     p.add_argument('--serve',action='store_true');p.add_argument('--telegram',action='store_true')

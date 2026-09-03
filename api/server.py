@@ -104,6 +104,23 @@ def create_app(agent):
         return agent.setup.complete()
     @app.get('/v1/diagnostics')
     def diagnostics(authorization:str|None=Header(default=None)):authorize(authorization);return agent.doctor.run(check_port=False)
+    @app.get('/v1/capabilities')
+    def capabilities(session_user:str='default',session_limit:int=30,activity_limit:int=25,authorization:str|None=Header(default=None)):
+        """Capability-management overview for the dashboard (Phase 11).
+
+        One bounded, read-only snapshot: per-tool readiness (registry +
+        permissions + feature flags + optional deps), feature-flag state,
+        computer-node state, recent sessions, internal subagent (worker)
+        counts, MCP availability, and a small recent tool-activity tail.
+        """
+        authorize(authorization)
+        from diagnostics.capability_state import snapshot
+        return snapshot(
+            agent,
+            user=session_user or 'default',
+            session_limit=max(1, min(int(session_limit), 200)),
+            activity_limit=max(1, min(int(activity_limit), 200)),
+        )
     @app.get('/v1/operations')
     def operations(authorization:str|None=Header(default=None)):authorize(authorization);return {'migrations':agent.migrations.status(),'backups':agent.backups.list(),'metrics':agent.metrics.snapshot()}
     @app.post('/v1/backups',status_code=201)
