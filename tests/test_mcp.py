@@ -177,6 +177,14 @@ class EnvNamePolicyTests(unittest.TestCase):
 
 
 class ToolAllowlistPolicyTests(unittest.TestCase):
+    def setUp(self):
+        # These tests exercise the server/tool policy gates, which run AFTER the
+        # SDK-presence check. Force sdk_available=True so they are deterministic
+        # regardless of whether the optional `mcp` SDK is installed (it is not
+        # present in the base CI test environment).
+        set_sdk_available_override(True)
+        self.addCleanup(set_sdk_available_override, None)
+
     def test_unlisted_remote_tool_is_denied(self):
         d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
         r = Path(d.name)
@@ -192,9 +200,12 @@ class ToolAllowlistPolicyTests(unittest.TestCase):
 
 class ExecuteFailClosedTests(unittest.TestCase):
     def setUp(self):
-        # Simulate SDK present without needing it to import (probe override used
-        # only by error-branch tests; the happy stdio roundtrip lives elsewhere).
-        set_sdk_available_override(None)
+        # Fail-closed tests target the master-switch and server/tool gates that
+        # follow the SDK-presence check. Force sdk_available=True so these tests
+        # are deterministic whether or not the optional `mcp` SDK is installed
+        # (the base CI test env does not install it).
+        set_sdk_available_override(True)
+        self.addCleanup(set_sdk_available_override, None)
 
     def test_disabled_master_switch_denies(self):
         ctrl = MCPClientController(enabled=False)
