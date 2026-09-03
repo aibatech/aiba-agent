@@ -174,8 +174,17 @@ class AgentLoop:
         self.registry.register(Tool('session_history','List recent AIBA sessions for this user.',lambda limit=20:ToolResult(True,self.sessions.list_by_user((self._current_user or 'default'),int(limit))),{'type':'object','properties':{'limit':{'type':'integer'}},'additionalProperties':False}))
         self.registry.register(Tool('browser_fetch','Fetch rendered webpage text.',browser_fetch,{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
         for bt in build_browser_tools(self.browser):self.registry.register(bt)
-        wsc = str(self.settings.workspace_dir)
-        self.registry.register(Tool('desktop_screenshot','Capture desktop screenshot into the workspace.',lambda path='desktop.png':self.computer.screenshot(str(Path(wsc)/path)),{'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}))
+        def _desktop_screenshot(path: str = "desktop.png") -> ToolResult:
+            # Confine the screenshot target inside the sandbox workspace using the
+            # same policy-authorized resolution as read/write_file, so a `..` or
+            # absolute path from the model can never escape the workspace. Return a
+            # clean denial rather than raising through the registry.
+            try:
+                dest = self.sandbox.resolve(str(path))
+            except Exception as exc:
+                return ToolResult(False, error=f"Workspace-confined path required for screenshot: {exc}")
+            return self.computer.screenshot(str(dest))
+        self.registry.register(Tool('desktop_screenshot','Capture desktop screenshot into the workspace.',_desktop_screenshot,{'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}))
         self.registry.register(Tool('desktop_click','Click screen coordinates.',self.computer.click,{'type':'object','properties':{'x':{'type':'integer'},'y':{'type':'integer'},'button':{'type':'string'},'clicks':{'type':'integer'}},'required':['x','y'],'additionalProperties':False}))
         self.registry.register(Tool('desktop_type','Type text into active window (secret-like text is not logged).',self.computer.type_text,{'type':'object','properties':{'text':{'type':'string'},'interval':{'type':'number'}},'required':['text'],'additionalProperties':False}))
         self.registry.register(Tool('desktop_screen_size','Report the desktop screen size in pixels.',lambda: self.computer.screen_size(),{'type':'object','properties':{},'additionalProperties':False}))

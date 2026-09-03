@@ -19,6 +19,7 @@ catches silent capability loss.
 """
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 import unittest
@@ -345,6 +346,44 @@ class Phase5DesktopWiringTests(unittest.TestCase):
             "desktop_node_status",
             {s["name"] for s in loop.registry.schemas()},
         )
+
+    def test_desktop_screenshot_path_is_workspace_confined(self):
+        """Even when desktop is enabled AND screenshot permitted+approved+paired,
+        a `..`/absolute screenshot path must be confined (never escape the
+        workspace). This pins the loop's desktop_screenshot handler routing the
+        target through the same policy-authorized sandbox resolution as the file
+        tools, instead of a naive Path(workspace)/path join."""
+        loop = make_loop(self.tmp, make_settings(self.tmp, desktop=True))
+        # Canonical permissions.json disables desktop_screenshot; enable + permit
+        # it to reach the handler (simulating an owner who opted into the risky
+        # capability) so we exercise the confinement that still must hold.
+        perm = self.tmp / "config" / "permissions.json"
+        pc = json.loads(perm.read_text())
+        pc["tools"]["desktop_screenshot"] = {"enabled": True, "requires_approval": False}
+        perm.write_text(json.dumps(pc))
+        # The loop already loaded canonical permissions; rebuild with the grant.
+        from agent.loop import AgentLoop
+
+        loop2 = AgentLoop(settings=loop.settings, interactive=False,
+                          auto_approve=True, start_worker=False)
+        gate = loop2.computer_node
+        gate.pair("desktop-confine-test", capabilities=["screen"])
+        gate.enable()
+        ws = loop2.settings.workspace_dir.resolve()
+        # A traversal or absolute path must be denied, never written outside.
+        for bad in ("../../escape.png", str(self.tmp / "abs_escape.png")):
+            r = loop2.registry.execute("desktop_screenshot", {"path": bad})
+            self.assertFalse(r.ok, f"escape {bad!r} not denied: {r.error!r}")
+            self.assertIn("workspace", (r.error or "").lower())
+            self.assertFalse((self.tmp / "escape.png").exists())
+            self.assertFalse((self.tmp / "abs_escape.png").exists())
+        # A normal relative path inside the workspace is accepted (handled by the
+        # node-gate authorize, which may refuse if a fake/noop is unpaired, but it
+        # must NOT be a workspace-confinement error).
+        ok = loop2.registry.execute("desktop_screenshot", {"path": "shot.png"})
+        if not ok.ok:
+            self.assertNotIn("workspace-confined", (ok.error or "").lower())
+            self.assertNotIn("required for screenshot", (ok.error or "").lower())
 
 
 BROWSER_TOOLS = [
