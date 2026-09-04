@@ -6,5 +6,6 @@ class Memory:
     content: str
     category: str='general'
     importance: float=0.5
+    owner: str='shared'
     created_at: str|None=None
     metadata: str='{}'

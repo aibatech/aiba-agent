@@ -179,7 +179,7 @@ Legend: `A=AIBA v1.5 today` · `H=Hermes Agent` · `O=OpenClaw` · `T=v1.6 targe
 | Automatic memory suggestions (with confirmation) | ❌ | ✅ | ◑ | **→** | DreamEngine→vault suggestion w/ approval not yet implemented. Outstanding. |
 | Skills auto-created from repeated/successful work | ◑ | ✅ | ✅ | ◑ | SkillImprover proposal path (unchanged this phase); formalization outstanding. |
 | Skill review, versioning, rollback | ◑ | ◑ | ◑ | ◑ | versioning + rollback added (revisions/<ver>.json, restore); review workflow outstanding. |
-| Per-user memory isolation (no cross-user leak) | ✅ | ◑ | ✅ | ◑ | sessions user-scoped (tested); vault rows not user-tagged yet. Outstanding. |
+| Per-user memory isolation (no cross-user leak) | ✅ | ✅ | ✅ | ✅ | sessions user-scoped (tested); vault now owner-scoped via v2 (legacy backfilled to 'shared', visible only to primary/unscoped, never a second-user scope). Live aiba.db upgrades at cutover with backup. |
 
 ### PHASE 10 — Clarify tool
 | Capability | A | H | O | T | Evidence |
@@ -609,21 +609,38 @@ Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/co
   per-server schema *hint* surface is later wanted for UX it is a NEW feature
   (post-release), not a parity gap. Dead namespace code in `mcp_client/policy.py`
   (mcp_tool_name/split_mcp_tool_name) could be removed as cleanup (cosmetic).
-- Gap 2 memory isolation: CONFIRMED BLOCKED on OWNERSHIP DECISION (hard stop, per
-  release instruction "if existing ownership cannot be determined safely, stop").
-  Live aiba.db `memories` table has NO owner column (verified); the 18 existing
-  rows are all category='reflections' (auto DreamEngine-suggestions, user-agnostic,
-  previously shared/global). Must NOT guess how to assign them (data-visibility
-  risk both ways). aiba.db is at schema version 1 (baseline) in the migrations
-  framework; adding owner col = version 2 migration. Exact owner decision needed
-  (options below in consolidated request).
+- Gap 2 memory isolation: DECISION RECEIVED (2026-09-03, option 1b) and IMPLEMENTED.
+  Josh chose 1b: assign existing legacy rows owner='shared' — visible only to the
+  primary (unscoped) operator view, NEVER to any future second user. Implementation:
+  (a) `operations/migrations.py` aiba.db now targets schema version **2**
+  (`memory-owner-scope` marker, advancing user_version); actual owner-column add +
+  backfill of legacy rows to 'shared' is done idempotently in `MemoryVault._init`
+  (PRAGMA table_info guard + `ALTER TABLE memories ADD COLUMN owner ... DEFAULT
+  'shared'`), which is the repo convention (store = schema authority, migrations =
+  version markers). The ALTER runs only when `owner` is absent, so fresh DBs and
+  pre-1.6 DBs both converge; interrupted/crashed applies are recovered on restart
+  because the guard re-runs and the migration apply is transactional/idempotent.
+  (b) `MemoryVault` gained an owner scope: `add(..., owner=)` (default 'shared'),
+  and reads/mutations (`search`/`get`/`list`/`update`/`remove`/`export`) accept
+  `as_user=`; a concrete as_user scope returns ONLY that user's rows and NEVER
+  'shared'/foreign rows; unscoped (the single-operator agent tools) returns the
+  whole table = byte-for-byte pre-v1.6 behaviour. `memory/models.py` `Memory.owner`.
+  New test file `tests/test_memory_ownership.py` (13): legacy backfill+preserve,
+  migration repeat/interrupted/partial-atomic, backup/restore preserving owner,
+  cross-user isolation on list/get/search/update/remove/export, and reflection
+  (auto 'shared') rows never flowing to a second-user scope. Full suite local
+  345 passed / 1 platform skip.
 - Gaps 1,3,4(b),5 = EXTERNAL blockers (remote node machine; paid-API/model budget for
   OCR/ASR/TTS/imagegen; reachable HTTPS MCP server + remote-MCP opt-in; isolated test-bot
   token).
 §8.5 publish + §8.5/S6 live upgrade NOT started — gated on full gate pass + owner go.
-NEXT ACTION when resumed: commit the 3-file hardening (agent/subagents.py +
-tests/test_subagents.py + this PLAN), push, verify 13 CI jobs green; then finish
-remaining Gap 6 (#3c shared-workspace + #4 browser DNS/redirect opt-in) + Gap 2
-memory isolation + Gap 4(c) MCP discovery, then consolidate external blockers
-and run the §8.5 final gate.
+NEXT ACTION when resumed: commit the Gap-2 memory-ownership change set
+(operations/migrations.py + memory/vault.py + memory/models.py +
+tests/test_memory_ownership.py + this PLAN) under isolated dev data (do NOT run
+against the live `agent_system/`), push, and verify 13 CI jobs green, THEN mark
+Gap 2 CLOSED (implementation + isolation tests done; live-DB upgrade happens only
+at the sanctioned cutover with a backup). After that: remaining Gap 6 #4 browser
+DNS approach is now DECIDED (3a: driver-level connect-time IP pinning) and
+#3c shared-workspace is DECIDED (keep; document only) — see consolidated request.
+Then run the §8.5 final gate.
 Update this line each session. Do NOT auto-bump/merge/upgrade.
