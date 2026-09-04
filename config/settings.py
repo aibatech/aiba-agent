@@ -48,6 +48,15 @@ class Settings:
     # external child processes. Remote (http) transports are gated behind the
     # AIBA_MCP_REMOTE feature flag and security.urlguard.
     mcp_enabled:bool=False
+    # --- Memory ownership (v1.6 Gap 2 hardening) ---
+    # The explicitly-authorized single-owner/admin identity keys. Authorized
+    # owners (plus the unnamed 'default' operator used by API/CLI/queued work)
+    # get the unscoped admin memory view; ANY other authenticated identity is
+    # scoped strictly to its own rows and never sees 'shared'/legacy records.
+    # Derived at load() from the same connector allowlists the connectors trust
+    # (single source of truth). Append at END with a default for positional
+    # safety.
+    memory_owner_users: frozenset[str] = frozenset({'default'})
     @classmethod
     def load(cls):
         root=Path(os.getenv('AIBA_ROOT',Path(__file__).resolve().parents[1])).resolve();load_env(root/'.env');data=Path(os.getenv('AIBA_DATA_DIR',root/'agent_system')).resolve()
@@ -62,6 +71,26 @@ class Settings:
             _bool('AIBA_SUBAGENTS_ENABLED',False),data/'subagents.db',_int('AIBA_SUBAGENT_CONCURRENCY',3,minimum=1),_int('AIBA_SUBAGENT_PER_PARENT',2,minimum=1),
             None,_bool('AIBA_MEDIA_ENABLED',True),
             _bool('AIBA_MCP_ENABLED',False),
+            cls._owner_users_from_env(),
             )
         for d in (s.data_dir,s.workspace_dir,s.vault_dir,s.logs_dir,s.skills_dir):d.mkdir(parents=True,exist_ok=True)
         return s
+
+    @staticmethod
+    def _owner_users_from_env() -> frozenset[str]:
+        """The authorized single-owner/admin identity keys = the connector
+        allowlists (mirrors connectors/telegram.py + whatsapp.py) mapped to
+        memory owner keys, plus the unnamed 'default' operator. Keeping this in
+        sync with the connector allowlists means any identity a connector would
+        actually accept is the primary owner; a distinct non-allowlisted
+        principal is NOT and gets strict per-user isolation instead."""
+        owners = {'default'}
+        for raw in os.getenv('AIBA_TELEGRAM_ALLOWED_USERS', '').split(','):
+            raw = raw.strip()
+            if raw.isdigit():
+                owners.add(f'telegram:{raw}')
+        for raw in os.getenv('AIBA_WHATSAPP_ALLOWED_NUMBERS', '').split(','):
+            raw = raw.strip()
+            if raw:
+                owners.add(f'whatsapp:{raw}')
+        return frozenset(owners)

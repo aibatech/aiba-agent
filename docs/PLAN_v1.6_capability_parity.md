@@ -630,6 +630,24 @@ Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/co
   cross-user isolation on list/get/search/update/remove/export, and reflection
   (auto 'shared') rows never flowing to a second-user scope. Full suite local
   345 passed / 1 platform skip.
+  HARDENING (identity-derived ownership; items 1-3): memory tools AND the
+  model-context retrieval now derive ownership from the AUTHENTICATED identity
+  (AgentLoop._current_user, set in _handle from connector/API user_id), never
+  from a model-supplied argument. `config/settings.py` adds trailing default
+  `memory_owner_users` = the explicitly-authorized single-owner/admin set,
+  derived at load() from the SAME connector allowlists (AIBA_TELEGRAM_ALLOWED_USERS
+  / AIBA_WHATSAPP_ALLOWED_NUMBERS) plus 'default'. `memory/retrieval.py`
+  RetrievalEngine.scope applies identity to injected 'Relevant memory' (closes the
+  sharpest leak). `agent/loop.py`: _is_operator/_memory_scope/_memory_writer_owner;
+  the six memory tools call vault with owner=/as_user= resolved from identity;
+  _export_memories threads scope. Operator -> full view (sees 'shared'/legacy) and
+  writes land 'shared'; any NON-operator identity -> strict OWN-rows only (never
+  'shared'/others). Legacy 'shared' backfill matches decision 1b (verified by
+  test_operator_sees_shared_but_second_user_never_does). New integration file
+  `tests/test_memory_user_isolation.py` (6) proves A cannot read/search/list/export/
+  update/delete B through the REAL registry handlers while the operator (admin)
+  can. Local suite 354 collected = 353 passed / 1 pre-existing platform skip.
+  Commit pending.
 - Gaps 1,3,4(b),5 = EXTERNAL blockers (remote node machine; paid-API/model budget for
   OCR/ASR/TTS/imagegen; reachable HTTPS MCP server + remote-MCP opt-in; isolated test-bot
   token).

@@ -12,7 +12,7 @@ from tools.clarify import Clarify, ClarifyToolFactory
 from tools.web import WebTools, build_web_tools
 from tools.media import MediaExtraction, build_media_tools
 from tools.registry import ToolRegistry
-from memory.vault import MemoryVault
+from memory.vault import MemoryVault, SHARED
 from memory.retrieval import RetrievalEngine
 from memory.dream import DreamEngine
 from models.router import ModelRouter
@@ -51,6 +51,12 @@ class AgentLoop:
         # Ambient user for session-search read tools (set per handled turn). The
         # session/memory read tools scope to whoever last drove a handled turn.
         self._current_user='default'
+        # Authorized single-owner/admin identity keys for the memory vault.
+        # Only these (plus the unnamed 'default'/'None' operator) act unscoped
+        # (full view incl 'shared'/legacy records); every other authenticated
+        # identity is scoped strictly to its OWN rows and never sees 'shared'.
+        self._owner_users = getattr(self.settings, 'memory_owner_users', None) or frozenset({'default'})
+        self._owner_users = frozenset(self._owner_users) | {'default'}
         self.personal=PersonalExperience(self.settings.root_dir,self.settings.data_dir)
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
         self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
@@ -146,6 +152,32 @@ class AgentLoop:
         except Exception:
             pass
 
+    # -- memory ownership (identity-derived scope; v1.6 Gap 2) ---------------
+    def _is_operator(self, user_key: str | None) -> bool:
+        """Whether an authenticated identity is the authorized single-owner /
+        admin. None / 'default' (local API/CLI/queued work) is always operator;
+        beyond that only keys that appear in the configured connector allowlist
+        (Settings.memory_owner_users) are operators. Consumers determine the
+        acting identity; it is never trusted from a model tool argument."""
+        key = user_key or self._current_user or 'default'
+        return key == 'default' or key in getattr(self, '_owner_users', frozenset({'default'}))
+
+    def _memory_scope(self, user_key: str | None = None) -> str | None:
+        """Resolve the vault read scope from the authenticated identity always.
+        Operator/admin -> None (unscoped full view incl 'shared'/legacy).
+        Any other (non-operator) identity -> its OWN key only (strict isolation;
+        'shared' and other users' rows are never visible)."""
+        if self._is_operator(user_key):
+            return None
+        return (user_key or self._current_user or 'default').strip() or None
+
+    def _memory_writer_owner(self, user_key: str | None = None) -> str:
+        """Resolve the owner tag for a WRITE from the authenticated identity.
+        Operator writes land in 'shared' (operator-global, matching legacy
+        reflections so single-operator memory never fragments across channels);
+        a non-operator write is tagged to that identity's key only."""
+        return SHARED if self._is_operator(user_key) else (self._memory_scope(user_key) or SHARED)
+
     def _register_tools(self):
         self.registry.register(Tool('list_files','List workspace files.',self.sandbox.list_files,{'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}))
         self.registry.register(Tool('read_file','Read workspace text.',self.sandbox.read_file,{'type':'object','properties':{'path':{'type':'string'}},'required':['path'],'additionalProperties':False}))
@@ -162,14 +194,20 @@ class AgentLoop:
         # format parser reports an "install optional support" diagnostic when a
         # needed [media] library is absent.
         for mt in build_media_tools(self.media):self.registry.register(mt)
-        self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
-        self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
+        # Memory tools derive OWNERSHIP from the authenticated identity
+        # (self._current_user, set in _handle from the connector/API user), NOT
+        # from any model-supplied argument. Operators/admin act unscoped
+        # (full view incl 'shared'/legacy); a distinct non-operator identity is
+        # confined to its own rows for reads and mutations alike — it can never
+        # read, search, export, update or delete 'shared'/another user's memory.
+        self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance,owner=self._memory_writer_owner())}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
+        self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit),as_user=self._memory_scope())),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         # --- Memory maintenance + session search (Phase 9) ---
         # Memory edits/mutations mirror write_file/delete_file approval posture.
-        self.registry.register(Tool('update_memory','Edit an existing memory row by id.',lambda memory_id,content=None,category=None,importance=None:ToolResult(True,self.vault.update(int(memory_id),content,category,None if importance is None else float(importance))),{'type':'object','properties':{'memory_id':{'type':'integer'},'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['memory_id'],'additionalProperties':False}))
-        self.registry.register(Tool('delete_memory','Delete a memory row by id (destructive).',lambda memory_id:ToolResult(self.vault.remove(int(memory_id))),{'type':'object','properties':{'memory_id':{'type':'integer'}},'required':['memory_id'],'additionalProperties':False}))
-        self.registry.register(Tool('list_memories','List stored memories, optionally filtered by category.',lambda limit=50,category=None:ToolResult(True,self.vault.list(int(limit),category)),{'type':'object','properties':{'limit':{'type':'integer'},'category':{'type':'string'}},'additionalProperties':False}))
-        self.registry.register(Tool('export_memories','Export memories (optionally one category) to a markdown file in the workspace.',lambda filename='memories_export.md',category=None:ToolResult(True,self._export_memories(str(filename),category)),{'type':'object','properties':{'filename':{'type':'string'},'category':{'type':'string'}},'additionalProperties':False}))
+        self.registry.register(Tool('update_memory','Edit an existing memory row by id.',lambda memory_id,content=None,category=None,importance=None:ToolResult(True,self.vault.update(int(memory_id),content,category,None if importance is None else float(importance),as_user=self._memory_scope())),{'type':'object','properties':{'memory_id':{'type':'integer'},'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['memory_id'],'additionalProperties':False}))
+        self.registry.register(Tool('delete_memory','Delete a memory row by id (destructive).',lambda memory_id:ToolResult(self.vault.remove(int(memory_id),as_user=self._memory_scope())),{'type':'object','properties':{'memory_id':{'type':'integer'}},'required':['memory_id'],'additionalProperties':False}))
+        self.registry.register(Tool('list_memories','List stored memories, optionally filtered by category.',lambda limit=50,category=None:ToolResult(True,self.vault.list(int(limit),category,as_user=self._memory_scope())),{'type':'object','properties':{'limit':{'type':'integer'},'category':{'type':'string'}},'additionalProperties':False}))
+        self.registry.register(Tool('export_memories','Export memories (optionally one category) to a markdown file in the workspace.',lambda filename='memories_export.md',category=None:ToolResult(True,self._export_memories(str(filename),category,self._memory_scope())),{'type':'object','properties':{'filename':{'type':'string'},'category':{'type':'string'}},'additionalProperties':False}))
         self.registry.register(Tool('session_search','Search past AIBA task/session history (this user only); never returns internal deliberation.',lambda query,limit=10:ToolResult(True,self.sessions.search((self._current_user or 'default'),query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         self.registry.register(Tool('session_history','List recent AIBA sessions for this user.',lambda limit=20:ToolResult(True,self.sessions.list_by_user((self._current_user or 'default'),int(limit))),{'type':'object','properties':{'limit':{'type':'integer'}},'additionalProperties':False}))
         self.registry.register(Tool('browser_fetch','Fetch rendered webpage text.',browser_fetch,{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
@@ -316,6 +354,15 @@ class AgentLoop:
         # persist must never break the handled task.
         user_key=(user_id or 'default')
         self._current_user=user_key
+        # Scope model-context memory retrieval to the authenticated identity so
+        # injected 'Relevant memory' can never cross into another principal's
+        # rows or 'shared' unless this IS the authorized single-owner/admin.
+        engine_scope = self._memory_scope(user_id)
+        try:
+            if getattr(self.engine, 'retrieval', None) is not None:
+                self.engine.retrieval.scope = engine_scope
+        except Exception:
+            pass
         _sid=None
         try:_sid=self.sessions.open_session(user_key,title=(text[:120] or ''),kind='turn')
         except Exception:_sid=None
@@ -330,10 +377,13 @@ class AgentLoop:
             except Exception:pass
         ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
         self.metrics.increment('tasks_total',status=status);self.events.publish('task_finished',task_id=task_id,status=status,tools=used,reflection=str(ref),skill_proposal=str(proposal) if proposal else None);return answer
-    def _export_memories(self, filename, category=None):
+    def _export_memories(self, filename, category=None, as_user=None):
         """Export memories (optionally one category) to a markdown doc in the
-        workspace (sandbox-confined). Returns an ok summary dict or error str."""
-        rows=self.vault.export(category) if hasattr(self.vault,'export') else []
+        workspace (sandbox-confined). as_user restricts the export to the acting
+        identity's OWN rows (operator passes None => whole view is not exported
+        unless they are the explicit single-owner/admin). Returns an ok summary
+        dict or error str."""
+        rows = self.vault.export(category, as_user=as_user) if hasattr(self.vault, 'export') else []
         lines=[f"# AIBA memory export{(' — '+category) if category else ''}\n"]
         for r in rows:
             lines.append(f"- `{r.get('id','')}` [{r.get('category','general')}] ({r.get('created_at','')}): {r.get('content','')}")
