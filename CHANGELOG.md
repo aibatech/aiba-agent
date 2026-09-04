@@ -1,5 +1,30 @@
 # Changelog
 
+## 1.6.0 — 2026-09-04 (v1.6.0-rc.2)
+
+Security-corrected build of the 1.6.0 release (same runtime version 1.6.0 as rc.1;
+rc.1 and rc.2 are distinguished by git tag and merge commit, not by the runtime
+version string). Effective commit: `a9181e9` (merge of PR #7) on top of rc.1's
+`a53439a`. Source review found rc.1 did NOT include security fixes published in
+upstream commit `afbd27e`; this build reconciles that change faithfully:
+
+- Connector chat allowlists no longer imply memory/vault administration. Vault
+  admins come only from the explicit `AIBA_MEMORY_OWNER_USERS` setting
+  (connector-qualified numeric identities); malformed values fail closed. See
+  `docs/RELEASE_BLOCKERS_v1.6.md` for required upgrade configuration.
+- User identity is context-local and is propagated to subagents, queued tasks,
+  and scheduled tasks; a background job retains its initiating user even after
+  another conversation begins.
+- Subagent tools dispatch through the real tool registry (feature flags,
+  conversation blocks, schema validation, action approvals, auditing,
+  memory-pause) at execution time, not via raw tool handlers.
+- MCP integration test now performs a real SDK initialize + tool-call roundtrip
+  against a deterministic local fixture; a process-failure case is a separate
+  negative test, not the positive path.
+
+Full release description and deferred/EXCLUDED items are unchanged from the
+rc.1 entry below.
+
 ## 1.6.0 — 2026-09-04 (v1.6.0-rc.1)
 
 Capability-parity release. See `docs/PLAN_v1.6_capability_parity.md` for the full
