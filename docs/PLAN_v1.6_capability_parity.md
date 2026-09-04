@@ -556,11 +556,33 @@ Remaining Gap 6 items from the audit (next, in order, all test-first):
   worker blocked in an un-interruptible provider/tool call should surface a
   distinct status — current honest behavior: it waits for the call to return,
   then honours cancel/timeout at the boundary (documented in `_check_boundary`).
-- #3c: recorded subagent `workspace` is never used for confinement (shared main workspace);
-  add regression doc + decide if per-delegation folder isolation is wanted.
-- #4: Playwright browser path LACKS the `socket.getaddrinfo`/`ip.is_global` DNS check that
-  web_extract/browser_fetch have, and needs real-driver (opt-in) redirect/subresource/
-  download tests; how to close the DNS-rebinding gap.
+- #3c: recorded subagent `workspace` is never used for per-delegation confinement
+  (workers share the MAIN policy-confined workspace). VERIFIED (design, 2026-09-03):
+  worker handlers come from `loop._subagent_resolve_tools` → `registry._tools[name].run`,
+  which for file tools are `Sandbox`-bound and thus policy-confined (no `..`/absolute
+  escape; same guarantee the main read/write_file/desktop paths carry — see test
+  `test_desktop_screenshot_path_is_workspace_confined`). So a worker CANNOT write
+  outside the approved workspace; what it CAN do is read/see sibling workers' files
+  that all land in the one shared workspace (cross-worker, not workspace-escape).
+  Whether per-delegation SUBFOLDER isolation is wanted (so worker A never sees B's
+  scratch) is a PRODUCT/SCOPE decision for the owner, not a security regression to
+  silently build — ask in the consolidated blockers request.
+- #4: browser DNS / rebinding gap — ANALYSED (2026-09-03), closure needs a
+  decision + real-driver stage. Facts verified: `browser_fetch` (tools/browser.py)
+  and the interactive session (tools/browser_session.py) SHARE the static guard
+  `security/urlguard.forbidden_open_target`, which blocks literal loopback/private/
+  metadata host FORMS incl. the rebinding-resistant numeric aliases (2130706433,
+  0177.0.0.1, 0x7f000001) and drives the interactive Driver's per-request route
+  abort + nav refusal. The remaining gap: only `browser_fetch._public_url` re-resolves
+  a public HOSTNAME to DNS and requires `ip.is_global`; the interactive Playwright
+  path does not re-resolve per connection, so a genuinely-public hostname that a
+  malicious/compromised DNS server rebinds to loopback at connect-time could slip
+  past the static guard. Proper closure requires observing the IP the driver ACTUALLY
+  connects to (not a separate re-resolution, which can race the rebind), which is a
+  real-driver seam + an approach decision. NOT silently patched with a half-remedy;
+  the two concrete options (driver-level connect-time IP pinning vs. re-resolve in
+  route guard) + opt-in real-driver redirect/subresource/download tests go in the
+  consolidated blockers request.
 Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/commits):
 - Gap 2 memory/skills: `memory/vault.py:8-10` `memories` table has NO owner column; FTS
   external-content triggers there drive FTS. Per-user isolation requires aiba.db migration
