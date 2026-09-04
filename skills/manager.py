@@ -16,8 +16,21 @@ class SkillManager:
         if not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?',version):raise ValueError('Skill version must use semantic versioning')
         if not isinstance(steps,list) or any(not isinstance(x,dict) or not isinstance(x.get('tool'),str) or not isinstance(x.get('arguments',{}),dict) for x in steps):raise ValueError('Each skill step requires a tool and object arguments')
         slug=self._safe(name); folder=(self.root/slug).resolve(); folder.relative_to(self.root.resolve());folder.mkdir(parents=True,exist_ok=True)
+        target=folder/'skill.json'
+        # Versioning: if a different version already exists, snapshot the prior
+        # one first so it can be reviewed / rolled back later.
+        if target.is_file():
+            try:
+                prev=json.loads(target.read_text(encoding='utf-8'))
+                if prev.get('version') and prev.get('version')!=version:
+                    # versions are semver-validated (only [0-9A-Za-z.+-]);
+                    # raw form is filesystem-safe and human-readable
+                    rev=folder/'revisions'/f"{prev['version']}.json"
+                    rev.parent.mkdir(parents=True,exist_ok=True)
+                    rev.write_text(json.dumps(prev,indent=2),encoding='utf-8')
+            except Exception:pass
         data={'name':slug,'description':description,'version':version,'steps':steps}
-        (folder/'skill.json').write_text(json.dumps(data,indent=2),encoding='utf-8')
+        target.write_text(json.dumps(data,indent=2),encoding='utf-8')
         return Skill(slug,description,version,steps,folder,'')
     def get(self,name:str)->Skill:
         folder=self.root/self._safe(name);path=folder/'skill.json'
@@ -32,6 +45,27 @@ class SkillManager:
             try:s=self.get(folder.name);result.append({'name':s.name,'description':s.description,'version':s.version,'steps':len(s.steps),'format':'aiba-json' if (folder/'skill.json').is_file() else 'portable-markdown'})
             except Exception:continue
         return result
+    def revisions(self,name:str)->list[dict]:
+        folder=self.root/self._safe(name);rev_dir=folder/'revisions'
+        if not rev_dir.is_dir():return []
+        out=[]
+        for p in sorted(rev_dir.glob('*.json'),key=lambda x:x.name):
+            try:
+                d=json.loads(p.read_text(encoding='utf-8'))
+                out.append({'version':d.get('version',p.stem),'description':d.get('description',''),'steps':len(d.get('steps',[]))})
+            except Exception:continue
+        return out
+    def rollback(self,name:str,version:str)->Skill:
+        slug=self._safe(name);folder=self.root/slug;rev=folder/'revisions'/f"{version}.json"
+        if not rev.is_file():raise KeyError(f"No saved revision {version} for skill {slug}")
+        data=json.loads(rev.read_text(encoding='utf-8'))
+        # current (broken) revision is preserved before restoring the target
+        target=folder/'skill.json'
+        if target.is_file():
+            self.create(slug,data.get('description',''),data.get('steps',[]),version=data.get('version','0.1.0'))
+        else:
+            (folder/'skill.json').write_text(json.dumps(data,indent=2),encoding='utf-8')
+        return self.get(slug)
     def _frontmatter(self,text):
         meta={};body=text
         if text.startswith('---\n') and '\n---\n' in text[4:]:

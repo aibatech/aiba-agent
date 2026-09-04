@@ -13,7 +13,7 @@ MIGRATIONS={
  'tasks.db':[(1,'tasks-baseline','SELECT 1')],
  'schedules.db':[(1,'schedules-baseline','SELECT 1')],
  'auth.db':[(1,'auth-baseline','SELECT 1')],
- 'aiba.db':[(1,'memory-baseline','SELECT 1')],
+ 'aiba.db':[(1,'memory-baseline','SELECT 1'),(2,'memory-owner-scope','SELECT 1')],
 }
 
 class MigrationManager:

@@ -1,0 +1,20 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "basic",
+  "include": [
+    "diagnostics",
+    "agent",
+    "tools",
+    "config",
+    "scripts"
+  ],
+  "exclude": [
+    "build",
+    "tests",
+    "**/.venv",
+    "**/node_modules",
+    "**/.pytest_cache"
+  ]
+}

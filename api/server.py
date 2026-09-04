@@ -9,7 +9,7 @@ def create_app(agent):
         from fastapi.responses import HTMLResponse,JSONResponse,PlainTextResponse,Response
         from pydantic import BaseModel,Field
     except ImportError as exc:raise RuntimeError('Install API dependencies: pip install -e .[api]') from exc
-    app=FastAPI(title='AIBA Agent API',version='1.5.0',docs_url='/docs' if agent.settings.api_token else None)
+    app=FastAPI(title='AIBA Agent API',version='1.6.0',docs_url='/docs' if agent.settings.api_token else None)
     telegram=None;whatsapp=None
     if os.getenv('AIBA_TELEGRAM_ENABLED','false').lower() in {'1','true','yes','on'}:
         from connectors import TelegramConnector;telegram=TelegramConnector(agent)
@@ -82,7 +82,7 @@ def create_app(agent):
         for sender,text,_ in whatsapp.extract_messages(payload):background_tasks.add_task(whatsapp.process,sender,text)
         return {'received':True}
     @app.get('/health')
-    def health():return {'ok':True,'version':'1.5.0','provider':agent.settings.provider,'sandbox':agent.settings.sandbox_mode,'managed_models':len(agent.providers.list_models(enabled_only=True))}
+    def health():return {'ok':True,'version':'1.6.0','provider':agent.settings.provider,'sandbox':agent.settings.sandbox_mode,'managed_models':len(agent.providers.list_models(enabled_only=True))}
     @app.get('/ready')
     def ready():
         migrations=agent.migrations.status();ready=all(x['ready'] for x in migrations);return JSONResponse(status_code=200 if ready else 503,content={'ready':ready,'migrations':migrations})
@@ -104,6 +104,23 @@ def create_app(agent):
         return agent.setup.complete()
     @app.get('/v1/diagnostics')
     def diagnostics(authorization:str|None=Header(default=None)):authorize(authorization);return agent.doctor.run(check_port=False)
+    @app.get('/v1/capabilities')
+    def capabilities(session_user:str='default',session_limit:int=30,activity_limit:int=25,authorization:str|None=Header(default=None)):
+        """Capability-management overview for the dashboard (Phase 11).
+
+        One bounded, read-only snapshot: per-tool readiness (registry +
+        permissions + feature flags + optional deps), feature-flag state,
+        computer-node state, recent sessions, internal subagent (worker)
+        counts, MCP availability, and a small recent tool-activity tail.
+        """
+        authorize(authorization)
+        from diagnostics.capability_state import snapshot
+        return snapshot(
+            agent,
+            user=session_user or 'default',
+            session_limit=max(1, min(int(session_limit), 200)),
+            activity_limit=max(1, min(int(activity_limit), 200)),
+        )
     @app.get('/v1/operations')
     def operations(authorization:str|None=Header(default=None)):authorize(authorization);return {'migrations':agent.migrations.status(),'backups':agent.backups.list(),'metrics':agent.metrics.snapshot()}
     @app.post('/v1/backups',status_code=201)

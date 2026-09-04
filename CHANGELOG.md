@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.6.0 — 2026-09-04 (v1.6.0-rc.1)
+
+Capability-parity release. See `docs/PLAN_v1.6_capability_parity.md` for the full
+engineering plan, capability matrix, and release gates. Highlights:
+
+- Full-stack capability parity for the agent loop: web search/extract, patch_file,
+  archive extract (zip-slip-safe), safe computer control + paired-node gate, bounded
+  internal subagents, session store with FTS, media/document text extraction, optional
+  MCP client gateway (`mcp_call`, off by default), memory maintenance + editing, skills
+  with versioning/rollback, capability-management CLI + dashboard, and the `clarify`
+  tool with inline-button UX on Telegram.
+- Security hardening across the release: SSRF-safe URL policy shared by browser_fetch
+  and the interactive browser session; connect-time DNS-peer enforcement for the
+  interactive Playwright driver (refuses non-global/rebinding peers on the main frame);
+  desktop screenshot workspace-confinement; per-user memory isolation with
+  identity-derived ownership (operator scoped to shared/legacy; any second principal
+  strictly limited to its own rows); audit/approval-surface secret scrubbing; subagent
+  cancel/timeout-at-boundary + safe shutdown; permission-enabled tooling is policy-gated
+  and require-approval, never auto-enabled.
+- Persisting ownership model: memory rows carry an `owner`; a fresh `aiba.db` migrates to
+  schema v2 idempotently at startup (legacy reflections backfilled to `shared`, visible
+  only to the primary operator scope — matching the owner decision, never a second-user
+  scope).
+- Non-goals deferred and recorded as EXCLUDED for this release (not passed tests):
+  remote computer-node pairing over a network, real OCR/ASR/TTS/image-generation
+  backends (tested document extraction ships; unsupported backends report unavailable),
+  and remote MCP over HTTPS (local stdio MCP ships; remote stays disabled/experimental).
+  Stable-production certification and full third-party (Hermes/OpenClaw) parity are not
+  claimed.
+
 ## 1.5.0 — 2026-09-01
 
 - Added a version-controlled `SOUL.md` character contract for AIBA's warm, playful,

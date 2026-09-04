@@ -1,0 +1,443 @@
+{
+  "$schema": "./capability_manifest.schema.json",
+  "version": 1,
+  "description": "Authoritative capability manifest for AIBA. Every registered tool MUST have an entry here before it can be enabled in config/permissions.json. Optional per-tool fields: feature_flag, optional_dependency (probe label: 'python:<module>' | 'binary:<exe>' | 'none'; unknown probe types FAIL CLOSED so a missing dependency can never report ready), internal_only (bool, default false) to mark a tool as registered purely for internal use so it is never advertised to the model. See docs/PLAN_v1.6_capability_parity.md.",
+  "risk_classes": {
+    "read_only_local": "Read or inspect local workspace data; no mutation. Approval not required.",
+    "read_only_network": "Read-only public network access; strictly SSRF-safe against private/loopback/credential targets. Approval not required.",
+    "local_mutation": "Writes, edits, archives, or otherwise mutates data inside the AIBA workspace. Approval required.",
+    "external_mutation": "Causes a change on an external system (send, post, submit, purchase, authenticate). Approval required.",
+    "process_execution": "Starts processes, runs shell/code, or sends process input. Approval required.",
+    "destructive": "Deletes, terminates, or irreversibly destroys data or processes. Approval required."
+  },
+  "feature_flags": {
+    "AIBA_WEB_ENABLED": "Gates the web_search / web_extract tools (read-only network).",
+    "AIBA_BROWSER_ENABLED": "Gates browser tooling: browser_fetch and the Phase 4b browser_session family (browser_open/state/page_text/screenshot/wait/status/scroll/click/type/select/submit/download/upload). Requires installed browser dependencies (playwright + chromium). Disabled by default.",
+    "AIBA_DESKTOP_ENABLED": "Gates computer-control tooling (desktop_screenshot / desktop_click / desktop_type). Disabled until the paired-node security phase is complete.",
+    "AIBA_VISION_ENABLED": "Gates vision_analyze; requires a vision-capable model.",
+    "AIBA_SUBAGENTS_ENABLED": "Gates delegate_task: bounded internal background workers (subagents) for parallel research/verification/planning/review. Disabled by default. Workers are permission-narrowed (never broader than the main agent), non-recursive, and run under hard step/time budgets.",
+    "none": "No feature flag required (always available once enabled).",
+    "AIBA_MEDIA_ENABLED": "Gates the media_extract tool (read-only local document/text extraction from workspace files: PDF/DOCX/XLSX/PPTX/CSV/markdown/image metadata). Defaults ON because it is read-only and workspace-confined; set AIBA_MEDIA_ENABLED=false to hide it. Each binary-format parser additionally depends on the optional [media] extra.",
+    "AIBA_MCP_ENABLED": "Gates the Phase 7 mcp_call tool (optional MCP client: call a tool on an operator-configured external MCP server). Disabled by default on three independent axes — this feature flag, enabled=false in permissions.json, and no enabled allowlisted server in config/mcp_servers.json. stdio/remote servers are configured only by the operator in config/mcp_servers.json; remote-tool allow/deny never ships to the model. Also requires the optional [mcp] extra.",
+    "AIBA_MCP_REMOTE": "Opt-in second feature flag for REMOTE (http / Streamable HTTP) MCP servers. Off by default; a remote server additionally must pass https-only + security-urlguard network policy at config-parse time and at call time, with redirect-following disabled (SSRF hardening)."
+  },
+  "tools": {
+    "list_files": {
+      "description": "List workspace files.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "read_file": {
+      "description": "Read workspace text.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "write_file": {
+      "description": "Write workspace text.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "delete_file": {
+      "description": "Delete workspace file.",
+      "risk_class": "destructive",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "patch_file": {
+      "description": "Apply a find-and-replace edit to a workspace text file, atomically, returning the diff.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "archive": {
+      "description": "Create a zip or tarball of a workspace path, written inside the workspace.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "extract_archive": {
+      "description": "Extract a zip/tar archive into a workspace destination, blocking zip-slip.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "run_shell": {
+      "description": "Run command in sandbox.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "run_python": {
+      "description": "Run Python in sandbox.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "web_search": {
+      "description": "Search the public web for a topic and return title/url/snippet results.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_WEB_ENABLED"
+    },
+    "web_extract": {
+      "description": "Fetch readable text from one or more PUBLIC http(s) pages; SSRF-safe.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_WEB_ENABLED"
+    },
+    "remember": {
+      "description": "Store durable memory.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "search_memory": {
+      "description": "Search memory.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "update_memory": {
+      "description": "Edit an existing memory row by id.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "delete_memory": {
+      "description": "Delete a memory row by id (destructive).",
+      "risk_class": "destructive",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "list_memories": {
+      "description": "List stored memories, optionally filtered by category.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "export_memories": {
+      "description": "Export memories (optionally one category) to a markdown file in the workspace.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "session_search": {
+      "description": "Search past AIBA task/session history (this user only); never returns internal deliberation.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "session_history": {
+      "description": "List recent AIBA sessions for this user.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "browser_fetch": {
+      "description": "Fetch rendered webpage text.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_open": {
+      "description": "Navigate the managed browser to a PUBLIC http(s) URL (SSRF-safe) and return the final URL.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_state": {
+      "description": "Read the current browser page's structured state (URL + title).",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_page_text": {
+      "description": "Read visible text from the current browser page.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_screenshot": {
+      "description": "Capture the current browser viewport to a PNG inside the approved workspace.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_wait": {
+      "description": "Wait up to a bounded timeout for an element selector to appear.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_scroll": {
+      "description": "Scroll the current browser page. Read-only viewport action.",
+      "risk_class": "read_only_network",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_click": {
+      "description": "Click an element by selector or visible text. Alters the site; approval required.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_type": {
+      "description": "Type text into a field. Secret-like text is never logged and is refused on auth/payment pages.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_select": {
+      "description": "Select an option in a <select> element by value. Approval required.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_submit": {
+      "description": "Submit the current form. Approval required.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_download": {
+      "description": "Save a download triggered in the browser into the approved workspace. Approval required.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_upload": {
+      "description": "Upload a file ALREADY inside the approved workspace to a file input. Approval required.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_BROWSER_ENABLED",
+      "optional_dependency": "python:playwright"
+    },
+    "browser_status": {
+      "description": "Report whether the automated browser session is enabled and open.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_BROWSER_ENABLED"
+    },
+    "desktop_screenshot": {
+      "description": "Capture desktop screenshot.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_click": {
+      "description": "Click screen coordinates.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_type": {
+      "description": "Type text into active window.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_screen_size": {
+      "description": "Report the desktop screen size in pixels.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_move": {
+      "description": "Move the pointer to screen coordinates.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_drag": {
+      "description": "Drag the pointer between two screen coordinates.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_scroll": {
+      "description": "Scroll the focused window by a number of clicks.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_key": {
+      "description": "Press a single key (enter, tab, arrows, etc.).",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_hotkey": {
+      "description": "Press a modifier hotkey combination (e.g. ctrl+c).",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "optional_dependency": "python:pyautogui"
+    },
+    "desktop_open_url": {
+      "description": "Open an http(s) URL in the default browser.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "desktop_clipboard_read": {
+      "description": "Read the current clipboard (opt-in, approval-gated).",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "desktop_clipboard_write": {
+      "description": "Set the clipboard to a string.",
+      "risk_class": "local_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "desktop_node_status": {
+      "description": "Report computer-node pairing status and remaining action budget.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": false,
+      "feature_flag": "AIBA_DESKTOP_ENABLED",
+      "internal_only": false
+    },
+    "vision_analyze": {
+      "description": "Analyze a workspace image.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_VISION_ENABLED",
+      "optional_dependency": "none"
+    },
+    "list_skills": {
+      "description": "List reusable skills.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "skill_instructions": {
+      "description": "Read a reviewed portable skill instruction contract.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "run_skill": {
+      "description": "Run a reviewed reusable skill.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "clarify": {
+      "description": "Ask the user one focused question with choices and tradeoffs.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "enqueue_task": {
+      "description": "Queue a background task.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "schedule_task": {
+      "description": "Schedule a recurring task.",
+      "risk_class": "process_execution",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "delegate_task": {
+      "description": "Run bounded internal background workers in parallel for research/verification/planning/review. Disabled by default (AIBA_SUBAGENTS_ENABLED + permissions.json). AIBA stays the single user-facing assistant; workers are invisible, each bounded by its own objective, allowed-tool list, step/time/cost budget and global+per-parent concurrency. Workers cannot spawn further workers (no recursion); each runs within the shared policy and returns only a concise result summary (no raw prompts/transcripts/CoT). Provide concrete, self-contained objectives.",
+      "risk_class": "process_execution",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_SUBAGENTS_ENABLED"
+    },
+    "media_extract": {
+      "description": "Extract readable text/metadata from a workspace file (PDF, DOCX, XLSX, PPTX, CSV, markdown/text, or common image metadata). Content is treated as untrusted data and never executed.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "AIBA_MEDIA_ENABLED"
+    },
+    "mcp_call": {
+      "description": "Phase 7 optional MCP client gateway. Calls a tool on an operator-configured external MCP server (stdio child process or, only when AIBA_MCP_REMOTE is set, a remote https server). Disabled by default on three independent axes: the AIBA_MCP_ENABLED feature flag, enabled=false in permissions.json, and the absence of an enabled, allowlisted server in config/mcp_servers.json. The model sees only this single gateway (server_id + tool name + arguments); per-server remote-tool allow/deny and operator approval live in the operator-owned config and never ship to the model. Fails closed before touching any process or network when MCP is disabled, the optional [mcp] SDK is absent, the config is invalid/absent, the server is unknown/disabled, the remote tool is not allowlisted, or (for remote http) AIBA_MCP_REMOTE is unset. All arguments are scrubbed before audit.",
+      "risk_class": "process_execution",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_MCP_ENABLED",
+      "optional_dependency": "python:mcp"
+    }
+  }
+}

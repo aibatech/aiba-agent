@@ -99,9 +99,11 @@ The Community Runtime has no artificial provider or model limits. It remains a s
 - WebSockets authenticate before accepting a connection;
 - API rate limits and prompt-size limits are enforced;
 - browser requests reject credentials, local addresses, private networks, and unsafe redirect/subresource targets;
+- document/text extraction (`media_extract`) is read-only and workspace-confined: file size and page/sheet/row/return counts are bounded, and document contents are treated as untrusted data — spreadsheet formulas are never evaluated, links and macros are never followed or run, and originals are never modified;
 - shell and Python execution require the isolated Docker sandbox;
 - tool arguments are validated and tool failures are contained;
 - OpenAI, Anthropic, Ollama, and OpenAI-compatible providers receive native tool schemas;
+- **internal subagents are disabled by default** (`AIBA_SUBAGENTS_ENABLED` + `permissions.json` `delegate_task` `enabled:false`); when enabled they are bounded background workers only — never user-facing, never recursive, each confined to an explicitly allowed tool list, step/time/cost budgets and global+per-parent concurrency, and returning only a concise result summary (no raw prompts/transcripts/CoT);
 - the container runs as a non-root user with dropped capabilities and a read-only root filesystem;
 - data, tasks, jobs, schedules, reflections, and audit records survive restarts.
 
@@ -161,7 +163,29 @@ Provider management endpoints are available under `/v1/providers`, `/v1/models`,
 
 File access is constrained to `agent_system/workspace`. Sensitive tools require approval by default. Non-interactive API jobs deny approval-requiring actions; this is intentional. Create reviewed skills or adjust the permissions policy for narrowly defined unattended workflows.
 
+`delegate_task` (internal subagents) is disabled by default. To enable it, set `AIBA_SUBAGENTS_ENABLED=true` **and** flip `config/permissions.json` `delegate_task.enabled` to `true` — both must be on, mirroring the browser/computer gate posture. When enabled, AIBA remains the single assistant you talk to; the workers it spawns are invisible, bounded, non-recursive internal workhorses that return only a concise result summary for AIBA to fold into its reply.
+
 Docker sandbox mode mounts only the workspace, disables networking by default, and applies CPU/memory limits. Do not mount the host root or a Docker socket into the AIBA application container.
+
+## Media and document extraction
+
+AIBA can read the readable text out of common document formats so the model can inspect files dropped into its workspace — as **read-only, bounded, workspace-confined** extraction:
+
+- **Formats:** PDF, DOCX, XLSX, PPTX (via the optional `[media]` extra: pypdf / python-docx / openpyxl / python-pptx), plus CSV, plain text / markdown, and common image metadata (Pillow). All are pure-Python; the base `pip install -e '.[api]'` install stays lightweight and does not require them.
+- **Install:** `pip install -e '.[media]'` (or `'.[all]'`) to enable binary-format parsing. CSV / text / markdown always work; a missing optional library returns a clear "install optional support" diagnostic rather than a partial parse.
+- **Tool:** `media_extract` — read-only, registered through the capability manifest, permissions, the `AIBA_MEDIA_ENABLED` feature flag (default on), diagnostics, and audit. It requires no approval and never writes.
+- **Posture:** every read is confined to the approved workspace; file size, page/sheet/slide/row and returned-character counts are bounded; document content is treated strictly as **untrusted data** — spreadsheet formulas are never evaluated, links and macros are never followed or run, and source files are never modified.
+- **Not (yet) functional:** OCR, audio transcription, text-to-speech, and image generation. AIBA surfaces these honestly as capability probes that report not-available until a real backend and its tests are wired in — it does not pretend to offer them.
+
+## Optional MCP client (`mcp_call`)
+
+AIBA can call tools on **operator-configured external MCP servers** through a single, gated gateway tool — it never runs an MCP server and never auto-trusts third-party servers.
+
+- **Optional + off by default.** Requires the `[mcp]` extra (`pip install -e '.[mcp]'` or `'.[all]'`) AND the `AIBA_MCP_ENABLED` feature flag AND an explicit `enabled:true` entry for `mcp_call` in `config/permissions.json` AND at least one enabled server in `config/mcp_servers.json`. With any of those unset, `mcp_call` is not advertised and every call is refused before any process or network is touched.
+- **One tool, operator-owned policy.** The model sees only `mcp_call(server_id, tool, arguments)`. Per-server remote-tool allow/deny and per-tool approval live in the operator-owned `config/mcp_servers.json` (see `config/mcp_servers.example.json`), never on the model surface; dynamic per-server tool names are intentionally not exposed because they cannot be policy-gated.
+- **Stdio and remote.** Local stdio servers run as explicit `command`+`argv` child processes (never through a shell), with `working_dir` confined to the config tree, bounded timeouts/output, and process-group teardown. Remote (http/Streamable HTTP) servers additionally require the **`AIBA_MCP_REMOTE`** flag (off by default) and are confined to HTTPS URLs that pass AIBA's shared SSRF/network policy, with redirect-following disabled.
+- **Secrets never in config.** Only allowlisted **env-var names** may be declared (resolved from the process environment at launch); secret-looking names and raw credential values are refused by the validator.
+- **Audit.** Call arguments are redacted before they are written to the audit log.
 
 ## Tests
 

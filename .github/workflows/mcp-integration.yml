@@ -1,0 +1,25 @@
+name: MCP Integration (SDK present)
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  mcp-with-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12', cache: pip}
+      # Install the optional MCP extra so the real-SDK path is genuinely
+      # exercised. The base Production Gate test matrix installs .[api] (no mcp
+      # SDK), where MCP integration tests correctly skip their SDK-gated cases.
+      # This job closes that coverage gap: the end-to-end MCP tests RUN here.
+      - name: Install with the MCP extra
+        run: python -m pip install -e ".[mcp]"
+      - name: Confirm the MCP SDK is importable
+        run: python -c "import importlib.util; assert importlib.util.find_spec('mcp') is not None, 'mcp SDK missing'; print('mcp SDK present')"
+      - name: Run the full unit suite (real-SDK MCP tests execute, not skipped)
+        run: python -m unittest discover -s tests
+      # Isolate MCP tests to make the SDK-gated cases' pass/fail explicit.
+      - name: Run MCP tests in isolation
+        run: python -m unittest tests.test_mcp -v

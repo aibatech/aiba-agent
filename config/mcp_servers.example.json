@@ -1,0 +1,59 @@
+{
+  "_comment": [
+    "Operator-owned MCP server config for the optional AIBA MCP client (Phase 7).",
+    "COPY this file to config/mcp_servers.json to ACTUALLY enable it. All servers below",
+    "are commented-out patterns (enabled:false) so copying the file is inert until",
+    "you flip a server to enabled:true AND list 'mcp_call' (enabled) in permissions.json",
+    "AND set AIBA_MCP_ENABLED=true. MCP is OFF by default; do not ship real credentials",
+    "or live endpoints in this (or the real) config. Secrets are referenced by env-var",
+    "NAME only (via env_names) and resolved from the process environment at launch.",
+    "See docs/PLAN_v1.6_capability_parity.md and SECURITY.md."
+  ],
+  "config": {
+    "_comment": "Global defaults. enabled_default applies only to servers that omit 'enabled'.",
+    "enabled_default": false
+  },
+  "servers": {
+    "example_stdio": {
+      "name": "Example stdio server (illustrative only - PDF/external tool)",
+      "transport": "stdio",
+      "enabled": false,
+      "command": "/usr/bin/python3",
+      "args": [
+        "/opt/example/mcp_server.py",
+        "--stdio"
+      ],
+      "working_dir": ".",
+      "env_names": [
+        "MY_APP_ENV", "LANG", "PYTHONPATH"
+      ],
+      "tools": {
+        "read_doc": { "enabled": false, "requires_approval": false },
+        "summarize": { "enabled": false, "requires_approval": true }
+      },
+      "startup_timeout_s": 10,
+      "call_timeout_s": 30,
+      "restart_limit": 2,
+      "max_output_bytes": 131072,
+      "note": "Illustration of a local stdio MCP server. Replace command/args with your own. No secrets embedded here."
+    },
+    "example_remote": {
+      "name": "Example REMOTE server (illustrative - https only, OFF by default)",
+      "transport": "http",
+      "enabled": false,
+      "url": "https://mcp.example.invalid/sse",
+      "_comment": [
+        "Remote (http) MCP servers require enabled:true here AND AIBA_MCP_REMOTE=true.",
+        "The URL must be https and pass AIBA's SSRF/network policy (security-urlguard).",
+        "Use a placeholder/nonexistent host; never a live production endpoint."
+      ],
+      "tools": {},
+      "requires_approval_default": true,
+      "startup_timeout_s": 10,
+      "call_timeout_s": 30,
+      "restart_limit": 1,
+      "max_output_bytes": 131072,
+      "note": "Remote transport is disabled by default across AIBA. Illustrative only - do not point at a live endpoint."
+    }
+  }
+}
