@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import unittest
+import socket
+from unittest.mock import patch
 
 from tools.web import WebTools, build_web_tools, _parse_results, _strip_html
 from tools.registry import ToolRegistry
@@ -36,6 +38,13 @@ def _fake_fetch(url, headers):
     if "example.com" in url:
         return 200, "<html><body><h1>Hello</h1><p>World &amp; more</p><script>var x=1;</script></body></html>"
     return 404, "not found"
+
+
+def _fake_dns(host, port, **kwargs):
+    # Keep the actual URL/IP policy active, but make fixture tests independent
+    # of external DNS and the host's network configuration.
+    address = '93.184.216.34' if host == 'example.com' else '127.0.0.1'
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, '', (address, port))]
 
 
 class WebSearchTests(unittest.TestCase):
@@ -73,6 +82,9 @@ class WebSearchTests(unittest.TestCase):
 
 class WebExtractTests(unittest.TestCase):
     def setUp(self):
+        dns = patch('tools.browser.socket.getaddrinfo', side_effect=_fake_dns)
+        dns.start()
+        self.addCleanup(dns.stop)
         self.wt = WebTools(fetch=_fake_fetch)
 
     def test_extract_public_urls(self):
@@ -91,6 +103,10 @@ class WebExtractTests(unittest.TestCase):
         res = self.wt.web_extract(["https://user:pass@example.com/"])
         self.assertFalse(res.ok)
 
+    def test_public_hostname_resolving_to_private_is_denied(self):
+        result = self.wt.web_extract(['https://internal.example/'])
+        self.assertFalse(result.ok)
+
     def test_extract_empty_list(self):
         self.assertFalse(self.wt.web_extract([]).ok)
 
@@ -101,6 +117,9 @@ class WebExtractTests(unittest.TestCase):
 
 class WebToolRegistrationTests(unittest.TestCase):
     def setUp(self):
+        dns = patch('tools.browser.socket.getaddrinfo', side_effect=_fake_dns)
+        dns.start()
+        self.addCleanup(dns.stop)
         self.reg = ToolRegistry(_Audit(), _Approvals(), _Policy())
         for t in build_web_tools(fetch=_fake_fetch):
             self.reg.register(t)

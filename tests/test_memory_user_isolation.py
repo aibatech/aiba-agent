@@ -8,7 +8,7 @@ the loop's authenticated identity (loop._current_user, which AgentLoop._handle
 sets from the connector/API user_id) — never from any tool argument.
 
 Model asserted (items 1 & 3):
-  * 'default'/'None' + allowlisted identities = authorized single-owner/admin:
+  * 'default'/'None' + explicitly configured admins = single-owner/admin:
     full view incl 'shared'/legacy; writes land owner='shared'.
   * any OTHER authenticated identity (user-a vs user-b) is confined to its OWN
     rows — it cannot read/search/list/export/update/delete another user's or
@@ -22,6 +22,11 @@ import shutil
 import sqlite3
 import tempfile
 import unittest
+import os
+import json
+import threading
+import time
+from unittest.mock import patch
 from pathlib import Path
 
 from config.settings import Settings
@@ -73,6 +78,7 @@ class CrossUserMemoryIsolationTests(unittest.TestCase):
         self.loop._owner_users = frozenset({'default'})
 
     def tearDown(self):
+        self.loop.close()
         shutil.rmtree(self._tmp, ignore_errors=True)
 
     def _act_as(self, user):
@@ -105,6 +111,114 @@ class CrossUserMemoryIsolationTests(unittest.TestCase):
         self.assertFalse(self.loop._is_operator('user-a'))
         self.assertEqual(self.loop._memory_writer_owner('default'), 'shared')
         self.assertEqual(self.loop._memory_writer_owner('user-a'), 'user-a')
+
+    def test_chat_allowlists_do_not_grant_vault_admin(self):
+        with patch.dict(os.environ, {
+            'AIBA_TELEGRAM_ALLOWED_USERS': '111,222',
+            'AIBA_WHATSAPP_ALLOWED_NUMBERS': '15551111111,15552222222',
+            'AIBA_MEMORY_OWNER_USERS': '',
+        }):
+            self.assertEqual(Settings._owner_users_from_env(), frozenset({'default'}))
+
+    def test_only_explicit_connector_identity_becomes_admin(self):
+        with patch.dict(os.environ, {
+            'AIBA_TELEGRAM_ALLOWED_USERS': '111,222',
+            'AIBA_MEMORY_OWNER_USERS': 'telegram:111',
+        }):
+            self.loop._owner_users = Settings._owner_users_from_env()
+            self.assertTrue(self.loop._is_operator('telegram:111'))
+            self.assertFalse(self.loop._is_operator('telegram:222'))
+
+    def test_invalid_owner_config_fails_closed(self):
+        from config.settings import SettingsError
+        for value in ('*', 'telegram:*', 'whatsapp:', 'telegram:123:456'):
+            with self.subTest(value=value), patch.dict(os.environ, {'AIBA_MEMORY_OWNER_USERS': value}):
+                with self.assertRaises(SettingsError):
+                    Settings._owner_users_from_env()
+
+    def test_whitespace_identity_never_gets_unscoped_view(self):
+        self.assertIsNotNone(self.loop._memory_scope('   '))
+
+    def test_worker_rechecks_feature_flags_after_resolution(self):
+        # A parent-listed tool must still obey its feature flag at execution.
+        self.loop.policy.config['tools']['web_search']['enabled'] = True
+        self.loop.runtime_flags['AIBA_WEB_ENABLED'] = False
+        self.assertFalse(self.loop._subagent_policy_allows('web_search'))
+        self.assertNotIn('web_search', self.loop._subagent_resolve_tools(['web_search']))
+        self.loop.runtime_flags['AIBA_WEB_ENABLED'] = True
+        resolved = self.loop._subagent_resolve_tools(['web_search'])['web_search']
+        self.loop.runtime_flags['AIBA_WEB_ENABLED'] = False
+        result = resolved['handler'](query='never execute')
+        self.assertFalse(result.ok)
+        self.assertIn('AIBA_WEB_ENABLED', result.error)
+
+    def test_worker_requires_actual_action_approval_and_schema(self):
+        resolved = self.loop._subagent_resolve_tools(['write_file'])['write_file']
+        with patch.object(self.loop.approvals, 'approve', return_value=False) as approve:
+            result = resolved['handler'](path='denied.txt', content='test')
+        self.assertFalse(result.ok)
+        approve.assert_called_once()
+        self.assertFalse((self.settings.workspace_dir / 'denied.txt').exists())
+        with patch.object(self.loop.approvals, 'approve', return_value=True):
+            invalid = resolved['handler'](path='invalid.txt', content=42)
+        self.assertFalse(invalid.ok)
+        self.assertFalse((self.settings.workspace_dir / 'invalid.txt').exists())
+
+    def test_worker_pause_rechecked_at_tool_dispatch(self):
+        self._act_as('telegram:222')
+        resolved = self.loop._subagent_resolve_tools(['remember'])['remember']
+        self.loop.personal.intercept('telegram:222', '/memory pause')
+        result = resolved['handler'](content='must not persist')
+        self.assertFalse(result.ok)
+        self.assertEqual(self.loop.vault.list(as_user='telegram:222'), [])
+
+    def test_queued_and_scheduled_work_records_authenticated_user(self):
+        self._act_as('telegram:222')
+        with patch.object(self.loop.queue, 'enqueue', return_value='job') as enqueue:
+            self._run('enqueue_task', {'prompt': 'inspect my memory'})
+            self.assertEqual(enqueue.call_args.args[1]['user_id'], 'telegram:222')
+        with patch.object(self.loop.scheduler, 'add_interval', return_value='schedule') as schedule:
+            self._run('schedule_task', {'name': 'own notes', 'prompt': 'inspect my memory', 'interval_seconds': 60})
+            self.assertEqual(schedule.call_args.args[2]['user_id'], 'telegram:222')
+
+    def test_background_job_executes_as_original_user_not_operator(self):
+        with patch.object(self.loop, 'handle', return_value='done') as handle:
+            self.loop.worker.handlers['agent_task']({'prompt': 'own notes', 'user_id': 'telegram:222'})
+            self.assertEqual(handle.call_args.kwargs['user_id'], 'telegram:222')
+
+    def test_background_worker_keeps_original_user_after_next_turn(self):
+        self.loop.vault.add('alice-private', owner='user-a')
+        self.loop.vault.add('bob-private', owner='user-b')
+        self.loop.subagents.enabled = True
+        entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+        observed = []
+        def provider(messages, schemas):
+            if len(messages) == 2:
+                entered.set()
+                if not release.wait(5):
+                    raise TimeoutError('test release never arrived')
+                return json.dumps({'type': 'tool_call', 'tool': 'list_memories', 'arguments': {}})
+            observed.append(messages[-1]['content'])
+            finished.set()
+            return json.dumps({'type': 'final', 'response': 'done'})
+        self.loop.subagents.pool._call_provider = provider
+        self._act_as('user-a')
+        try:
+            batch = self.loop.subagents.run_many(['inspect own memory'], allowed_tools=['list_memories'], wait_s=0.01)
+            self.assertTrue(entered.wait(2))
+            self.assertTrue(batch['pending'])
+            self._act_as('default')  # next turn must not elevate the old worker
+            release.set()
+            self.assertTrue(finished.wait(3))
+            self.assertIn('alice-private', observed[0])
+            self.assertNotIn('bob-private', observed[0])
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                if self.loop.subagents.status_of(batch['pending'][0])['status'] == 'completed':
+                    break
+                threading.Event().wait(0.01)
+        finally:
+            release.set()
 
     # -- writes tag the acting user -----------------------------------------
     def test_remember_tags_the_acting_identity(self):

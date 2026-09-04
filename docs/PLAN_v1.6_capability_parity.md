@@ -1,5 +1,12 @@
 # AIBA v1.6 — Capability Parity: Engineering Plan + Capability Matrix + Timeline
 
+> **2026-09-04 source-review correction:** see
+> [current release blockers and upgrade configuration](RELEASE_BLOCKERS_v1.6.md).
+> Historical "closed" entries below do not certify browser socket pinning,
+> MCP schema discovery, remote-node transport, or end-to-end memory isolation.
+> Chat allowlists no longer grant vault administration; configure
+> `AIBA_MEMORY_OWNER_USERS` explicitly before upgrade. Live installation untouched.
+
 **Status:** IN PROGRESS — Phases 1, 2, 3, 4, 4b, 5, 6, 8, 10, 11 implemented and tested. Phase 9 sessions/memory/skills substantially implemented (session store+search, vault edit/delete/list/export, skill versioning/rollback, model tools in parity) — a few parity matrix rows (auto-suggestion confirmation, per-user vault-row isolation, skill-review formalization) remain outstanding. Phase 8 media extraction core implemented (PDF/DOCX/XLSX/PPTX/CSV/txt/markdown + image metadata, `media_extract` tool, honest per-format diagnostics; OCR/ASR/TTS/imagegen probe-only). Phase 11 capability-management CLI + dashboard data endpoint implemented (see §"Implementation Status Log").
 **Branch:** `feat/aiba-v1.6-capability-parity` (07 commits + growing)
 **Live install:** v1.5.0 untouched. Not restarted, not modified.

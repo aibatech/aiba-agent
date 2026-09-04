@@ -53,9 +53,8 @@ class Settings:
     # owners (plus the unnamed 'default' operator used by API/CLI/queued work)
     # get the unscoped admin memory view; ANY other authenticated identity is
     # scoped strictly to its own rows and never sees 'shared'/legacy records.
-    # Derived at load() from the same connector allowlists the connectors trust
-    # (single source of truth). Append at END with a default for positional
-    # safety.
+    # Explicit administrative grant, separate from permission to chat with a
+    # connector. Adding a second allowed chat user must NEVER grant vault admin.
     memory_owner_users: frozenset[str] = frozenset({'default'})
     @classmethod
     def load(cls):
@@ -78,19 +77,20 @@ class Settings:
 
     @staticmethod
     def _owner_users_from_env() -> frozenset[str]:
-        """The authorized single-owner/admin identity keys = the connector
-        allowlists (mirrors connectors/telegram.py + whatsapp.py) mapped to
-        memory owner keys, plus the unnamed 'default' operator. Keeping this in
-        sync with the connector allowlists means any identity a connector would
-        actually accept is the primary owner; a distinct non-allowlisted
-        principal is NOT and gets strict per-user isolation instead."""
+        """Explicit owner keys only; connector allowlists are not admin grants.
+
+        CLI and the bearer-token management API retain the local 'default'
+        operator. Remote owners must be explicitly named in
+        AIBA_MEMORY_OWNER_USERS using their connector-qualified identity.
+        """
         owners = {'default'}
-        for raw in os.getenv('AIBA_TELEGRAM_ALLOWED_USERS', '').split(','):
-            raw = raw.strip()
-            if raw.isdigit():
-                owners.add(f'telegram:{raw}')
-        for raw in os.getenv('AIBA_WHATSAPP_ALLOWED_NUMBERS', '').split(','):
-            raw = raw.strip()
-            if raw:
-                owners.add(f'whatsapp:{raw}')
+        for raw in os.getenv('AIBA_MEMORY_OWNER_USERS', '').split(','):
+            key = raw.strip()
+            if not key:
+                continue
+            if key != 'default':
+                channel, sep, ident = key.partition(':')
+                if not sep or channel not in {'telegram', 'whatsapp'} or not ident.isascii() or not ident.isdigit():
+                    raise SettingsError('AIBA_MEMORY_OWNER_USERS requires connector-qualified numeric identities')
+            owners.add(key)
         return frozenset(owners)
