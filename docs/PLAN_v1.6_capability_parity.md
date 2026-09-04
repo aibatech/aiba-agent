@@ -515,6 +515,31 @@ session on this branch. Resume from the checklist; do not re-derive from convers
   on failure run the tested rollback and report.
 
 ### 8.6 Checkpoint / next-action (update this line each session end)
+## OWNER DECISION — REDUCED SCOPE v1.6.0-rc.1 (2026-09-04, Josh, AUTHORIZED release)
+Replace the requirement to complete every optional backend before release. For this RC:
+defer & record as EXCLUDED (not "passed tests"):
+- **Gap 1 remote computer node**: DEFER networked pairing. Keep it disabled + labeled
+  "remote pairing not externally validated." Local simulation does NOT count as field
+  validation. Retain independently-verified local computer control w/ existing approvals.
+- **Gap 3 media OCR/ASR/TTS/imagegen**: DEFER backends. Ship tested document extraction.
+  No paid-API spend or large-model download authorized. Unsupported backends must report
+  UNAVAILABLE (never success).
+- **Gap 4(b) remote MCP**: keep DISABLED + explicitly experimental/unverified. Ship tested
+  local stdio MCP. Do NOT enable remote access or weaken network restrictions to pass tests.
+- **Gap 5 Telegram**: do NOT skip E2E. Use existing configured bot + existing authorized
+  private chat for a small, clearly-labeled maintenance test during the backed-up staged
+  cutover. No token exposure, no other chats, no two polling instances. One short coordinated
+  test covering: send+reply, typing indicator, clean formatting, clarification w/ choices,
+  harmless approval flow. Rollback ready; do NOT call upgrade complete until this passes;
+  on failure restore previous install.
+Release: authorize normal PR-merge (34-commit feature branch → main; feature is current with
+main), VERSION bump 1.5.0→1.6.0, GitHub prerelease v1.6.0-rc.1, personal install upgrade AFTER
+revised gates pass. Preserve providers/Telegram/profiles/memory/keys/workspace/service config.
+Do NOT auto-enable sensitive capabilities. No further feature expansion. Stop only for a real
+blocker. Final report: release link, installed version, health, backup location, Telegram
+result, deferred features. NO stable-production-cert / full-parity claim without evidence.
+RECORDED in §8.6 as the authoritative go-ahead; final §8.5 gate + publish + upgrade + Telegram
+staged test now execute per this decision.
 STATE (2026-09-03, session end): Gap **4(a) DONE + CI-verified** — added
 `.github/workflows/mcp-integration.yml` (install `.[mcp]` on ubuntu/3.12, run full suite +
 isolated MCP tests). Commit `e883e6d`, pushed. Runs on HEAD `e883e6d`: Production Gate
