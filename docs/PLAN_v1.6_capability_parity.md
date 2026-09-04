@@ -597,7 +597,8 @@ Remaining Gap 6 items from the audit (next, in order, all test-first):
   Hermetic tests `ConnectTimePeerPolicyTests` in `tests/test_browser_security.py`
   (4: public allowed, private/metadata refused, rebind-to-loopback refused, unresolvable/
   empty refused) via stubbed `getaddrinfo` — no network, no live Chromium. Local gate now
-  357 passed / 1 skip. Commit follows this §8.6 update.
+  357 passed / 1 skip. COMMITTED `f15d207` + CI-VERIFIED (13/13 on HEAD `f15d207`:
+  Production Gate 33836532349 = success 12/12, MCP Integration 33836532488 = success).
   Opt-in real-driver redirect/subresource/download tests remain staged (external, see
   consolidated request).
 Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/commits):
