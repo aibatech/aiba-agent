@@ -24,7 +24,7 @@ def main():
     routed = _maybe_capability_cli()
     if routed is not None:
         raise SystemExit(routed)
-    p=argparse.ArgumentParser(description='AIBA Agent v1.5')
+    p=argparse.ArgumentParser(description='AIBA Agent v1.6')
     p.add_argument('--prompt');p.add_argument('--yes',action='store_true')
     p.add_argument('--serve',action='store_true');p.add_argument('--telegram',action='store_true')
     p.add_argument('--host');p.add_argument('--port',type=int)
