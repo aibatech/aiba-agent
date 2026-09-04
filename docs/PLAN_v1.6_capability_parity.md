@@ -522,21 +522,40 @@ isolated MCP tests). Commit `e883e6d`, pushed. Runs on HEAD `e883e6d`: Productio
 skipped=7 = platform/optional only; MCP `test_stdio_roundtrip` EXECUTED, not skipped** —
 log shows real SDK spawn reaching `/opt/fake/server.py`). So HEAD now green on **13 jobs**.
 Checkpoint §8.1/8.2/8.3 verified earlier; committed as `e639574`.
-Gap **6 (sec) first hardening DONE + CI-verified** — registry audit/approval-surface secret
-scrub (`_scrub_args_for_surface` in `tools/registry.py`, applied at tool_start/tool_denied/
-approval-preview; new `tests/test_registry_redaction.py`, 5 tests). Commit `78b56ca`, pushed.
-HEAD `78b56ca` green on **13 jobs**: Production Gate 33815030016 (conclusion success,
-12/12) + MCP Integration 33815030092 (`mcp-with-sdk` success). Full suite locally **326 OK
-(skipped=1)**; pyright 0, bandit LL, secret scan clean. **This closes audit concern #5's
-outer-layer typed-text leak end-to-end.**
+Gap **6 (sec) first hardening DONE + CI-verified (two commits)** —
+(a) registry audit/approval-surface secret scrub (`_scrub_args_for_surface` in
+`tools/registry.py`, applied at tool_start/tool_denied/approval-preview; new
+`tests/test_registry_redaction.py`) = commit `78b56ca`, full suite 326 OK, CI
+green (Production Gate 33815030016 + MCP Integration 33815030092). This closes
+audit #5's outer-layer typed-text leak end-to-end.
+(b) desktop `screenshot` workspace-confinement (sandbox.resolve in loop handler;
+regression test in `Phase5DesktopWiringTests`) = commit `8755a0c`, full suite
+327 OK. CI CONFIRMED green on HEAD `8755a0c` at 13 jobs: Production Gate
+33815570745 (success) + MCP Integration 33815570582 (success). This closes audit
+#4's desktop screenshot workspace-escape.
 Remaining Gap 6 items from the audit (next, in order, all test-first):
-- #5b: desktop `screenshot` path NOT workspace-confined (`computer/controller.py:250-262`
-  lacks `.relative_to(workspace)`) → escape via `../../`; fix + test. Also the desktop
-  screenshot lands in an approval-free `read_file` area.
-- #2/#1: thread-timeout honesty + "no tool calls after terminal" — add tests asserting
-  call-count flat after `TIMED_OUT`/`CANCELLED`, and that a blocked handler is NOT
-  pre-emptively killed (soft-boundary truth). Note `SubagentPool.shutdown` has dead
-  "grace then cancel" comment (`subagents.py:522-530`) — align code+comment.
+- ✅ #2/#1 DONE (2026-09-03, commit follows this §8.6 update): deterministic
+  termination-boundary + shutdown hardening in `agent/subagents.py`, tests in
+  `tests/test_subagents.py` (`TerminationBoundaryTests` 4 + `ShutdownTests` 4).
+  Found via repro, not just assertion: a cancel/wall-clock timeout requested
+  WHILE a provider response is still in flight was honored only at the next
+  loop iteration, so the LATE `tool_call` dispatched its tool after
+  cancel/timeout (`dispatch_after_cancel/...=1`). Fix: `_check_boundary()` re-run
+  immediately after `_call_provider` returns discards a late action (→ 0). Also
+  `SubagentPool.dispatch()` marked a task RUNNING + took a slot BEFORE
+  `executor.submit`, so dispatching after `shutdown()` raised and stranded a
+  RUNNING row / leaked the slot; `delegate()` after `close()` raised RuntimeError.
+  Fix: `_accepting` flag; `dispatch()` rolls back to QUEUED on submit rejection;
+  `can_dispatch()` false after shutdown; `shutdown(wait=True)` accurately
+  flag-cancels + drains with a bounded 2s grace (idempotent; never a thread
+  kill) — dead "grace then cancel" comment removed. Full suite 334 OK / 1 skip
+  (pre-existing Windows-only platform skip), pyright 0, bandit `-lll` clean.
+  HEAD `8755a0c` CONFIRMED green on 13 jobs (Production Gate 33815570745 ✓ +
+  MCP Integration 33815570582 ✓) before this commit.
+- (carry-over, still OPEN) blocked-handler cooperative-honesty doc + decide if a
+  worker blocked in an un-interruptible provider/tool call should surface a
+  distinct status — current honest behavior: it waits for the call to return,
+  then honours cancel/timeout at the boundary (documented in `_check_boundary`).
 - #3c: recorded subagent `workspace` is never used for confinement (shared main workspace);
   add regression doc + decide if per-delegation folder isolation is wanted.
 - #4: Playwright browser path LACKS the `socket.getaddrinfo`/`ip.is_global` DNS check that
@@ -565,6 +584,9 @@ Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/co
   OCR/ASR/TTS/imagegen; reachable HTTPS MCP server + remote-MCP opt-in; isolated test-bot
   token).
 §8.5 publish + §8.5/S6 live upgrade NOT started — gated on full gate pass + owner go.
-NEXT ACTION when resumed: Gap 6 #5b — desktop screenshot workspace-confinement fix + test
-(computer/controller.py + test_computer.py); then #2/#1 subagent termination-honesty tests.
+NEXT ACTION when resumed: commit the 3-file hardening (agent/subagents.py +
+tests/test_subagents.py + this PLAN), push, verify 13 CI jobs green; then finish
+remaining Gap 6 (#3c shared-workspace + #4 browser DNS/redirect opt-in) + Gap 2
+memory isolation + Gap 4(c) MCP discovery, then consolidate external blockers
+and run the §8.5 final gate.
 Update this line each session. Do NOT auto-bump/merge/upgrade.

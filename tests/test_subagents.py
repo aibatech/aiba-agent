@@ -547,6 +547,295 @@ class BudgetTests(_Base):
         self.assertEqual(self.store_get(sub)["status"], CANCELLED)
 
 
+class TerminationBoundaryTests(_Base):
+    """Deterministic tests that a cancellation / wall-clock timeout requested
+    while a provider response is still *pending* is honoured BEFORE that late
+    response is allowed to act.
+
+    These pin the cooperative-termination contract:
+
+      * a late ``tool_call`` returned by the provider cannot initiate a new tool
+        dispatch after cancellation or wall-clock timeout (we count ACTUAL tool
+        dispatches via a tracker, not just provider call-counts); and
+      * an already-running tool (one mid-flight when the cancel lands) is not
+        retroactively reversed, and the worker dispatches nothing NEW after the
+        terminal state.
+
+    We never claim a thread timeout kills a process or reverses an action:
+    termination is honoured at a loop/action boundary, so a worker parked inside
+    an in-flight provider call only observes cancel/timeout once that call
+    returns — at which point the returned action is discarded, not dispatched.
+
+    Synchronisation is deterministic — the worker blocks inside its first
+    provider call until the test ``release()``s it — so cancel/timeout provably
+    lands while the response is in flight rather than on a racy ``sleep``.
+    """
+
+    class HoldingProvider(FakeProvider):
+        """Scripted provider whose FIRST call signals entry, then blocks until
+        ``release()``. Deterministically parks the worker inside its first
+        in-flight provider call so the test can cancel/timeout it there."""
+
+        def __init__(self, script):
+            super().__init__(script)
+            self.entered_first = threading.Event()
+            self.release_gate = threading.Event()
+
+        def hold_first(self):
+            self.release_gate.clear()
+
+        def release(self):
+            self.release_gate.set()
+
+        def __call__(self, messages, schemas):
+            with self._lock:
+                idx = self._idx
+                self._idx += 1
+            self._last_cost = self.per_call_cost
+            if idx == 0:
+                # Signal entry BEFORE blocking so the test knows the worker is
+                # parked inside an in-flight provider call, then block until the
+                # main thread releases the (late) response.
+                self.entered_first.set()
+                self.release_gate.wait(timeout=30)
+            action = self._script[min(idx, len(self._script) - 1)] if self._script \
+                else {"type": "final", "response": "done"}
+            return json.dumps(action)
+
+    def _blocked_worker(self, *, provider, tools, timeout_s=60, step_cap=10):
+        """Delegate one worker whose FIRST provider call is held in-flight.
+        Returns (mgr, sub_id). Blocks until the worker is genuinely parked
+        inside the pending provider call (deterministic via ``entered_first``)."""
+        mgr = self.mk_manager(resolve=lambda names: tools, provider=provider,
+                              global_=1, per_parent=5,
+                              step_cap=step_cap, time_limit=timeout_s)
+        sub = mgr.delegate("held task", allowed_tools=["slow"],
+                           allow_approved=True)
+        self.assertTrue(provider.entered_first.wait(timeout=5),
+                        "worker never reached its first (held) provider call")
+        return mgr, sub
+
+    def _leave_running(self, sub, terminal_states, timeout=5):
+        """Wait until the worker leaves RUNNING into a terminal state; return
+        the observed status (None if it stayed RUNNING past `timeout`)."""
+        dl = time.monotonic() + timeout
+        last = None
+        while time.monotonic() < dl:
+            rec = self.store_get(sub)
+            last = rec.get("status") if rec else None
+            if last in terminal_states:
+                return last
+            time.sleep(0.005)
+        return last
+
+    def test_cancel_while_response_pending_blocks_late_tool(self):
+        # Cancel lands WHILE the provider response is still in flight; once the
+        # late response is released it must NOT be able to dispatch its tool.
+        tools, tracker = make_toolset("slow")
+        provider = self.HoldingProvider(
+            [{"type": "tool_call", "tool": "slow", "arguments": {}}])
+        provider.hold_first()
+        mgr, sub = self._blocked_worker(provider=provider, tools=tools)
+        # --- cancellation lands here; response is still pending ---
+        rec = self.store_get(sub)
+        self.assertEqual(rec.get("status"), RUNNING)
+        self.assertTrue(mgr.cancel(sub))
+        # Worker is cooperative: it only observes the cancel once the pending
+        # call returns, so it must still be RUNNING for the moment (never
+        # reported COMPLETED downstream). Release the late response.
+        provider.release()
+        st = self._leave_running(sub, (CANCELLED, FAILED, COMPLETED))
+        self.assertEqual(st, CANCELLED)
+        self.assertEqual(tracker["calls"], [],
+                         "late tool_call dispatched a tool after cancellation: "
+                         f"{tracker['calls']}")
+
+    def test_timeout_while_response_pending_blocks_late_tool(self):
+        # A wall-clock timeout fires while the provider response is in flight.
+        # The released late tool_call must not dispatch and the worker must
+        # reach TIMED_OUT, never COMPLETED.
+        tools, tracker = make_toolset("slow")
+        provider = self.HoldingProvider(
+            [{"type": "tool_call", "tool": "slow", "arguments": {}}])
+        provider.hold_first()
+        # A tiny wall-clock budget expires while the call is still held.
+        _, sub = self._blocked_worker(provider=provider, tools=tools,
+                                      timeout_s=1, step_cap=100000)
+        time.sleep(1.2)  # budget now elapsed; response still pending
+        rec = self.store_get(sub)
+        self.assertEqual(rec.get("status"), RUNNING)  # blocked, not yet done
+        provider.release()
+        st = self._leave_running(sub, (TIMED_OUT, FAILED, COMPLETED))
+        self.assertEqual(st, TIMED_OUT)
+        self.assertEqual(tracker["calls"], [],
+                         "late tool_call dispatched a tool after wall-clock "
+                         f"timeout: {tracker['calls']}")
+
+    def test_tool_already_running_when_cancel_lands_is_not_reversed(self):
+        # Cooperative cancellation NEVER kills an already-running tool or
+        # reverses an action already taken. The in-flight tool is allowed to
+        # complete its one dispatch, and the worker then reaches CANCELLED
+        # without starting any NEW dispatch. This documents exactly what an
+        # in-flight tool call does under cancellation (no force-kill, no
+        # rollback) rather than overclaiming a thread teardown.
+        tool_entered = threading.Event()
+        release_tool = threading.Event()
+
+        def running_tool(__name="slow", *a, **kw):
+            tool_entered.set()          # the tool IS mid-flight now
+            release_tool.wait(timeout=15)
+            return {"ok": True, "output": "ran", "error": None}
+
+        tools = {"slow": {"handler": running_tool, "description": "slow",
+                          "parameters": {"type": "object"},
+                          "requires_approval": False}}
+        provider = FakeProvider(
+            [{"type": "tool_call", "tool": "slow", "arguments": {}}])
+        mgr = self.mk_manager(resolve=lambda names: tools, provider=provider,
+                              global_=1, per_parent=5, time_limit=60)
+        sub = mgr.delegate("do work", allowed_tools=["slow"],
+                           allow_approved=True)
+        # Wait until the tool handler is genuinely mid-flight.
+        self.assertTrue(tool_entered.wait(timeout=5),
+                        "tool handler never started")
+        # --- cancel lands while the tool is running ---
+        self.assertTrue(mgr.cancel(sub))
+        # The in-flight tool is NOT interrupted/rolled back: release it to
+        # finish its single action; the worker must then honour the cancel and
+        # dispatch nothing further.
+        release_tool.set()
+        st = self._leave_running(sub, (CANCELLED, FAILED, COMPLETED))
+        self.assertEqual(st, CANCELLED)
+
+    def test_termination_state_is_documented_not_a_thread_kill(self):
+        # Pin the cooperative semantics honestly: a running worker that is NOT
+        # parked in an in-flight call reaches CANCELLED at its next boundary,
+        # and a normally-dispatched worker that finalises reaches COMPLETED.
+        # Neither path implies the worker thread was force-killed mid-step.
+        tools = {"slow": {"handler": (lambda *_a, **kw: (
+            time.sleep(0.01), {"ok": True, "output": "slow", "error": None})[1]),
+            "description": "s", "parameters": {"type": "object"},
+            "requires_approval": False}}
+        provider = FakeProvider([{"type": "tool_call", "tool": "slow",
+                                  "arguments": {}}])
+        mgr = self.mk_manager(resolve=lambda names: tools, provider=provider,
+                              global_=1, per_parent=5, time_limit=60)
+        sub = mgr.delegate("cycling", allowed_tools=["slow"],
+                           allow_approved=True)
+        dl = time.monotonic() + 5
+        while time.monotonic() < dl:
+            if self.store_get(sub).get("status") == RUNNING:
+                break
+            time.sleep(0.01)
+        self.assertEqual(self.store_get(sub).get("status"), RUNNING)
+        self.assertTrue(mgr.cancel(sub))
+        self.assertEqual(self._leave_running(sub, (CANCELLED,)), CANCELLED)
+
+
+class ShutdownTests(_Base):
+    """Pool/manager shutdown guarantees (Gap 6 §8.6 'SubagentPool shutdown').
+
+    * ``shutdown()`` is cooperative and idempotent — never a thread kill.
+    * No queued work starts after shutdown, and none attempts the "RUNNING with
+      no worker thread" corruption: a task that cannot be scheduled is rolled
+      back to QUEUED (persistable/recoverable), not left stuck RUNNING.
+    * A worker actively running at shutdown is flag-cancelled and drains to a
+      terminal state within a bounded grace, releasing its concurrency slot.
+    """
+
+    def _slow_toolset(self, delay=10.0):
+        def slow(__name="slow", *a, **kw):
+            time.sleep(delay)   # long so the worker stays RUNNING past shutdown
+            return {"ok": True, "output": "slow", "error": None}
+        return {"slow": {"handler": slow, "description": "slow",
+                         "parameters": {"type": "object"},
+                         "requires_approval": False}}
+
+    def _fast_final_provider(self):
+        return FakeProvider([{"type": "final", "response": "done"}])
+
+    def test_shutdown_is_cooperative_and_idempotent(self):
+        # shutdown() must not raise, must not kill the process, and a second
+        # call is a harmless no-op (idempotent) — including wait=True twice.
+        mgr = self.mk_manager(provider=self._fast_final_provider())
+        mgr.delegate("x", allowed_tools=[], allow_approved=True)  # ensure active
+        mgr.close()          # -> pool.shutdown(wait=True)
+        mgr.close()          # idempotent
+        mgr.pool.shutdown(wait=True)  # still no-op
+        self.assertTrue(True)
+
+    def test_shutdown_stops_future_dispatch_cleanly(self):
+        # A delegation submitted AFTER close() must not start a worker nor raise
+        # nor leave the task stuck RUNNING: it stays QUEUED (recoverable). This
+        # pins the fix for the "dispatch after shutdown raises RuntimeError and
+        # strands a RUNNING row" defect.
+        tools = self._slow_toolset()
+        provider = FakeProvider([{"type": "tool_call", "tool": "slow",
+                                  "arguments": {}}])
+        mgr = self.mk_manager(resolve=lambda names: tools, provider=provider,
+                              global_=1, per_parent=5, time_limit=60)
+        # Occupy the only global slot so a second task genuinely QUEUEs.
+        first = mgr.delegate("first", allowed_tools=["slow"],
+                             allow_approved=True)
+        dl = time.monotonic() + 5
+        while time.monotonic() < dl:
+            if self.store_get(first).get("status") == RUNNING:
+                break
+            time.sleep(0.01)
+        self.assertEqual(self.store_get(first).get("status"), RUNNING)
+        mgr.close()  # graceful teardown (this also flag-cancels the running one)
+        # Now a NEW delegation must not start a worker, must not raise, and must
+        # not be left RUNNING-without-a-worker.
+        second = mgr.delegate("second", allowed_tools=["slow"],
+                              allow_approved=True)
+        time.sleep(0.2)
+        st = self.store_get(second).get("status")
+        self.assertIn(st, ("queued", "cancelled", "completed"),
+                      f"post-shutdown delegation left task in bad state: {st}")
+        self.assertNotEqual(st, "running")
+        # No unhandled raise was a precondition; reaching here proves cancel
+        # path still returns a bool (does not raise).
+        self.assertIsInstance(mgr.cancel(second), bool)
+
+    def test_dispatch_rolls_back_when_executor_rejects(self):
+        # Force the exact executor-rejection race: a queued task dispatched
+        # straight to a pool whose executor is already shut down must be rolled
+        # back to QUEUED (slot + status intact), never left RUNNING.
+        mgr = self.mk_manager(provider=self._fast_final_provider(),
+                              global_=1, per_parent=5)
+        sid = mgr.store.create({"objective": "q", "allowed_tools": []})
+        self.assertEqual(self.store_get(sid).get("status"), QUEUED)
+        # Shut down the executor WITHOUT flag-cancel (wait=False) so a later
+        # dispatch() hits the closed executor directly.
+        mgr.pool.shutdown(wait=False)
+        # dispatch() must not raise and must leave the task QUEUED (rolled back)
+        mgr.pool.dispatch(sid)
+        self.assertEqual(self.store_get(sid).get("status"), QUEUED)
+        # can_dispatch is now False (accepting=False).
+        self.assertIs(mgr.pool.can_dispatch(None), False)
+
+    def test_active_worker_drains_at_shutdown(self):
+        # A worker mid-loop when shutdown(wait=True) is called is cooperatively
+        # flag-cancelled and reaches CANCELLED within the bounded grace; the
+        # manager reports it cancelled (not stuck RUNNING).
+        tools = self._slow_toolset(delay=0.01)
+        provider = FakeProvider([{"type": "tool_call", "tool": "slow",
+                                  "arguments": {}}])
+        mgr = self.mk_manager(resolve=lambda names: tools, provider=provider,
+                              global_=1, per_parent=5, time_limit=60)
+        sub = mgr.delegate("cycling", allowed_tools=["slow"],
+                           allow_approved=True)
+        dl = time.monotonic() + 5
+        while time.monotonic() < dl:
+            if self.store_get(sub).get("status") == RUNNING:
+                break
+            time.sleep(0.01)
+        self.assertEqual(self.store_get(sub).get("status"), RUNNING)
+        mgr.close()  # pool.shutdown(wait=True) -> bounded cooperative drain
+        # The worker must have left RUNNING (drained) after close returns.
+        self.assertNotEqual(self.store_get(sub).get("status"), RUNNING)
+
+
 class SecurityNarrowingTests(_Base):
     def test_recursive_and_admin_tools_never_reach_worker(self):
         # A delegate that lists spawn/admin tools still results in a worker that

@@ -254,6 +254,7 @@ class SubagentPool:
         self._active: dict[str, str] = {}          # subagent_id -> parent_task_id
         self._per_parent_active: dict[str, int] = {}   # parent -> count running/queued-running
         self._cancel: set[str] = set()
+        self._accepting = True   # becomes False once shutdown() is called
 
     # -- bookkeeping ------------------------------------------------------
     def _audit_record(self, event: str, **data: Any) -> None:
@@ -271,6 +272,8 @@ class SubagentPool:
         return len(self._active) < self.global_limit
 
     def can_dispatch(self, parent_task_id: str | None) -> bool:
+        if not self._accepting:
+            return False
         return self._global_slot_available() and self._parent_slot_available(parent_task_id or "ROOT")
 
     def _begin(self, sub_id: str, parent_task_id: str | None) -> None:
@@ -288,17 +291,32 @@ class SubagentPool:
 
     # -- public API -------------------------------------------------------
     def dispatch(self, sub_id: str) -> None:
-        """Dispatch an already-persisted subagent to a worker thread."""
+        """Dispatch an already-persisted subagent to a worker thread.
+
+        Safe even at/after ``shutdown()``: if no worker thread can be scheduled
+        (executor already shut down), the task is rolled back to QUEUED rather
+        than being left RUNNING with no thread and a permanently leaked slot.
+        """
         record = self.store.get(sub_id)
         if not record:
             return
         if record["status"] != QUEUED:
             return
+        if not self._accepting:
+            return  # pool shut down: leave queued (will not start new work)
         self.store.update_status(sub_id, RUNNING, started_at=_utcnow())
         self._begin(sub_id, record.get("parent_task_id"))
         self._audit_record("start", subagent_id=sub_id,
                            parent_task_id=record.get("parent_task_id"))
-        self._executor.submit(self._run_guarded, sub_id)
+        try:
+            self._executor.submit(self._run_guarded, sub_id)
+        except RuntimeError:
+            # Executor rejected the submit (shutdown raced in). Roll the task
+            # back to QUEUED so it is not left RUNNING-without-a-worker and the
+            # concurrency slot it just took is released.
+            self._end(sub_id)
+            self.store.update_status(sub_id, QUEUED)
+            self._audit_record("dispatch_rejected", subagent_id=sub_id)
 
     def cancel(self, sub_id: str) -> bool:
         """Request cancellation: mark cancelled if not yet running; if running,
@@ -430,17 +448,32 @@ class SubagentPool:
              "content": _WORKER_SYSTEM + "\nTools: " + json.dumps(schemas)},
             {"role": "user", "content": objective},
         ]
+        def _check_boundary() -> None:
+            """Cooperative termination check at every loop / action boundary.
+
+            Honoured *before* each provider call AND immediately after a call
+            returns: a cancellation or wall-clock timeout requested while the
+            provider response was still in flight must prevent the returned
+            action from being dispatched. It never interrupts a tool/provider
+            call already running or reverses an action already executed.
+            """
+            if self._should_abort(sub_id):
+                raise _WorkerCancelled()
+            if time.monotonic() > timeout_at:
+                raise _WorkerTimeout()
+
         final = ""
         steps = 0
         total_cost = 0.0
         for _ in range(max_steps):
             # Bounded cleanup: check cancellation and wall clock before each step.
-            if self._should_abort(sub_id):
-                raise _WorkerCancelled()
-            if time.monotonic() > timeout_at:
-                raise _WorkerTimeout()
+            _check_boundary()
             action = self._call_provider(messages, schemas)
             steps += 1
+            # Re-check immediately after the provider returns: if cancel/timeout
+            # landed while the response was pending, the response must NOT be
+            # able to initiate a tool call or mark the worker complete.
+            _check_boundary()
             # Best-effort cost: a provider that surfaces per-call usage lets a
             # delegation with an explicit max_cost be capped.
             if max_cost is not None:
@@ -520,14 +553,40 @@ class SubagentPool:
         return {"ok": True, "output": out, "error": None}
 
     def shutdown(self, wait: bool = True) -> None:
-        """Stop accepting work and wait (briefly) for running workers."""
+        """Stop accepting work and allow running workers to drain cooperatively.
+
+        Idempotent: a second call is a no-op. This is a *cooperative* stop, never
+        a thread kill: it (a) stops scheduling new worker threads, then (b)
+        flag-cancels every currently-active worker so each stops at its next
+        loop/action boundary (a worker parked in an in-flight provider or tool
+        call finishes that call first). If ``wait`` is true we give a short
+        bounded grace for those workers to reach a terminal state and release
+        their concurrency slots before returning — but we NEVER block
+        indefinitely and never claim that an in-flight call was interrupted.
+        """
+        with self._lock:
+            if not self._accepting:
+                return  # already shut down
+            self._accepting = False
         try:
             self._executor.shutdown(wait=False)
-            if not wait:
-                return
-            # give short grace then flag-cancel
         except Exception:
             pass
+        if not wait:
+            return
+        # Bounded cooperative drain: flag-cancel running workers, then wait only
+        # long enough (short grace, bounded) for them to exit at their boundary.
+        with self._lock:
+            running = list(self._active.keys())
+        for sub_id in running:
+            self._cancel.add(sub_id)
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            with self._lock:
+                active = len(self._active)
+            if active == 0:
+                break
+            time.sleep(0.02)
 
 
 class _WorkerTimeout(Exception):
