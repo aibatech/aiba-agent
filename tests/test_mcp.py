@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -276,21 +277,33 @@ class FakeStdioServerRoundTripTests(unittest.TestCase):
         import importlib.util
         if importlib.util.find_spec("mcp") is None:
             self.skipTest("optional mcp SDK not installed; skipping end-to-end stdio test.")
-        # Build a minimal real stdio server document executed via the SDK's own
-        # `python -m mcp.server.stdio`? That would need our own code. Instead we
-        # only validate that the controller's config + allowlist path resolves a
-        # callable server; the true process spawn is covered by the SDK's own
-        # conformance, not by us, so we assert the fail-open code path reaches
-        # _run_on_loop and returns a clear "call" error rather than a config/policy
-        # denial — proving the policy gate does not falsely block a real server.
-        # (Full byte-faithful protocol exercise belongs to SDK tests.)
+        self.addCleanup(set_sdk_available_override, None)
+        set_sdk_available_override(None)  # real dependency check, not a forced pass
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            srv = _base_stdio_server(
+                command=sys.executable,
+                args=[str(REPO / 'tests' / 'fixtures' / 'mcp_stdio_server.py')],
+            )
+            _write_cfg(root, {'fixture': srv})
+            ctrl = MCPClientController(enabled=True, root_dir=root)
+            result = ctrl.execute('fixture', 'ping', {'text': 'hello'})
+            self.assertTrue(result.ok, result.error)
+            self.assertIn('fixture-pong:hello', str(result.output))
+            error = ctrl.execute('fixture', 'ping', {'text': 'error'})
+            self.assertFalse(error.ok, 'Server-declared tool failure must not become success')
+
+    def test_stdio_transport_failure_is_not_success(self):
+        if not self._sdk():
+            self.skipTest('optional mcp SDK not installed')
         from tools.base import ToolResult
+        self.addCleanup(set_sdk_available_override, None)
         set_sdk_available_override(True)  # allow the controller past the SDK check
         # Point at /bin/false so the process does not speak MCP; we assert we get
         # a transport/EOF error, which proves we reached the real spawn layer.
         d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
         r = Path(d.name)
-        srv = _base_stdio_server(command="/bin/false", tools={"x": {"enabled": True, "requires_approval": False}})
+        srv = _base_stdio_server(command=sys.executable, args=['-c', 'raise SystemExit(1)'], tools={"x": {"enabled": True, "requires_approval": False}})
         p = _write_cfg(r, {"s": srv})
         ctrl = MCPClientController(enabled=True, root_dir=r)
         res = ctrl.execute("s", "x", {})

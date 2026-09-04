@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+from contextvars import ContextVar
 from config.settings import Settings
 from security.audit import AuditLog
 from security.policy import SecurityPolicy
@@ -39,6 +40,14 @@ from personality import PersonalExperience
 from agent.subagent_manager import SubagentManager
 from agent.sessions import SessionStore
 class AgentLoop:
+    @property
+    def _current_user(self):
+        return self._user_context.get()
+
+    @_current_user.setter
+    def _current_user(self, value):
+        self._user_context.set(value or 'default')
+
     def __init__(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
         self.settings=settings or Settings.load();self.audit=AuditLog(self.settings.logs_dir/'audit.jsonl');self.events=EventBus();self._run_lock=RLock();self.metrics=Metrics();self.crashes=CrashReporter(self.settings.logs_dir)
         self.approvals=ApprovalManager(interactive,auto_approve);self.policy=SecurityPolicy(self.settings.workspace_dir,self.settings.permissions_path,self.settings.require_approval)
@@ -50,6 +59,7 @@ class AgentLoop:
         self.sessions=SessionStore(self.settings.sessions_db_path or (self.settings.data_dir/'sessions.db'))
         # Ambient user for session-search read tools (set per handled turn). The
         # session/memory read tools scope to whoever last drove a handled turn.
+        self._user_context=ContextVar('aiba_user', default='default')
         self._current_user='default'
         # Authorized single-owner/admin identity keys for the memory vault.
         # Only these (plus the unnamed 'default'/'None' operator) act unscoped
@@ -134,7 +144,7 @@ class AgentLoop:
             step_cap_default=int(self.settings.max_steps),
             time_limit_default=int(max(self.settings.command_timeout*4, 120)),
         )
-        self.worker=Worker(self.queue,{'agent_task':lambda payload:{'result':self.handle(payload['prompt'],propose_skill=False,task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'))}});self.scheduler_runner=SchedulerRunner(self.scheduler)
+        self.worker=Worker(self.queue,{'agent_task':lambda payload:{'result':self.handle(payload['prompt'],propose_skill=False,task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'),user_id=payload.get('user_id'))}});self.scheduler_runner=SchedulerRunner(self.scheduler)
         if start_worker and self.settings.worker_enabled:self.worker.start();self.scheduler_runner.start();self.update_checker.start()
         self.events.subscribe('*',lambda e:self.audit.record('event',**e))
     def _on_clarify_pending(self, q):
@@ -156,7 +166,7 @@ class AgentLoop:
     def _is_operator(self, user_key: str | None) -> bool:
         """Whether an authenticated identity is the authorized single-owner /
         admin. None / 'default' (local API/CLI/queued work) is always operator;
-        beyond that only keys that appear in the configured connector allowlist
+        beyond that only keys that appear in the explicit memory-admin list
         (Settings.memory_owner_users) are operators. Consumers determine the
         acting identity; it is never trusted from a model tool argument."""
         key = user_key or self._current_user or 'default'
@@ -169,7 +179,7 @@ class AgentLoop:
         'shared' and other users' rows are never visible)."""
         if self._is_operator(user_key):
             return None
-        return (user_key or self._current_user or 'default').strip() or None
+        return user_key or self._current_user or 'default'
 
     def _memory_writer_owner(self, user_key: str | None = None) -> str:
         """Resolve the owner tag for a WRITE from the authenticated identity.
@@ -240,8 +250,8 @@ class AgentLoop:
         self.registry.register(Tool('skill_instructions','Read a reviewed portable skill instruction contract.',lambda name:ToolResult(True,self.skills.instructions(name)),{'type':'object','properties':{'name':{'type':'string'}},'required':['name'],'additionalProperties':False}))
         self.registry.register(Tool('run_skill','Run a reviewed reusable skill.',lambda name,variables=None:ToolResult(True,self.skills.execute(name,self.registry,variables or {})),{'type':'object','properties':{'name':{'type':'string'},'variables':{'type':'object'}},'required':['name'],'additionalProperties':False}))
         self.registry.register(ClarifyToolFactory.make(self.clarify))
-        self.registry.register(Tool('enqueue_task','Queue a background task.',lambda prompt:ToolResult(True,{'job_id':self.queue.enqueue('agent_task',{'prompt':prompt})}),{'type':'object','properties':{'prompt':{'type':'string'}},'required':['prompt'],'additionalProperties':False}))
-        self.registry.register(Tool('schedule_task','Schedule a recurring task.',lambda name,prompt,interval_seconds:ToolResult(True,{'schedule_id':self.scheduler.add_interval(name,'agent_task',{'prompt':prompt},int(interval_seconds))}),{'type':'object','properties':{'name':{'type':'string'},'prompt':{'type':'string'},'interval_seconds':{'type':'integer'}},'required':['name','prompt','interval_seconds'],'additionalProperties':False}))
+        self.registry.register(Tool('enqueue_task','Queue a background task.',lambda prompt:ToolResult(True,{'job_id':self.queue.enqueue('agent_task',{'prompt':prompt,'user_id':self._current_user})}),{'type':'object','properties':{'prompt':{'type':'string'}},'required':['prompt'],'additionalProperties':False}))
+        self.registry.register(Tool('schedule_task','Schedule a recurring task.',lambda name,prompt,interval_seconds:ToolResult(True,{'schedule_id':self.scheduler.add_interval(name,'agent_task',{'prompt':prompt,'user_id':self._current_user},int(interval_seconds))}),{'type':'object','properties':{'name':{'type':'string'},'prompt':{'type':'string'},'interval_seconds':{'type':'integer'}},'required':['name','prompt','interval_seconds'],'additionalProperties':False}))
         # Internal subagents (Phase 3): the ONLY model-advertised entry point.
         # It spawns bounded, permission-narrowed, non-recursive background
         # workers in parallel, waits (bounded), and returns concise structured
@@ -262,9 +272,10 @@ class AgentLoop:
         self.registry.register(Tool('mcp_call','Call a tool on an operator-configured external MCP server. Pass server_id (the configured server key), tool (the server-side tool name), and arguments (a JSON object). Only servers and tools the operator has allowlisted are reachable; MCP is off by default.',self.mcp.execute,{'type':'object','properties':{'server_id':{'type':'string'},'tool':{'type':'string'},'arguments':{'type':'object'}},'required':['server_id','tool'],'additionalProperties':False}))
     # -- internal subagent bridges -------------------------------------------
     def _subagent_policy_allows(self, name: str) -> bool:
-        """Whether *name* is enabled at the shared SecurityPolicy level."""
+        """Apply the same availability and conversation policy as the parent."""
         try:
-            return self.policy.check_tool(name).allowed
+            return not self.registry._availability(name) and not self.registry.blocked(
+                name, self.personal.blocked_tools(self._current_user))
         except Exception:
             return False
 
@@ -275,7 +286,7 @@ class AgentLoop:
         out = {}
         for name in names:
             tool = self.registry._tools.get(name)
-            if tool is None:
+            if tool is None or not self._subagent_policy_allows(name):
                 continue
             req = False
             try:
@@ -285,10 +296,24 @@ class AgentLoop:
             out[name] = {
                 "description": tool.description,
                 "parameters": tool.parameters,
-                "handler": tool.run,
+                # Delegation consent permits offering a tool, not approving
+                # every future action. Recheck policy, schema, and the actual
+                # action's approval at dispatch, including after policy changes.
+                "handler": self._subagent_handler(name),
                 "requires_approval": req,
             }
         return out
+
+    def _subagent_handler(self, name):
+        user_key = self._current_user
+        def run(**arguments):
+            token = self._user_context.set(user_key)
+            try:
+                return self.registry.execute(name, arguments,
+                    blocked=self.personal.blocked_tools(user_key))
+            finally:
+                self._user_context.reset(token)
+        return run
 
     def _subagent_call_provider(self, messages, schemas) -> str:
         """Run one provider call for a worker through the shared router."""
@@ -344,7 +369,12 @@ class AgentLoop:
         if onboard and user_id:
             intercepted=self.personal.intercept(user_id,text)
             if intercepted is not None:return intercepted
-        with self._run_lock:return self._handle(text.strip(),propose_skill,task_type,manual_model_id,user_id)
+        with self._run_lock:
+            token = self._user_context.set(user_id or 'default')
+            try:
+                return self._handle(text.strip(),propose_skill,task_type,manual_model_id,user_id)
+            finally:
+                self._user_context.reset(token)
     def start_conversation(self,user_id):return self.personal.start_conversation(user_id)
     def _handle(self,text,propose_skill=True,task_type=None,manual_model_id=None,user_id=None):
         from reasoning.protocol import VisibleReasoning

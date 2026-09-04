@@ -24,3 +24,15 @@ Prompt injection is treated as untrusted input. It cannot override the tool poli
 ## Reporting
 
 Report vulnerabilities privately to the project owner. Include the release, reproduction steps, impact, and suggested mitigation. Do not include real credentials or personal data.
+# v1.6 identity and delegation review
+
+Remote chat access and memory administration are separate permissions.
+`AIBA_MEMORY_OWNER_USERS` explicitly grants the full vault view; Telegram and
+WhatsApp chat allowlists do not. The local CLI/bearer-token management API is
+administrative. Preserve the API token as an administrator credential.
+
+Subagents inherit a context-local identity and dispatch through the same tool
+registry as the main agent. Feature flags, conversation blocks, argument
+validation and actual-action approvals are rechecked at execution, not merely
+when delegation begins. Shared workspace access is not per-user filesystem
+isolation. See [release blockers](docs/RELEASE_BLOCKERS_v1.6.md) before deployment.

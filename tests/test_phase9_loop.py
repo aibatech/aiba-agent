@@ -164,10 +164,13 @@ class Phase9LoopIntegrationTests(unittest.TestCase):
     def test_session_history_surfaces_recent_turns(self):
         loop = self._make_loop()
         try:
-            # Drive one handled turn so _current_user='amber' and a row exists.
+            # Handled turns restore the caller's context. The next tool call
+            # must carry Amber's identity explicitly, not reuse a stale user.
             loop.router.complete = FakeRouter(
                 [{"type": "final", "response": "noted the onboarding checklist"}]).complete
             loop.handle("remember to finish the q3 onboarding checklist", user_id="amber")
+            self.assertEqual(loop._current_user, 'default')
+            loop._current_user = 'amber'
             res = loop.registry.execute("session_history", {"limit": 5})
             self.assertTrue(res.ok, msg=f"session_history failed: {res.error}")
             self.assertGreaterEqual(len(res.output), 1)

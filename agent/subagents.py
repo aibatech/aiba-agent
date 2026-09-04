@@ -40,6 +40,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -309,7 +310,7 @@ class SubagentPool:
         self._audit_record("start", subagent_id=sub_id,
                            parent_task_id=record.get("parent_task_id"))
         try:
-            self._executor.submit(self._run_guarded, sub_id)
+            self._executor.submit(copy_context().run, self._run_guarded, sub_id)
         except RuntimeError:
             # Executor rejected the submit (shutdown raced in). Roll the task
             # back to QUEUED so it is not left RUNNING-without-a-worker and the
