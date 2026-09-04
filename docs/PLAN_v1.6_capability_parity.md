@@ -597,11 +597,26 @@ Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/co
   `SkillImprover.approve`(skills/improver.py:12) — the only activation choke-point; sandbox
   already excludes config/ so skills cannot self-grant via write_file. `run_skill` does NOT
   propagate the model `blocked` set (skills/manager.py:88-93).
-- Gap 4(c) MCP discovery/schema: absent — call-by-explicit-name only (`mcp_call`); no
-  tools/list/schema validation; per-tool allowlist+approval is operator-static (config/
-  mcp_servers.json `McpServerConfig.tools`), fail-closed (client.py:373-393). Discovery seam
-  = top of `MCPClientController.execute` (client.py:284). Dead namespace code in
-  `mcp_client/policy.py` (mcp_tool_name/split_mcp_tool_name) never called.
+- Gap 4(c) MCP discovery/schema: REVIEWED (2026-09-03) — RETAIN `mcp_call`, no
+  live discovery build. Verified in `tests/test_mcp.py`: args/type validation AND
+  per-server/per-tool allowlist + per-tool approval ARE enforced (unknown/disabled/
+  unlisted server/tool denied; approval gate; secret scrub), and the real-SDK
+  roundtrip runs in CI (mcp-with-sdk job, non-skip). The only "absent" piece is a
+  dynamic `tools/list`+schema DISCOVERY surface. That is a DELIBERATE no for
+  security (never trust a remote server's advertised tool/schema list; the static
+  operator allowlist is fail-closed) and the task permits retaining `mcp_call`.
+  No live `list_tools` is a documented, intentional posture — not a bug. If a
+  per-server schema *hint* surface is later wanted for UX it is a NEW feature
+  (post-release), not a parity gap. Dead namespace code in `mcp_client/policy.py`
+  (mcp_tool_name/split_mcp_tool_name) could be removed as cleanup (cosmetic).
+- Gap 2 memory isolation: CONFIRMED BLOCKED on OWNERSHIP DECISION (hard stop, per
+  release instruction "if existing ownership cannot be determined safely, stop").
+  Live aiba.db `memories` table has NO owner column (verified); the 18 existing
+  rows are all category='reflections' (auto DreamEngine-suggestions, user-agnostic,
+  previously shared/global). Must NOT guess how to assign them (data-visibility
+  risk both ways). aiba.db is at schema version 1 (baseline) in the migrations
+  framework; adding owner col = version 2 migration. Exact owner decision needed
+  (options below in consolidated request).
 - Gaps 1,3,4(b),5 = EXTERNAL blockers (remote node machine; paid-API/model budget for
   OCR/ASR/TTS/imagegen; reachable HTTPS MCP server + remote-MCP opt-in; isolated test-bot
   token).
