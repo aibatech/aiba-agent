@@ -567,6 +567,9 @@ Remaining Gap 6 items from the audit (next, in order, all test-first):
   Whether per-delegation SUBFOLDER isolation is wanted (so worker A never sees B's
   scratch) is a PRODUCT/SCOPE decision for the owner, not a security regression to
   silently build — ask in the consolidated blockers request.
+  DECISION RECEIVED + DOCUMENTED (2026-09-03/04): owner chose **#3c = keep (2keep)** —
+  shared, policy-confined workspace is the intended post-release posture. Per-delegation
+  subfolder isolation is a WONT-DO for v1.6 (documented, not silently skipped). No code change needed.
 - #4: browser DNS / rebinding gap — ANALYSED (2026-09-03), closure needs a
   decision + real-driver stage. Facts verified: `browser_fetch` (tools/browser.py)
   and the interactive session (tools/browser_session.py) SHARE the static guard
@@ -579,10 +582,24 @@ Remaining Gap 6 items from the audit (next, in order, all test-first):
   malicious/compromised DNS server rebinds to loopback at connect-time could slip
   past the static guard. Proper closure requires observing the IP the driver ACTUALLY
   connects to (not a separate re-resolution, which can race the rebind), which is a
-  real-driver seam + an approach decision. NOT silently patched with a half-remedy;
-  the two concrete options (driver-level connect-time IP pinning vs. re-resolve in
-  route guard) + opt-in real-driver redirect/subresource/download tests go in the
-  consolidated blockers request.
+  real-driver seam + an approach decision. NOT silently patched with a half-remedy.
+  DECISION + IMPLEMENTATION (2026-09-04, option **3a**): driver-level connect-time
+  DNS-peer enforcement. `security/urlguard.py` adds `public_peer_reason(url)` /
+  `public_host_peer_reason(host, port)` — re-resolves at request-authorisation time and
+  refuses (fail-closed) unless EVERY resolved address is `ipaddress.is_global`; the
+  `_PlaywrightDriver._on_route` in `tools/browser_session.py` applies it to the
+  main-frame document (navigation + its redirects) and aborts on a non-public peer,
+  keeping the cheaper static guard for subresources (rebinding risk concentrates on the
+  main-document trust anchor; re-resolving every subresource would add unbounded DNS
+  latency). Honest limit kept in the impl contract: it re-resolves the request target
+  from Python and does NOT observe Chromium's own cached socket IP, so the stricter
+  proxy-pinning guarantee is a documented opt-in real-driver seam (no Chromium in CI).
+  Hermetic tests `ConnectTimePeerPolicyTests` in `tests/test_browser_security.py`
+  (4: public allowed, private/metadata refused, rebind-to-loopback refused, unresolvable/
+  empty refused) via stubbed `getaddrinfo` — no network, no live Chromium. Local gate now
+  357 passed / 1 skip. Commit follows this §8.6 update.
+  Opt-in real-driver redirect/subresource/download tests remain staged (external, see
+  consolidated request).
 Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/commits):
 - Gap 2 memory/skills: `memory/vault.py:8-10` `memories` table has NO owner column; FTS
   external-content triggers there drive FTS. Per-user isolation requires aiba.db migration
@@ -647,18 +664,22 @@ Feature-gap status (for resume; audits recorded upstream in git log `adf66ac`/co
   `tests/test_memory_user_isolation.py` (6) proves A cannot read/search/list/export/
   update/delete B through the REAL registry handlers while the operator (admin)
   can. Local suite 354 collected = 353 passed / 1 pre-existing platform skip.
-  Commit pending.
+  COMMITTED `ec3029f` + CI-VERIFIED (both workflows green on HEAD `ec3029f`:
+  Production Gate 33836054433 = success, MCP Integration 33836054489 = success;
+  local gate raised to 357 passed / 1 skip after the browser-DNS tests below).
 - Gaps 1,3,4(b),5 = EXTERNAL blockers (remote node machine; paid-API/model budget for
   OCR/ASR/TTS/imagegen; reachable HTTPS MCP server + remote-MCP opt-in; isolated test-bot
   token).
 §8.5 publish + §8.5/S6 live upgrade NOT started — gated on full gate pass + owner go.
-NEXT ACTION when resumed: commit the Gap-2 memory-ownership change set
-(operations/migrations.py + memory/vault.py + memory/models.py +
-tests/test_memory_ownership.py + this PLAN) under isolated dev data (do NOT run
-against the live `agent_system/`), push, and verify 13 CI jobs green, THEN mark
-Gap 2 CLOSED (implementation + isolation tests done; live-DB upgrade happens only
-at the sanctioned cutover with a backup). After that: remaining Gap 6 #4 browser
-DNS approach is now DECIDED (3a: driver-level connect-time IP pinning) and
-#3c shared-workspace is DECIDED (keep; document only) — see consolidated request.
-Then run the §8.5 final gate.
+NEXT ACTION (current session, 2026-09-04): the directed hardening pass is nearly
+complete. Items 1-3 (identity-derived memory ownership) DONE + CI-VERIFIED on HEAD
+`ec3029f` (Production Gate 33836054433 ✓, MCP Integration 33836054489 ✓). Item 5 (CI
+count) RESOLVED (12 gate + 1 MCP = 13; no coverage disappeared). Item 4 browser-DNS
+(option 3a) IMPLEMENTED + hermetically tested (urlguard public_peer_reason + Driver
+main-frame wiring + 4 ConnectTimePeerPolicyTests; local suite 357 pass/1 skip) —
+COMMIT this browser-DNS change set next (security/urlguard.py + tools/browser_session.py
++ tests/test_browser_security.py + this PLAN), push, verify 13 CI jobs green on the new
+HEAD. Then consolidate the EXTERNAL blockers (Gaps 1, 3, 4(b), 5) into ONE owner
+request, run the §8.5 final gate, publish rc, and — only after full gate pass + owner
+go — upgrade the live install.
 Update this line each session. Do NOT auto-bump/merge/upgrade.

@@ -39,6 +39,8 @@ from security.audit import AuditLog
 from security.urlguard import (
     forbidden_open_target,
     forbidden_host,
+    public_peer_reason,
+    public_host_peer_reason,
 )
 
 
@@ -158,6 +160,68 @@ class UrlPolicyTests(unittest.TestCase):
                    "https://169.253.0.0/x"]
         for u in allowed:
             self.assertIsNone(forbidden_open_target(u), f"allowed: {u}")
+
+
+class ConnectTimePeerPolicyTests(unittest.TestCase):
+    """DNS-rebinding close (item 4, option 3a): the connect-time peer policy
+    refuses a host whose current DNS resolution lands on a non-global/private
+    address, even when the hostname itself passes the static host-form guard.
+
+    These are hermetic: they stub ``socket.getaddrinfo`` so no network is used.
+    """
+
+    def _stub_resolver(self, addresses):
+        """Patch getaddrinfo to return sockaddr entries for *addresses*."""
+        def fake_getaddrinfo(host, port, *args, **kwargs):
+            out = []
+            for ip in addresses:
+                family = 10 if ":" in ip else 2
+                out.append((family, 1, 6, "", (ip, int(port), 0, 0)))
+            return out
+        import unittest.mock as mock
+        import security.urlguard as ug
+        return mock.patch.object(ug.socket, "getaddrinfo", side_effect=fake_getaddrinfo)
+
+    def test_public_resolution_is_allowed(self):
+        with self._stub_resolver(["8.8.8.8"]):
+            self.assertIsNone(public_host_peer_reason("example.com", 443))
+            self.assertIsNone(public_peer_reason("https://example.com/"))
+        # IPv6 global
+        with self._stub_resolver(["2606:4700:4700::1111"]):
+            self.assertIsNone(public_host_peer_reason("example.org", 443))
+
+    def test_rebinding_to_loopback_is_refused(self):
+        # A hostname that at connect time resolves public-to-attacker AND
+        # private (e.g. 127.0.0.1) must be refused on the private answer.
+        with self._stub_resolver(["8.8.8.8", "127.0.0.1"]):
+            self.assertIsNotNone(public_host_peer_reason("attacker.example", 443))
+        with self._stub_resolver(["127.0.0.1"]):
+            self.assertIsNotNone(public_peer_reason("https://attacker.example/x"))
+
+    def test_private_and_metadata_resolutions_are_refused(self):
+        from unittest.mock import patch
+        import security.urlguard as ug
+        for bad in ("10.0.0.5", "192.168.1.10", "172.16.5.5", "169.254.169.254",
+                    "0.0.0.0", "127.0.0.1", "[::1]", "[fe80::1]",
+                    "100.64.0.1",  # CGNAT
+                    ):
+            target = bad.strip("[]")
+            family = 10 if ":" in bad else 2
+            with patch.object(ug.socket, "getaddrinfo",
+                              return_value=[(family, 1, 6, "", (target, 443, 0, 0))]):
+                self.assertIsNotNone(public_host_peer_reason("target.example", 443),
+                                     f"should refuse resolved {bad}")
+
+    def test_unresolvable_or_empty_answers_are_refused(self):
+        from unittest.mock import patch
+        import security.urlguard as ug
+        def raise_gaierror(*a, **k):
+            import socket as _s
+            raise _s.gaierror("boom")
+        with patch.object(ug.socket, "getaddrinfo", side_effect=raise_gaierror):
+            self.assertIsNotNone(public_peer_reason("https://nope.invalid/"))
+        with patch.object(ug.socket, "getaddrinfo", return_value=[]):
+            self.assertIsNotNone(public_host_peer_reason("empty.example", 443))
 
 
 class BrowserSessionReadTests(unittest.TestCase):

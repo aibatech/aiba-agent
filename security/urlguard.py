@@ -23,6 +23,8 @@ resolutions that don't land on global addresses) when it performs the fetch.
 """
 from __future__ import annotations
 
+import ipaddress
+import socket
 from urllib.parse import urlsplit
 
 _BLOCKED_HOST_NAMES = frozenset(
@@ -135,3 +137,59 @@ def forbidden_open_target(url: str) -> str | None:
     if parts.username or parts.password:
         return "URLs with embedded credentials are not allowed."
     return forbidden_host(url)
+
+
+def public_peer_reason(url: str) -> str | None:
+    """Return a reason string if the resolved DNS peer for ``url`` is not a
+    public/global address (connect-time IP enforcement), else None.
+
+    This is the DNS-level complement to :func:`forbidden_open_target`: that
+    function refuses literal loopback/private/internal hosts and their numeric
+    aliases without resolving, whereas this one resolves an ordinary public
+    HOSTNAME right before a connection is authorised and refuses the target when
+    its current addresses are not all ``ipaddress.is_global``. It closes the
+    DNS-rebinding window where a hostname that public DNS resolves to a
+    loopback/private address at connect time would otherwise slip past the
+    static host-form guard.
+
+    Honest limits (kept in the implementation contract, not overclaimed):
+      * It re-resolves the request target from Python at the moment the request
+        is authorised. It does not observe Chromium's own cached socket IP, so a
+        browser-side cache that was populated before this check is not re-pinned
+        here. Callers that need that stricter guarantee must route the browser
+        through a Python-controlled CONNECT proxy (documented seam; opt-in and
+        verified only in a real-driver environment).
+      * Resolution failure is treated as REFUSED (fail closed): if the name does
+        not resolve or only non-global/literal addresses are returned, the peer
+        is not allowed.
+    """
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return "URL has no host."
+    host = parts.hostname.strip().strip("[]")
+    port = parts.port or (443 if parts.scheme.lower() == "https" else 80)
+    return public_host_peer_reason(host, port)
+
+
+def public_host_peer_reason(host: str, port: int) -> str | None:
+    """Connect-time DNS check for a bare (host, port): return a reason string
+    if ANY resolved address is non-public (fail closed on a single private /
+    loopback / metadata answer, which is exactly how DNS-rebinding attacks
+    deliver a bad answer); None only when every resolved address is global."""
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except OSError:
+        return f"Could not resolve '{host}' (refusing non-resolvable host)."
+    if not infos:
+        return f"Could not resolve '{host}' (no addresses)."
+    for info in infos:
+        sockaddr = info[4]
+        ip = sockaddr[0] if isinstance(sockaddr, tuple) else sockaddr
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return f"'{host}' resolved to a non-IP literal — refusing."
+        if not addr.is_global:
+            return f"'{host}' resolved to a non-public address ({ip}) — refusing."
+    # Reached only if every returned address is a global public IP.
+    return None

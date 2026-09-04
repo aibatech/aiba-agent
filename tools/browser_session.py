@@ -33,8 +33,10 @@ from tools.base import ToolResult
 
 try:  # pragma: no cover - environment
     from security.urlguard import forbidden_open_target as _url_allowed_reason
+    from security.urlguard import public_peer_reason as _default_peer_check
 except Exception:  # pragma: no cover
     _url_allowed_reason = None  # type: ignore[assignment]
+    _default_peer_check = None  # type: ignore[assignment]
 
 # Sensitive contexts where form/mutation actions are refused unless the owner
 # explicitly enables sensitive-mode for the session. Detected from the current
@@ -122,8 +124,14 @@ class _PlaywrightDriver(Driver):
 
     _WORKSPACE: str  # placeholder for type checkers
 
-    def __init__(self, url_check: Callable[[str], str | None] | None = None) -> None:
+    def __init__(self, url_check: Callable[[str], str | None] | None = None,
+                 peer_check: Callable[[str], str | None] | None = None) -> None:
         self._url_check = url_check or _url_allowed_reason
+        # Connect-time DNS/peer enforcement complementing the static host-form
+        # guard: re-resolves a top-level host right before the request proceeds
+        # and refuses it if it does not land on a global/public address (closes
+        # the DNS-rebinding window for navigation + redirects).
+        self._peer_check = peer_check if peer_check is not None else _default_peer_check
         self._pw: Any = None
         self._browser: Any = None
         self._context: Any = None
@@ -163,6 +171,21 @@ class _PlaywrightDriver(Driver):
                 except Exception:  # pragma: no cover
                     pass
                 return
+            # Connect-time DNS/peer enforcement (option 3a): for the top-level
+            # document (navigation + its redirects) require the resolved peer to
+            # be a global/public IP. Subresources keep the cheaper static guard;
+            # re-resolving every subresource would add unbounded DNS latency, and
+            # the rebinding risk concentrates on the main document that sets the
+            # trust anchor for the page.
+            is_main = getattr(route.request, "is_main_frame", False)
+            if is_main and route_guard._peer_check:
+                reason = route_guard._peer_check(url)
+                if reason:
+                    try:
+                        route.abort()
+                    except Exception:  # pragma: no cover
+                        pass
+                    return
             try:
                 route.continue_()
             except Exception:  # pragma: no cover
