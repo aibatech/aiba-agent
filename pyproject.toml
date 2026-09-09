@@ -23,4 +23,4 @@ where = ["."]
 exclude = ["tests*", "agent_system*"]
 [project.scripts]
 aiba = "main:main"
-aiba-product = "product_server:app"
+aiba-product = "product_server:main"
