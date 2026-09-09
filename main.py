@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from config.env import load_env
 from onboarding import SetupManager
-from agent.loop import AgentLoop
+from agent.enhanced_loop import AgentLoop
 
 
 def _maybe_capability_cli(argv: list[str] | None = None) -> int | None:
