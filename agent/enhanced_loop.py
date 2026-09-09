@@ -18,10 +18,15 @@ class AgentLoop(BaseAgentLoop):
     """
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        requested_start = kwargs.pop("start_worker", True)
+        # Prevent a background job from calling the overridden handle() before
+        # the new conversation/learning stores exist.
+        super().__init__(*args, start_worker=False, **kwargs)
         self.conversations = ConversationStore(self.settings.data_dir / "conversations.db")
         self.learner = AutoLearner(self.vault)
         self._cli_conversation_id = default_conversation_id("default")
+        if requested_start and self.settings.worker_enabled:
+            self.worker.start();self.scheduler_runner.start();self.update_checker.start()
 
     @staticmethod
     def _history_context(history: list[dict[str, str]]) -> str:
@@ -119,9 +124,6 @@ class AgentLoop(BaseAgentLoop):
             except Exception:
                 pass
 
-        # Automatic learning is intentionally conservative. Conversation history
-        # handles continuity; only explicit preferences/goals/decisions become
-        # durable memories. Respect per-user memory pause.
         learned_ids = []
         try:
             memory_paused = bool(user_id and "remember" in self.personal.blocked_tools(user_id))
