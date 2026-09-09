@@ -14,7 +14,7 @@ def build_app():
 app = build_app()
 
 
-if __name__ == "__main__":
+def main():
     try:
         import uvicorn
     except ImportError as exc:
@@ -22,3 +22,7 @@ if __name__ == "__main__":
     host = os.getenv("AIBA_PRODUCT_BRIDGE_HOST", "127.0.0.1")
     port = int(os.getenv("AIBA_PRODUCT_BRIDGE_PORT", "8770"))
     uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()
