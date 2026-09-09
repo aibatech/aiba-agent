@@ -33,7 +33,10 @@ class ReasoningEngine:
 
     def run(self,task_id,user_input,task_type=None,manual_model_id=None,prompt_context=None,blocked_tools=None):
         memories=self.retrieval.retrieve(user_input,10);schemas=self.registry.schemas(blocked_tools or set())
-        persona=('\nPersonal and conversation context:\n'+prompt_context) if prompt_context else ''
+        # Keep the established "Personal context:" marker because personality
+        # integrations/tests use it as a stable prompt boundary. Recent dialogue
+        # may be included inside prompt_context by the enhanced AgentLoop.
+        persona=('\nPersonal context:\n'+prompt_context) if prompt_context else ''
         messages=[
             {'role':'system','content':SYSTEM+persona+'\nAvailable tools: '+json.dumps(schemas)},
             {'role':'user','content':user_input+'\nRelevant durable memory: '+json.dumps(memories,default=str)}
