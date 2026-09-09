@@ -16,7 +16,7 @@ def build_app():
 app = build_app()
 
 
-if __name__ == "__main__":
+def main():
     try:
         import uvicorn
     except ImportError as exc:
@@ -27,3 +27,7 @@ if __name__ == "__main__":
     # Binding beyond loopback is intentionally an explicit operator decision;
     # deploy behind TLS/private service networking in production.
     uvicorn.run(app, host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()
