@@ -3,25 +3,8 @@ import os
 import re
 from typing import Literal
 
-try:
-    from fastapi import FastAPI, Header, HTTPException
-    from pydantic import BaseModel, Field
-except ImportError as exc:  # pragma: no cover - exercised by install diagnostics
-    raise RuntimeError("Install API dependencies: pip install -e '.[api]'") from exc
-
 _USER_RE = re.compile(r"^[A-Za-z0-9._:@+-]{1,200}$")
 _CONVERSATION_RE = re.compile(r"^[A-Za-z0-9._:@+-]{1,240}$")
-
-
-class ProductExecuteIn(BaseModel):
-    """Validated execution envelope shared by AskAIBA text and voice clients."""
-
-    instruction: str = Field(min_length=1, max_length=100_000)
-    input_mode: Literal["text", "voice"] = "text"
-    conversation_id: str | None = Field(default=None, max_length=240)
-    task_type: str | None = None
-    model_id: str | None = None
-    approved_tools: list[str] = Field(default_factory=list, max_length=50)
 
 
 def _principal(raw: str | None) -> str:
@@ -34,10 +17,28 @@ def _principal(raw: str | None) -> str:
 def create_product_app(agent, bridge_token: str | None = None):
     """Internal server-to-server execution API for AskAIBA web/mobile.
 
-    The existing product conversation/voice layer keeps AIBA's life-coach
-    personality. This bridge supplies the same persistent Agent tools, memory,
-    multi-turn continuity and approvals to text and voice-originated requests.
+    The API stack stays an optional dependency: importing AIBA core (including
+    MCP-only installs and test suites) must not require FastAPI/Pydantic. The
+    request model is defined after the lazy imports, and because this module does
+    not postpone annotation evaluation FastAPI receives the concrete model class
+    rather than an unresolved local ForwardRef.
     """
+    try:
+        from fastapi import FastAPI, Header, HTTPException
+        from pydantic import BaseModel, Field
+    except ImportError as exc:  # pragma: no cover - exercised by install diagnostics
+        raise RuntimeError("Install API dependencies: pip install -e '.[api]'") from exc
+
+    class ProductExecuteIn(BaseModel):
+        """Validated execution envelope shared by AskAIBA text and voice clients."""
+
+        instruction: str = Field(min_length=1, max_length=100_000)
+        input_mode: Literal["text", "voice"] = "text"
+        conversation_id: str | None = Field(default=None, max_length=240)
+        task_type: str | None = None
+        model_id: str | None = None
+        approved_tools: list[str] = Field(default_factory=list, max_length=50)
+
     token = bridge_token or os.getenv("AIBA_PRODUCT_BRIDGE_TOKEN", "")
     if not token:
         raise RuntimeError("AIBA_PRODUCT_BRIDGE_TOKEN is required for the product bridge")
