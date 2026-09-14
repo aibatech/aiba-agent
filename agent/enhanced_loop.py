@@ -65,8 +65,16 @@ class AgentLoop(BaseAgentLoop):
 
     def _handle_with_continuity(self, text, propose_skill=True, task_type=None,
                                 manual_model_id=None, user_id=None,
-                                conversation_id=None, history=None):
+                                conversation_id: str | None = None,
+                                history: list[dict[str, str]] | None = None):
         from reasoning.protocol import VisibleReasoning
+
+        # ``handle`` always resolves/creates the conversation before entering
+        # this method. Keep that invariant explicit so persistence, learning,
+        # events and type-checking all agree that the ID is concrete here.
+        if conversation_id is None:
+            raise ValueError("A resolved conversation_id is required")
+        cid = conversation_id
 
         task_id = self.tasks.create(text)
         self.events.publish("task_started", task_id=task_id, task=text)
@@ -89,7 +97,7 @@ class AgentLoop(BaseAgentLoop):
         continuity = self._history_context(history or [])
         prompt_context = "\n\n".join(x for x in (personal_context, continuity) if x)
 
-        self.conversations.append(user_key, conversation_id, "user", text)
+        self.conversations.append(user_key, cid, "user", text)
         self.engine._reasoning = VisibleReasoning(self.events.publish, task_id)
         self.engine._reasoning.plan(
             "Received request; using recent conversation, durable memory, and available tools.",
@@ -115,7 +123,7 @@ class AgentLoop(BaseAgentLoop):
             status = "failed"
             self.tasks.finish(task_id, answer, status)
 
-        self.conversations.append(user_key, conversation_id, "assistant", answer)
+        self.conversations.append(user_key, cid, "assistant", answer)
 
         if sid is not None:
             try:
@@ -132,7 +140,7 @@ class AgentLoop(BaseAgentLoop):
                     text,
                     owner=self._memory_writer_owner(user_id),
                     as_user=self._memory_scope(user_id),
-                    source=f"conversation:{conversation_id}",
+                    source=f"conversation:{cid}",
                 )
         except Exception:
             learned_ids = []
@@ -147,7 +155,7 @@ class AgentLoop(BaseAgentLoop):
             tools=used,
             reflection=str(ref),
             learned_memories=learned_ids,
-            conversation_id=conversation_id,
+            conversation_id=cid,
             skill_proposal=str(proposal) if proposal else None,
         )
         return answer
