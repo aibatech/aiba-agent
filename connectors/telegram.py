@@ -138,7 +138,11 @@ class TelegramConnector:
             if len(parts) == 3:
                 _, qid, choice = parts
                 try:
-                    q = self.agent.clarify.get(qid)
+                    # Some Clarify-compatible stores only implement answer().
+                    # Resolve display text when get() is available, but never let
+                    # optional lookup support prevent the choice from being recorded.
+                    get_question = getattr(self.agent.clarify, "get", None)
+                    q = get_question(qid) if callable(get_question) else None
                     if not self.agent.clarify.answer(qid, choice):return None
                     selected = choice
                     if q is not None:
