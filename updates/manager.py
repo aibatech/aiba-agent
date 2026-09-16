@@ -73,11 +73,19 @@ class UpdateManager:
         path.unlink(missing_ok=True);self.state_path.write_text(json.dumps({'available':False,'last_applied_version':version},indent=2));return {'applied':True,'version':version,'backup':str(backup)}
 
 class UpdateChecker:
-    def __init__(self,manager:UpdateManager,interval_seconds=None):self.manager=manager;self.interval=int(interval_seconds or os.getenv('AIBA_UPDATE_INTERVAL_SECONDS','86400'));self.stop_event=threading.Event();self.thread=None;self.last_error=None
+    def __init__(self,manager:UpdateManager,interval_seconds=None,on_available=None):
+        self.manager=manager;self.interval=int(interval_seconds or os.getenv('AIBA_UPDATE_INTERVAL_SECONDS','86400'));self.stop_event=threading.Event();self.thread=None;self.last_error=None;self.on_available=on_available;self._announced_version=None
     def run_once(self):
         try:
             result=self.manager.check()
-            if result.get('available') and os.getenv('AIBA_AUTO_UPDATE','true').lower() in {'1','true','yes','on'}:result=self.manager.stage(result['manifest'])
+            if result.get('available'):
+                version=result.get('latest_version')
+                # Prompt-first is the safe default. Operators can explicitly opt
+                # back into unattended staging with AIBA_AUTO_UPDATE=true.
+                if os.getenv('AIBA_AUTO_UPDATE','false').lower() in {'1','true','yes','on'}:
+                    result=self.manager.stage(result['manifest'])
+                elif self.on_available is not None and version != self._announced_version:
+                    self.on_available(result);self._announced_version=version
             self.last_error=None;return result
         except Exception as exc:self.last_error=str(exc);return {'error':self.last_error}
     def start(self):
