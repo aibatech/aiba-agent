@@ -2,6 +2,8 @@ import asyncio,hmac,time,json,os
 from collections import defaultdict,deque
 from pathlib import Path
 
+from api.version import runtime_version
+
 def create_app(agent):
     try:
         from fastapi import BackgroundTasks,FastAPI,Header,HTTPException,Request,WebSocket,WebSocketDisconnect
@@ -9,7 +11,8 @@ def create_app(agent):
         from fastapi.responses import HTMLResponse,JSONResponse,PlainTextResponse,Response
         from pydantic import BaseModel,Field
     except ImportError as exc:raise RuntimeError('Install API dependencies: pip install -e .[api]') from exc
-    app=FastAPI(title='AIBA Agent API',version='1.6.1',docs_url='/docs' if agent.settings.api_token else None)
+    version=runtime_version(agent.settings.root_dir)
+    app=FastAPI(title='AIBA Agent API',version=version,docs_url='/docs' if agent.settings.api_token else None)
     telegram=None;whatsapp=None
     if os.getenv('AIBA_TELEGRAM_ENABLED','false').lower() in {'1','true','yes','on'}:
         from connectors import TelegramConnector;telegram=TelegramConnector(agent)
@@ -82,7 +85,7 @@ def create_app(agent):
         for sender,text,_ in whatsapp.extract_messages(payload):background_tasks.add_task(whatsapp.process,sender,text)
         return {'received':True}
     @app.get('/health')
-    def health():return {'ok':True,'version':'1.6.1','provider':agent.settings.provider,'sandbox':agent.settings.sandbox_mode,'managed_models':len(agent.providers.list_models(enabled_only=True))}
+    def health():return {'ok':True,'version':version,'provider':agent.settings.provider,'sandbox':agent.settings.sandbox_mode,'managed_models':len(agent.providers.list_models(enabled_only=True))}
     @app.get('/ready')
     def ready():
         migrations=agent.migrations.status();ready=all(x['ready'] for x in migrations);return JSONResponse(status_code=200 if ready else 503,content={'ready':ready,'migrations':migrations})
