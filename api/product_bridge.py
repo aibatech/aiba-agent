@@ -3,6 +3,8 @@ import os
 import re
 from typing import Literal
 
+from api.version import runtime_version
+
 _USER_RE = re.compile(r"^[A-Za-z0-9._:@+-]{1,200}$")
 _CONVERSATION_RE = re.compile(r"^[A-Za-z0-9._:@+-]{1,240}$")
 
@@ -43,7 +45,8 @@ def create_product_app(agent, bridge_token: str | None = None):
     if not token:
         raise RuntimeError("AIBA_PRODUCT_BRIDGE_TOKEN is required for the product bridge")
 
-    app = FastAPI(title="AIBA Product Execution Bridge", version="1.6.1",
+    version = runtime_version(agent.settings.root_dir)
+    app = FastAPI(title="AIBA Product Execution Bridge", version=version,
                   docs_url=None, redoc_url=None, openapi_url=None)
 
     def authorize(value: str | None) -> None:
@@ -58,7 +61,7 @@ def create_product_app(agent, bridge_token: str | None = None):
 
     @app.get("/health")
     def health():
-        return {"ok": True, "version": "1.6.1", "role": "internal_product_execution_bridge"}
+        return {"ok": True, "version": version, "role": "internal_product_execution_bridge"}
 
     @app.get("/v1/product/capabilities")
     def capabilities(authorization: str | None = Header(default=None),

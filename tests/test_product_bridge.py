@@ -1,9 +1,27 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from approvals.manager import ApprovalManager
 from api.product_bridge import _principal, create_product_app
+from api.version import runtime_version
+
+
+class RuntimeVersionTests(unittest.TestCase):
+    def test_runtime_version_reads_authoritative_version_file(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "VERSION").write_text("9.8.7\\n", encoding="utf-8")
+            self.assertEqual(runtime_version(root), "9.8.7")
+
+    def test_runtime_version_rejects_empty_version_file(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "VERSION").write_text("\\n", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                runtime_version(root)
 
 
 class ApprovalManagerProductTests(unittest.TestCase):
