@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 
 from agent.conversation_store import ConversationStore, default_conversation_id
+from agent.conversation_review import ConversationReviewer
 from agent.loop import AgentLoop as BaseAgentLoop
 from memory.learner import AutoLearner
 
@@ -24,6 +25,7 @@ class AgentLoop(BaseAgentLoop):
         super().__init__(*args, start_worker=False, **kwargs)
         self.conversations = ConversationStore(self.settings.data_dir / "conversations.db")
         self.learner = AutoLearner(self.vault)
+        self.conversation_reviewer = ConversationReviewer(self.settings.vault_dir / "conversation_reviews")
         self._cli_conversation_id = default_conversation_id("default")
         if requested_start and self.settings.worker_enabled:
             self.worker.start();self.scheduler_runner.start();self.update_checker.start()
@@ -146,6 +148,10 @@ class AgentLoop(BaseAgentLoop):
             learned_ids = []
 
         ref = self.dream.reflect(task_id, text, answer, used)
+        try:
+            review = self.conversation_reviewer.review(task_id, cid, text, answer, used, status)
+        except Exception:
+            review = {"needs_review": False, "signals": []}
         proposal = self.improver.propose(task_id, text, used, answer) if propose_skill and used else None
         self.metrics.increment("tasks_total", status=status)
         self.events.publish(
@@ -157,6 +163,7 @@ class AgentLoop(BaseAgentLoop):
             learned_memories=learned_ids,
             conversation_id=cid,
             skill_proposal=str(proposal) if proposal else None,
+            self_improvement_review=review,
         )
         return answer
 
