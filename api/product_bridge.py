@@ -45,7 +45,7 @@ def create_product_app(agent, bridge_token: str | None = None):
     if not token:
         raise RuntimeError("AIBA_PRODUCT_BRIDGE_TOKEN is required for the product bridge")
 
-    version = runtime_version(agent.settings.root_dir)
+    version = runtime_version(getattr(getattr(agent, "settings", None), "root_dir", None))
     app = FastAPI(title="AIBA Product Execution Bridge", version=version,
                   docs_url=None, redoc_url=None, openapi_url=None)
 
