@@ -13,13 +13,13 @@ class RuntimeVersionTests(unittest.TestCase):
     def test_runtime_version_reads_authoritative_version_file(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "VERSION").write_text("9.8.7\\n", encoding="utf-8")
+            (root / "VERSION").write_text("9.8.7\n", encoding="utf-8")
             self.assertEqual(runtime_version(root), "9.8.7")
 
     def test_runtime_version_rejects_empty_version_file(self):
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
-            (root / "VERSION").write_text("\\n", encoding="utf-8")
+            (root / "VERSION").write_text("\n", encoding="utf-8")
             with self.assertRaises(RuntimeError):
                 runtime_version(root)
 
