@@ -93,11 +93,11 @@ def _parse_results(raw: str, limit: int) -> list[dict[str, str]]:
     # are deliberately not assumed because both endpoints have changed markup.
     for match in re.finditer(r"<a\\b([^>]*)>(.*?)</a>", raw or "", re.S | re.I):
         attrs, title_html = match.group(1), match.group(2)
-        cls_match = re.search(r"""class\\s*=\\s*["']([^"']+)["']""", attrs, re.I)
+        cls_match = re.search(r"""class\s*=\s*["']([^"']+)["']""", attrs, re.I)
         classes = set((cls_match.group(1) if cls_match else "").split())
         if not ({"result__a", "result-link"} & classes):
             continue
-        href_match = re.search(r"""href\\s*=\\s*["']([^"']+)["']""", attrs, re.I)
+        href_match = re.search(r"""href\s*=\s*["']([^"']+)["']""", attrs, re.I)
         if not href_match:
             continue
         href = href_match.group(1)
@@ -111,7 +111,7 @@ def _parse_results(raw: str, limit: int) -> list[dict[str, str]]:
             if len(results) >= limit:
                 break
     snippets = re.findall(
-        r"""class\\s*=\\s*["'][^"']*(?:result__snippet|result-snippet)[^"']*["'][^>]*>(.*?)(?:</a>|</td>|</div>)""",
+        r"""class\s*=\s*["'][^"']*(?:result__snippet|result-snippet)[^"']*["'][^>]*>(.*?)(?:</a>|</td>|</div>)""",
         raw or "",
         re.S | re.I,
     )
