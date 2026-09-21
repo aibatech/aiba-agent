@@ -1,7 +1,6 @@
 from __future__ import annotations
 import tempfile
 from pathlib import Path
-import pytest
 from tools.host_files import HostFiles, _safe_host_path
 
 
@@ -15,8 +14,12 @@ def test_host_files_list_search_and_read_are_read_only():
 
 
 def test_sensitive_key_directories_are_blocked():
-    with pytest.raises(PermissionError):
+    try:
         _safe_host_path(str(Path.home()/".ssh"/"id_rsa"))
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("sensitive host path should be blocked")
 
 
 def test_search_does_not_follow_symlinks():
@@ -25,7 +28,7 @@ def test_search_does_not_follow_symlinks():
         try:
             (root/"link").symlink_to(target, target_is_directory=True)
         except OSError:
-            pytest.skip("symlinks unavailable")
+            return
         result=HostFiles().search(str(root),"secret")
         assert result.ok
         assert result.output["matches"] == []
