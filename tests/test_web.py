@@ -38,6 +38,13 @@ _DDG_SAMPLE = """
 """
 
 
+_DDG_LITE_SAMPLE = """
+<table>
+  <tr><td><a rel="nofollow" class='result-link' href='https://example.com/lite'>Lite Result</a></td></tr>
+  <tr><td class='result-snippet'>Lite search snippet.</td></tr>
+</table>
+"""
+
 def _fake_fetch(url, headers):
     if "duckduckgo.com" in url:
         return 200, _DDG_SAMPLE
@@ -116,11 +123,13 @@ class WebSearchTests(unittest.TestCase):
         def fallback(url, headers):
             if "html.duckduckgo.com" in url:
                 return 200, "<html><body>challenge</body></html>"
-            return 200, _DDG_SAMPLE
+            return 200, _DDG_LITE_SAMPLE
 
         res = WebTools(fetch=fallback).web_search("test query")
         self.assertTrue(res.ok)
-        self.assertGreaterEqual(len(res.output["results"]), 1)
+        self.assertEqual(res.output["results"][0]["title"], "Lite Result")
+        self.assertEqual(res.output["results"][0]["url"], "https://example.com/lite")
+        self.assertEqual(res.output["results"][0]["snippet"], "Lite search snippet.")
 
     def test_search_backend_error(self):
         def boom(url, headers):
