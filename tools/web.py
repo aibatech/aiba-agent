@@ -87,14 +87,20 @@ def _domain(url: str) -> str:
 
 
 def _parse_results(raw: str, limit: int) -> list[dict[str, str]]:
-    """Parse DuckDuckGo HTML results conservatively; never fabricate results."""
+    """Parse supported DuckDuckGo HTML/Lite result markup without fabricating rows."""
     results: list[dict[str, str]] = []
-    for match in re.finditer(
-        r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
-        raw,
-        re.S,
-    ):
-        href, title_html = match.group(1), match.group(2)
+    # HTML uses result__a; Lite uses result-link. Attribute order and quote style
+    # are deliberately not assumed because both endpoints have changed markup.
+    for match in re.finditer(r"<a\\b([^>]*)>(.*?)</a>", raw or "", re.S | re.I):
+        attrs, title_html = match.group(1), match.group(2)
+        cls_match = re.search(r"""class\\s*=\\s*["']([^"']+)["']""", attrs, re.I)
+        classes = set((cls_match.group(1) if cls_match else "").split())
+        if not ({"result__a", "result-link"} & classes):
+            continue
+        href_match = re.search(r"""href\\s*=\\s*["']([^"']+)["']""", attrs, re.I)
+        if not href_match:
+            continue
+        href = href_match.group(1)
         url = html_lib.unescape(urllib.parse.unquote(href))
         wrapped = re.search(r"[?&]uddg=([^&]+)", url)
         if wrapped:
@@ -105,7 +111,9 @@ def _parse_results(raw: str, limit: int) -> list[dict[str, str]]:
             if len(results) >= limit:
                 break
     snippets = re.findall(
-        r'class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>', raw, re.S
+        r"""class\\s*=\\s*["'][^"']*(?:result__snippet|result-snippet)[^"']*["'][^>]*>(.*?)(?:</a>|</td>|</div>)""",
+        raw or "",
+        re.S | re.I,
     )
     for index, snippet in enumerate(snippets[: len(results)]):
         results[index]["snippet"] = _strip_html(snippet)[:500]
