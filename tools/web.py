@@ -20,7 +20,10 @@ from typing import Any
 from .base import ToolResult
 from .browser import _public_url
 
-_SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
+_SEARCH_ENDPOINTS = (
+    ("duckduckgo_html", "https://html.duckduckgo.com/html/"),
+    ("duckduckgo_lite", "https://lite.duckduckgo.com/lite/"),
+)
 _MAX_QUERY = 240
 _MAX_EXTRACT_CHARS = 20000
 _MAX_RESEARCH_QUERIES = 5
@@ -34,7 +37,7 @@ Fetch = Callable[[str, dict], tuple[int, str]]
 def _default_fetch(url: str, headers: dict) -> tuple[int, str]:
     req = urllib.request.Request(
         url,
-        headers={**headers, "User-Agent": "aiba-web/1.6.1 (+https://aibatech.com)"},
+        headers={**headers, "User-Agent": "Mozilla/5.0 (compatible; AIBA-Agent/1.6; +https://aibatech.com)", "Accept-Language": "en-US,en;q=0.8"},
     )
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
         return int(resp.status), resp.read().decode("utf-8", errors="replace")
@@ -115,16 +118,28 @@ class WebTools:
         self._search_enabled = search_enabled
 
     def _search_once(self, query: str, limit: int) -> tuple[list[dict[str, str]], str | None]:
-        url = f"{_SEARCH_ENDPOINT}?{urllib.parse.urlencode({'q': query[:_MAX_QUERY]})}"
-        try:
-            status, body = self._fetch(url, {})
-            if status >= 400:
-                return [], f"Search backend HTTP {status}"
-            return _parse_results(body, limit), None
-        except urllib.error.HTTPError as exc:
-            return [], f"Search backend HTTP {exc.code}"
-        except Exception as exc:
-            return [], f"{type(exc).__name__}: {exc}"
+        errors: list[str] = []
+        for provider, endpoint in _SEARCH_ENDPOINTS:
+            url = f"{endpoint}?{urllib.parse.urlencode({'q': query[:_MAX_QUERY]})}"
+            try:
+                status, body = self._fetch(url, {})
+                if status >= 400:
+                    errors.append(f"{provider}: HTTP {status}")
+                    continue
+                results = _parse_results(body, limit)
+                if results:
+                    return results, None
+                title = ""
+                match = re.search(r"<title[^>]*>(.*?)</title>", body or "", re.S | re.I)
+                if match:
+                    title = _strip_html(match.group(1))[:80]
+                detail = f", title={title!r}" if title else ""
+                errors.append(f"{provider}: HTTP {status} but zero parseable results{detail}")
+            except urllib.error.HTTPError as exc:
+                errors.append(f"{provider}: HTTP {exc.code}")
+            except Exception as exc:
+                errors.append(f"{provider}: {type(exc).__name__}: {exc}")
+        return [], " | ".join(errors) or "all search providers failed"
 
     @staticmethod
     def _domain_allowed(
