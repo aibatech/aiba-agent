@@ -438,6 +438,27 @@
       "requires_approval": true,
       "feature_flag": "AIBA_MCP_ENABLED",
       "optional_dependency": "python:mcp"
+    },
+    "host_list_files": {
+      "description": "List files at an explicitly requested path on the paired host computer. Read-only and approval-gated.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "host_read_file": {
+      "description": "Read text from an explicitly requested file on the paired host computer. Read-only and approval-gated.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "host_search_files": {
+      "description": "Search filenames below an explicitly requested folder on the paired host computer. Read-only and approval-gated.",
+      "risk_class": "read_only_local",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_DESKTOP_ENABLED"
     }
   }
 }
