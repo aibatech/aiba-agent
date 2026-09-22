@@ -91,7 +91,7 @@ def _parse_results(raw: str, limit: int) -> list[dict[str, str]]:
     results: list[dict[str, str]] = []
     # HTML uses result__a; Lite uses result-link. Attribute order and quote style
     # are deliberately not assumed because both endpoints have changed markup.
-    for match in re.finditer(r"<a\\b([^>]*)>(.*?)</a>", raw or "", re.S | re.I):
+    for match in re.finditer(r"<a\b([^>]*)>(.*?)</a>", raw or "", re.S | re.I):
         attrs, title_html = match.group(1), match.group(2)
         cls_match = re.search(r"""class\s*=\s*["']([^"']+)["']""", attrs, re.I)
         classes = set((cls_match.group(1) if cls_match else "").split())
