@@ -4,6 +4,7 @@
 
 - Established the Phase 0 security baseline and explicit no-certification guardrails.
 - Restored host-file tools to disabled-by-default policy and added a regression test covering high-risk parity surfaces.
+- Phase 1: enabled MCP remote tools now require an operator-maintained input-schema catalog and calls are validated against it before transport.
 
 
 ## 1.6.0 — 2026-09-04 (v1.6.0-rc.2)
