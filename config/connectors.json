@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "connectors": {
+    "gmail": {"enabled": false, "kind": "mcp", "server": "google", "tools": {}},
+    "google_calendar": {"enabled": false, "kind": "mcp", "server": "google", "tools": {}},
+    "google_drive": {"enabled": false, "kind": "mcp", "server": "google", "tools": {}},
+    "slack": {"enabled": false, "kind": "mcp", "server": "slack", "tools": {}},
+    "stripe": {"enabled": false, "kind": "mcp", "server": "stripe", "tools": {}}
+  }
+}

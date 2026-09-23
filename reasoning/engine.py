@@ -51,6 +51,16 @@ class ReasoningEngine:
         if self._reasoning:
             self._reasoning.plan("Received request; retrieving context and available tools.", steps=self.max_steps)
         for step in range(self.max_steps):
+            operator=getattr(self,'operator',None); getter=getattr(self,'operator_task_id_getter',None)
+            operator_id=getter() if callable(getter) else None
+            if operator is not None and operator_id:
+                state=operator.status(operator_id)
+                if state.get('status')=='cancelled':
+                    raise RuntimeError('Operator task cancelled by user')
+                steering=operator.consume_steering(operator_id)
+                if steering:
+                    messages.append({'role':'user','content':'New user direction while you are working:\n'+'\n'.join(steering)+'\nApply this direction before continuing.'})
+                operator.activity(operator_id,'working',f'Working step {step + 1}')
             action=self._parse(self.provider.complete(messages,schemas,task_type=task_type,manual_model_id=manual_model_id))
             self.tasks.event(task_id,{'step':step,'action':action,'route':getattr(self.provider,'last_route',None)})
             if action['type']=='final':

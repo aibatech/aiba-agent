@@ -180,7 +180,7 @@ class ComputerNodeGate:
     @staticmethod
     def _is_valid_capability(c: str) -> bool:
         return c in {
-            "screen", "mouse", "keyboard", "scroll", "open_url",
+            "screen", "mouse", "keyboard", "scroll", "open_url", "files_read",
             *CLIPBOARD_ACTIONS, *PROCESS_ACTIONS,
         }
 
