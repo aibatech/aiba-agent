@@ -5,6 +5,9 @@
 - Established the Phase 0 security baseline and explicit no-certification guardrails.
 - Restored host-file tools to disabled-by-default policy and added a regression test covering high-risk parity surfaces.
 - Phase 1: enabled MCP remote tools now require an operator-maintained input-schema catalog and calls are validated against it before transport.
+- Phase 1: Chromium browser traffic is routed through a loopback DNS-pinning egress proxy that refuses non-global destinations and connects to the exact reviewed IP.
+- Phase 1: added an HTTPS/HMAC remote computer-node transport primitive with timestamp/nonce replay bounds and optional TLS certificate pinning; it remains unwired/off until explicit operator configuration and target evidence exist.
+- Phase 1: media OCR/ASR/TTS/image generation remains explicitly unavailable rather than receiving partial placeholder implementations.
 
 
 ## 1.6.0 — 2026-09-04 (v1.6.0-rc.2)
