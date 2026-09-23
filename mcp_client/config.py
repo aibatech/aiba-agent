@@ -86,6 +86,7 @@ class McpToolPolicy:
     name: str
     enabled: bool = False
     requires_approval: bool = True
+    input_schema: dict[str, Any] | None = None
 
     @classmethod
     def from_json(cls, name: str, raw: Any, ctx: str) -> "McpToolPolicy":
@@ -109,7 +110,20 @@ class McpToolPolicy:
             )
         enabled = bool(raw.get("enabled", False))
         requires_approval = bool(raw.get("requires_approval", True))
-        return cls(name=name, enabled=enabled, requires_approval=requires_approval)
+        schema = raw.get("input_schema")
+        if enabled and not isinstance(schema, dict):
+            raise MCPConfigError(
+                f"server {ctx} enabled tool {name!r} requires an operator-maintained "
+                f"'input_schema' object; argument-object-only validation is not sufficient."
+            )
+        if schema is not None:
+            if schema.get("type") != "object":
+                raise MCPConfigError(f"server {ctx} tool {name!r} input_schema must have type=object")
+            if not isinstance(schema.get("properties", {}), dict):
+                raise MCPConfigError(f"server {ctx} tool {name!r} input_schema.properties must be an object")
+            if not isinstance(schema.get("required", []), list):
+                raise MCPConfigError(f"server {ctx} tool {name!r} input_schema.required must be an array")
+        return cls(name=name, enabled=enabled, requires_approval=requires_approval, input_schema=schema)
 
 
 @dataclass
