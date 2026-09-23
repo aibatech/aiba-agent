@@ -125,8 +125,10 @@ class _PlaywrightDriver(Driver):
     _WORKSPACE: str  # placeholder for type checkers
 
     def __init__(self, url_check: Callable[[str], str | None] | None = None,
-                 peer_check: Callable[[str], str | None] | None = None) -> None:
+                 peer_check: Callable[[str], str | None] | None = None,
+                 profile_dir: str | Path | None = None) -> None:
         self._url_check = url_check or _url_allowed_reason
+        self._profile_dir = Path(profile_dir).resolve() if profile_dir else None
         # Connect-time DNS/peer enforcement complementing the static host-form
         # guard: re-resolves a top-level host right before the request proceeds
         # and refuses it if it does not land on a global/public address (closes
@@ -157,9 +159,17 @@ class _PlaywrightDriver(Driver):
         if self._page is not None:
             return self._page
         pw = self._sync_api()
-        self._browser = pw.chromium.launch(headless=True)
-        self._context = self._browser.new_context(accept_downloads=True)
-        self._page = self._context.new_page()
+        if self._profile_dir is not None:
+            self._profile_dir.mkdir(parents=True, exist_ok=True)
+            self._context = pw.chromium.launch_persistent_context(
+                str(self._profile_dir), headless=True, accept_downloads=True
+            )
+            pages = list(self._context.pages)
+            self._page = pages[0] if pages else self._context.new_page()
+        else:
+            self._browser = pw.chromium.launch(headless=True)
+            self._context = self._browser.new_context(accept_downloads=True)
+            self._page = self._context.new_page()
         page = self._page
         route_guard = self
 
@@ -334,9 +344,10 @@ class BrowserSession:
 
     def __init__(self, driver: Driver | None = None, *, enabled: bool = True,
                  workspace: str | Path | None = None,
+                 profile_dir: str | Path | None = None,
                  sensitive_actions: bool = False, secret_typing: bool = False,
                  audit: Any = None) -> None:
-        self.driver = driver if driver is not None else _make_default_driver()
+        self.driver = driver if driver is not None else _PlaywrightDriver(profile_dir=profile_dir)
         self.enabled = bool(enabled)
         self.sensitive_actions = bool(sensitive_actions)
         self.secret_typing = bool(secret_typing)
