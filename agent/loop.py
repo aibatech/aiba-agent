@@ -23,6 +23,8 @@ from models.intelligent_router import IntelligentRouter
 from reasoning.engine import ReasoningEngine
 from agent.tasks import TaskStore
 from runtime import EventBus,JobQueue,Worker,Scheduler,SchedulerRunner
+from runtime.operator import OperatorRuntime
+from integrations.connectors import ConnectorRegistry
 from skills import SkillManager,SkillImprover
 from computer import ComputerController, make_computer
 from vision import VisionAnalyzer
@@ -70,6 +72,7 @@ class AgentLoop:
         self._owner_users = frozenset(self._owner_users) | {'default'}
         self.personal=PersonalExperience(self.settings.root_dir,self.settings.data_dir)
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
+        self.operator=OperatorRuntime(self.settings.data_dir/'operator.db', self.events)
         self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
         self.computer_node, self.computer = make_computer(self.settings, self.audit)  # gate + controller
         self.vision=VisionAnalyzer(self.settings.vision_model)
@@ -88,6 +91,7 @@ class AgentLoop:
         self.browser=BrowserSession(
             enabled=bool(self.settings.browser_enabled),
             workspace=self.settings.workspace_dir,
+            profile_dir=self.settings.data_dir/'browser_profile',
             audit=self.audit,
             sensitive_actions=False,
             secret_typing=False,
@@ -104,6 +108,7 @@ class AgentLoop:
             audit=self.audit,
             approver=self.approvals.approve,
         )
+        self.connectors=ConnectorRegistry(self.settings.root_dir/'config'/'connectors.json', self.mcp)
         from diagnostics.capabilities import load_manifest
         _mf=None
         try:_mf=load_manifest(self.settings.root_dir/'config'/'capability_manifest.json')
@@ -250,7 +255,7 @@ class AgentLoop:
         # when desktop access is explicitly enabled, are read-only, and every call
         # is approval-gated by permissions.json with the requested path visible.
         if self.settings.desktop_enabled:
-            host_files=HostFiles()
+            host_files=HostFiles(self.computer_node)
             self.registry.register(Tool('host_list_files','List files on the paired host computer at an explicitly requested path. Requires user approval; read-only.',host_files.list,{'type':'object','properties':{'path':{'type':'string'},'limit':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
             self.registry.register(Tool('host_read_file','Read a text file from the paired host computer. Requires user approval; read-only; credential/key directories are blocked.',host_files.read,{'type':'object','properties':{'path':{'type':'string'},'max_chars':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
             self.registry.register(Tool('host_search_files','Search filenames below an explicitly requested host folder. Requires user approval; read-only; does not follow symlinks.',host_files.search,{'type':'object','properties':{'root':{'type':'string'},'name':{'type':'string'},'limit':{'type':'integer'},'max_depth':{'type':'integer'}},'required':['root','name'],'additionalProperties':False}))
@@ -261,6 +266,12 @@ class AgentLoop:
         self.registry.register(ClarifyToolFactory.make(self.clarify))
         self.registry.register(Tool('enqueue_task','Queue work to run asynchronously as soon as a worker is available. Use for explicit background/asynchronous work, not future or recurring schedules.',lambda prompt:ToolResult(True,{'job_id':self.queue.enqueue('agent_task',{'prompt':prompt,'user_id':self._current_user})}),{'type':'object','properties':{'prompt':{'type':'string'}},'required':['prompt'],'additionalProperties':False}))
         self.registry.register(Tool('schedule_task','Create a persistent recurring AIBA task at a fixed interval. Use when the user asks for every/each/repeated/ongoing scheduled work. interval_seconds is the recurrence interval (minimum 60 seconds); the first run occurs after one interval. Do not use for ordinary immediate requests.',lambda name,prompt,interval_seconds:ToolResult(True,{'schedule_id':self.scheduler.add_interval(name,'agent_task',{'prompt':prompt,'user_id':self._current_user},int(interval_seconds))}),{'type':'object','properties':{'name':{'type':'string'},'prompt':{'type':'string'},'interval_seconds':{'type':'integer'}},'required':['name','prompt','interval_seconds'],'additionalProperties':False}))
+        self.registry.register(Tool('operator_task_status','Read durable status, safe activity and verification records for an AIBA Operator task.',lambda task_id:ToolResult(True,self.operator.status(task_id,owner=self._current_user)),{'type':'object','properties':{'task_id':{'type':'string'}},'required':['task_id'],'additionalProperties':False}))
+        self.registry.register(Tool('operator_steer','Add new user direction to an active Operator task. The worker consumes it at the next checkpoint.',lambda task_id,message:ToolResult(True,{'message_id':self.operator.steer(task_id,message)}),{'type':'object','properties':{'task_id':{'type':'string'},'message':{'type':'string'}},'required':['task_id','message'],'additionalProperties':False}))
+        self.registry.register(Tool('operator_cancel','Cancel an active Operator task.',lambda task_id:ToolResult(True,{'cancelled':(self.operator.cancel(task_id) is None)}),{'type':'object','properties':{'task_id':{'type':'string'}},'required':['task_id'],'additionalProperties':False}))
+        self.registry.register(Tool('verify_outcome','Record evidence that a consequential task outcome was independently checked. Use after sends, writes, bookings, submissions, or other mutations.',lambda task_id,claim,evidence,passed:ToolResult(True,self.operator.verify(task_id,claim,evidence,bool(passed))),{'type':'object','properties':{'task_id':{'type':'string'},'claim':{'type':'string'},'evidence':{'type':'string'},'passed':{'type':'boolean'}},'required':['task_id','claim','evidence','passed'],'additionalProperties':False}))
+        self.registry.register(Tool('list_connectors','List operator-configured app connectors and allowlisted actions. Credentials are never exposed.',lambda:ToolResult(True,self.connectors.list()),{'type':'object','properties':{},'additionalProperties':False}))
+        self.registry.register(Tool('connector_call','Call an allowlisted action on an operator-configured connector through the existing MCP security layer.',lambda connector,action,arguments=None:self.connectors.call(connector,action,arguments or {}),{'type':'object','properties':{'connector':{'type':'string'},'action':{'type':'string'},'arguments':{'type':'object'}},'required':['connector','action'],'additionalProperties':False}))
         # Internal subagents (Phase 3): the ONLY model-advertised entry point.
         # It spawns bounded, permission-narrowed, non-recursive background
         # workers in parallel, waits (bounded), and returns concise structured
