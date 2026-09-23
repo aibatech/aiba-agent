@@ -20,7 +20,10 @@ from typing import Any
 from .base import ToolResult
 from .browser import _public_url
 
-_SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
+_SEARCH_ENDPOINTS = (
+    ("duckduckgo_html", "https://html.duckduckgo.com/html/"),
+    ("duckduckgo_lite", "https://lite.duckduckgo.com/lite/"),
+)
 _MAX_QUERY = 240
 _MAX_EXTRACT_CHARS = 20000
 _MAX_RESEARCH_QUERIES = 5
@@ -34,7 +37,7 @@ Fetch = Callable[[str, dict], tuple[int, str]]
 def _default_fetch(url: str, headers: dict) -> tuple[int, str]:
     req = urllib.request.Request(
         url,
-        headers={**headers, "User-Agent": "aiba-web/1.6.1 (+https://aibatech.com)"},
+        headers={**headers, "User-Agent": "Mozilla/5.0 (compatible; AIBA-Agent/1.6; +https://aibatech.com)", "Accept-Language": "en-US,en;q=0.8"},
     )
     with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
         return int(resp.status), resp.read().decode("utf-8", errors="replace")
@@ -84,14 +87,20 @@ def _domain(url: str) -> str:
 
 
 def _parse_results(raw: str, limit: int) -> list[dict[str, str]]:
-    """Parse DuckDuckGo HTML results conservatively; never fabricate results."""
+    """Parse supported DuckDuckGo HTML/Lite result markup without fabricating rows."""
     results: list[dict[str, str]] = []
-    for match in re.finditer(
-        r'<a[^>]+class="[^"]*result__a[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>',
-        raw,
-        re.S,
-    ):
-        href, title_html = match.group(1), match.group(2)
+    # HTML uses result__a; Lite uses result-link. Attribute order and quote style
+    # are deliberately not assumed because both endpoints have changed markup.
+    for match in re.finditer(r"<a\b([^>]*)>(.*?)</a>", raw or "", re.S | re.I):
+        attrs, title_html = match.group(1), match.group(2)
+        cls_match = re.search(r"""class\s*=\s*["']([^"']+)["']""", attrs, re.I)
+        classes = set((cls_match.group(1) if cls_match else "").split())
+        if not ({"result__a", "result-link"} & classes):
+            continue
+        href_match = re.search(r"""href\s*=\s*["']([^"']+)["']""", attrs, re.I)
+        if not href_match:
+            continue
+        href = href_match.group(1)
         url = html_lib.unescape(urllib.parse.unquote(href))
         wrapped = re.search(r"[?&]uddg=([^&]+)", url)
         if wrapped:
@@ -102,7 +111,9 @@ def _parse_results(raw: str, limit: int) -> list[dict[str, str]]:
             if len(results) >= limit:
                 break
     snippets = re.findall(
-        r'class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</a>', raw, re.S
+        r"""class\s*=\s*["'][^"']*(?:result__snippet|result-snippet)[^"']*["'][^>]*>(.*?)(?:</a>|</td>|</div>)""",
+        raw or "",
+        re.S | re.I,
     )
     for index, snippet in enumerate(snippets[: len(results)]):
         results[index]["snippet"] = _strip_html(snippet)[:500]
@@ -115,16 +126,28 @@ class WebTools:
         self._search_enabled = search_enabled
 
     def _search_once(self, query: str, limit: int) -> tuple[list[dict[str, str]], str | None]:
-        url = f"{_SEARCH_ENDPOINT}?{urllib.parse.urlencode({'q': query[:_MAX_QUERY]})}"
-        try:
-            status, body = self._fetch(url, {})
-            if status >= 400:
-                return [], f"Search backend HTTP {status}"
-            return _parse_results(body, limit), None
-        except urllib.error.HTTPError as exc:
-            return [], f"Search backend HTTP {exc.code}"
-        except Exception as exc:
-            return [], f"{type(exc).__name__}: {exc}"
+        errors: list[str] = []
+        for provider, endpoint in _SEARCH_ENDPOINTS:
+            url = f"{endpoint}?{urllib.parse.urlencode({'q': query[:_MAX_QUERY]})}"
+            try:
+                status, body = self._fetch(url, {})
+                if status >= 400:
+                    errors.append(f"{provider}: HTTP {status}")
+                    continue
+                results = _parse_results(body, limit)
+                if results:
+                    return results, None
+                title = ""
+                match = re.search(r"<title[^>]*>(.*?)</title>", body or "", re.S | re.I)
+                if match:
+                    title = _strip_html(match.group(1))[:80]
+                detail = f", title={title!r}" if title else ""
+                errors.append(f"{provider}: HTTP {status} but zero parseable results{detail}")
+            except urllib.error.HTTPError as exc:
+                errors.append(f"{provider}: HTTP {exc.code}")
+            except Exception as exc:
+                errors.append(f"{provider}: {type(exc).__name__}: {exc}")
+        return [], " | ".join(errors) or "all search providers failed"
 
     @staticmethod
     def _domain_allowed(
