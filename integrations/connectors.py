@@ -51,5 +51,5 @@ class ConnectorRegistry:
             raise ValueError("MCP is not available")
         # Delegate through the existing MCP controller so server allowlists,
         # SSRF policy and remote-tool approvals remain authoritative.
-        return self.mcp.call(server=str(cfg.get("server") or ""), tool=str(tool),
-                             arguments=arguments or {})
+        return self.mcp.execute(server_id=str(cfg.get("server") or ""), tool=str(tool),
+                                arguments=arguments or {})
