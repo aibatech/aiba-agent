@@ -501,6 +501,13 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_MCP_ENABLED"
+    },
+    "operator_start": {
+      "description": "Start durable background work now or at a future run_after time.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
     }
   }
 }
