@@ -35,9 +35,22 @@ def _safe_host_path(raw: str) -> Path:
 
 
 class HostFiles:
-    """Read-only host file discovery. Registry policy supplies user approval."""
+    """Read-only host file discovery. Registry approval + paired node are required."""
+
+    def __init__(self, node_gate=None):
+        self.node_gate = node_gate
+
+    def _authorize(self) -> ToolResult | None:
+        if self.node_gate is None:
+            return ToolResult(False, error="Host files require a paired computer node.")
+        allowed, reason = self.node_gate.authorize("files_read")
+        if not allowed:
+            return ToolResult(False, error=reason)
+        return None
 
     def list(self, path: str, limit: int = 100) -> ToolResult:
+        denied = self._authorize()
+        if denied: return denied
         p = _safe_host_path(path)
         if not p.exists():
             return ToolResult(False, error=f"Host path does not exist: {p}")
@@ -59,6 +72,8 @@ class HostFiles:
         return ToolResult(True, {"path": str(p), "entries": rows, "truncated": len(rows) >= cap})
 
     def read(self, path: str, max_chars: int = 50_000) -> ToolResult:
+        denied = self._authorize()
+        if denied: return denied
         p = _safe_host_path(path)
         if not p.exists() or not p.is_file():
             return ToolResult(False, error=f"Host file does not exist or is not a file: {p}")
@@ -70,6 +85,8 @@ class HostFiles:
         return ToolResult(True, {"path": str(p), "text": data, "chars": len(data), "truncated": len(data) >= cap})
 
     def search(self, root: str, name: str, limit: int = 50, max_depth: int = 6) -> ToolResult:
+        denied = self._authorize()
+        if denied: return denied
         base = _safe_host_path(root)
         if not base.exists() or not base.is_dir():
             return ToolResult(False, error=f"Host root does not exist or is not a directory: {base}")
