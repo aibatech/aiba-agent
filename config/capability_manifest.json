@@ -19,7 +19,8 @@
     "none": "No feature flag required (always available once enabled).",
     "AIBA_MEDIA_ENABLED": "Gates the media_extract tool (read-only local document/text extraction from workspace files: PDF/DOCX/XLSX/PPTX/CSV/markdown/image metadata). Defaults ON because it is read-only and workspace-confined; set AIBA_MEDIA_ENABLED=false to hide it. Each binary-format parser additionally depends on the optional [media] extra.",
     "AIBA_MCP_ENABLED": "Gates the Phase 7 mcp_call tool (optional MCP client: call a tool on an operator-configured external MCP server). Disabled by default on three independent axes — this feature flag, enabled=false in permissions.json, and no enabled allowlisted server in config/mcp_servers.json. stdio/remote servers are configured only by the operator in config/mcp_servers.json; remote-tool allow/deny never ships to the model. Also requires the optional [mcp] extra.",
-    "AIBA_MCP_REMOTE": "Opt-in second feature flag for REMOTE (http / Streamable HTTP) MCP servers. Off by default; a remote server additionally must pass https-only + security-urlguard network policy at config-parse time and at call time, with redirect-following disabled (SSRF hardening)."
+    "AIBA_MCP_REMOTE": "Opt-in second feature flag for REMOTE (http / Streamable HTTP) MCP servers. Off by default; a remote server additionally must pass https-only + security-urlguard network policy at config-parse time and at call time, with redirect-following disabled (SSRF hardening).",
+    "AIBA_TERMINAL_BACKENDS_ENABLED": "Second gate for SSH/remote Compose terminal backends. Disabled by default; operator must also select AIBA_SANDBOX_MODE and enable run_shell/run_python permissions."
   },
   "tools": {
     "list_files": {
@@ -74,14 +75,14 @@
     "run_shell": {
       "description": "Run command in sandbox.",
       "risk_class": "process_execution",
-      "default_enabled": true,
+      "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "none"
     },
     "run_python": {
       "description": "Run Python in sandbox.",
       "risk_class": "process_execution",
-      "default_enabled": true,
+      "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "none"
     },
