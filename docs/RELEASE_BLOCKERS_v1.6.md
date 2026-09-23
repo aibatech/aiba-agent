@@ -45,18 +45,18 @@ files can see exports saved there. Do not claim hostile multi-tenant isolation.
 
 ## Still blocking full-scope completion
 
-1. Browser DNS: Python preflight DNS checks do not pin Chromium's connection.
-   `tools/browser_session.py` checks only the main-frame peer this way; its
-   static subresource guard does not stop hostname rebinding. Actual socket /
-   egress enforcement and real-browser tests remain required. This is a code
-   gap, not just missing owner test hardware.
-2. Remote computer nodes: the current local gate is not an authenticated
-   network transport. Implement transport and validate on a controlled second
-   host before claiming remote-node capability.
-3. MCP: the gateway has no usable discovered/operator-maintained tool-schema
-   catalog. Argument object checks alone are not full remote-tool schema
-   validation. Discovery or an explicit catalog must be implemented and tested.
-   Remote HTTPS integration also needs controlled endpoint validation.
+1. Browser DNS code gap: CLOSED IN SOURCE by routing Chromium through a loopback
+   filtering proxy that resolves each destination, rejects any non-global answer,
+   and connects to the exact approved IP. The proxy has a rebinding fixture test.
+   Real-browser target evidence is still required by PRODUCTION_GATE.md before certification.
+2. Remote computer-node transport code gap: CLOSED IN SOURCE with an explicit
+   HTTPS transport using request HMACs bound to timestamp, nonce, method, path and
+   body, mandatory TLS verification, and optional certificate pinning. It remains
+   disabled/unwired until operator configuration exists; controlled second-host
+   evidence is still required before remote-node capability may be advertised.
+3. MCP schema catalog code gap: CLOSED IN SOURCE. Every enabled MCP remote tool
+   requires an operator-maintained JSON input schema and arguments are validated
+   before transport. Controlled remote HTTPS evidence remains a release-evidence item.
 4. Media: OCR/ASR/TTS/image generation are capability probes, not working
    backends. Implementation, exact dependency/model requirements, and approved
    downloads or paid-provider budget are needed. Document creation/editing and
