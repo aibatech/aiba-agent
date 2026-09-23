@@ -12,6 +12,7 @@ from tools.browser_session import BrowserSession, build_browser_tools
 from tools.clarify import Clarify, ClarifyToolFactory
 from tools.web import WebTools, build_web_tools
 from tools.media import MediaExtraction, build_media_tools
+from tools.host_files import HostFiles
 from tools.registry import ToolRegistry
 from memory.vault import MemoryVault, SHARED
 from memory.retrieval import RetrievalEngine
@@ -245,6 +246,14 @@ class AgentLoop:
         self.registry.register(Tool('desktop_clipboard_read','Read clipboard (opt-in).',lambda: self.computer.clipboard_read(),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('desktop_clipboard_write','Set clipboard to a string.',lambda text:self.computer.clipboard_write(text),{'type':'object','properties':{'text':{'type':'string'}},'required':['text'],'additionalProperties':False}))
         self.registry.register(Tool('desktop_node_status','Report node pairing + remaining budget.',lambda: ToolResult(True,self.computer_node.status()),{'type':'object','properties':{},'additionalProperties':False}))
+        # Host files are deliberately separate from sandbox files. They exist only
+        # when desktop access is explicitly enabled, are read-only, and every call
+        # is approval-gated by permissions.json with the requested path visible.
+        if self.settings.desktop_enabled:
+            host_files=HostFiles()
+            self.registry.register(Tool('host_list_files','List files on the paired host computer at an explicitly requested path. Requires user approval; read-only.',host_files.list,{'type':'object','properties':{'path':{'type':'string'},'limit':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
+            self.registry.register(Tool('host_read_file','Read a text file from the paired host computer. Requires user approval; read-only; credential/key directories are blocked.',host_files.read,{'type':'object','properties':{'path':{'type':'string'},'max_chars':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
+            self.registry.register(Tool('host_search_files','Search filenames below an explicitly requested host folder. Requires user approval; read-only; does not follow symlinks.',host_files.search,{'type':'object','properties':{'root':{'type':'string'},'name':{'type':'string'},'limit':{'type':'integer'},'max_depth':{'type':'integer'}},'required':['root','name'],'additionalProperties':False}))
         self.registry.register(Tool('vision_analyze','Analyze a workspace image.',lambda image_path,instruction='Describe actionable interface elements.':self.vision.analyze(str(self.sandbox.resolve(image_path)),instruction),{'type':'object','properties':{'image_path':{'type':'string'},'instruction':{'type':'string'}},'required':['image_path'],'additionalProperties':False}))
         self.registry.register(Tool('list_skills','List reusable skills.',lambda:ToolResult(True,self.skills.list()),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('skill_instructions','Read a reviewed portable skill instruction contract.',lambda name:ToolResult(True,self.skills.instructions(name)),{'type':'object','properties':{'name':{'type':'string'}},'required':['name'],'additionalProperties':False}))
