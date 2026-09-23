@@ -8,6 +8,7 @@
 - Phase 1: Chromium browser traffic is routed through a loopback DNS-pinning egress proxy that refuses non-global destinations and connects to the exact reviewed IP.
 - Phase 1: added an HTTPS/HMAC remote computer-node transport primitive with timestamp/nonce replay bounds and optional TLS certificate pinning; it remains unwired/off until explicit operator configuration and target evidence exist.
 - Phase 1: media OCR/ASR/TTS/image generation remains explicitly unavailable rather than receiving partial placeholder implementations.
+- Phase 2: rewrote SECURITY.md around a formal trust-envelope/stance model, explicitly distinguishes OS-level isolation from in-process heuristics, defines uniform external-surface rules, establishes plugin/skill trust policy before a third-party ecosystem exists, and adds explicit vulnerability-disclosure scope.
 
 
 ## 1.6.0 — 2026-09-04 (v1.6.0-rc.2)
