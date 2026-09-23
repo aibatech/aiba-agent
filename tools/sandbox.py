@@ -1,11 +1,12 @@
 from __future__ import annotations
 import shutil,subprocess,sys
+from execution.backends import DockerBackend,SSHBackend,RemoteDockerComposeBackend
 from pathlib import Path
 from .base import ToolResult
 class Sandbox:
     def __init__(self,workspace:Path,timeout:int,policy,mode='local',docker_image='python:3.12-slim',memory='512m',cpus='1.0',network=False,
                  max_archive_members:int=10_000, max_archive_bytes_per_file:int=256*1024*1024,
-                 max_archive_total_bytes:int=2*1024*1024*1024):
+                 max_archive_total_bytes:int=2*1024*1024*1024, backend=None):
         self.workspace=workspace.resolve(); self.workspace.mkdir(parents=True,exist_ok=True); self.timeout=timeout; self.policy=policy
         self.mode=mode; self.image=docker_image; self.memory=memory; self.cpus=cpus; self.network=network
         # Bounded extraction limits (archive-bomb protection). Generous defaults;
@@ -14,6 +15,8 @@ class Sandbox:
         self.max_archive_bytes_per_file=int(max_archive_bytes_per_file)
         self.max_archive_total_bytes=int(max_archive_total_bytes)
         if mode=='docker' and not shutil.which('docker'): raise RuntimeError('Docker sandbox requested but docker is unavailable')
+        self.backend=backend
+        if mode=='docker' and backend is None:self.backend=DockerBackend(self.workspace,self.image,self.memory,self.cpus,self.network)
     def _safe(self,relative_path:str)->Path:
         p=(self.workspace/relative_path).resolve(); d=self.policy.check_path(p)
         if not d.allowed: raise PermissionError(d.reason)
@@ -37,18 +40,15 @@ class Sandbox:
     def _run(self,command:str)->ToolResult:
         d=self.policy.check_command(command)
         if not d.allowed:return ToolResult(False,error=d.reason)
-        if self.mode=='docker':
-            cmd=['docker','run','--rm','-v',f'{self.workspace}:/workspace','-w','/workspace','--memory',self.memory,'--cpus',self.cpus]
-            if not self.network:cmd += ['--network','none']
-            cmd += [self.image,'sh','-lc',command]
-            cp=subprocess.run(cmd,text=True,capture_output=True,timeout=self.timeout)
-        else:return ToolResult(False,error='Shell execution requires AIBA_SANDBOX_MODE=docker')
-        return ToolResult(cp.returncode==0,{'returncode':cp.returncode,'stdout':cp.stdout[-12000:],'stderr':cp.stderr[-12000:]},None if cp.returncode==0 else 'Command failed')
+        if self.backend is None:return ToolResult(False,error='Execution backend is not configured')
+        try:r=self.backend.execute(command,self.timeout)
+        except Exception as exc:return ToolResult(False,error=f'Execution backend failed: {exc}')
+        return ToolResult(r.ok,{'returncode':r.returncode,'stdout':r.stdout[-12000:],'stderr':r.stderr[-12000:]},None if r.ok else 'Command failed')
     def run_shell(self,command:str)->ToolResult:return self._run(command)
     def run_python(self, code: str) -> ToolResult:
-        if self.mode == "docker":
-            return self._run("python -c " + repr(code))
-        return ToolResult(False,error='Python execution requires AIBA_SANDBOX_MODE=docker')
+        if self.backend is not None:
+            return self._run("python3 -c " + repr(code))
+        return ToolResult(False,error='Python execution requires a configured terminal backend')
 
     def patch_file(self, path: str, old: str, new: str, replace_all: bool = False) -> ToolResult:
         """Apply a find-and-replace edit to a workspace text file and return the
