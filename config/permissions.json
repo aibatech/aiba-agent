@@ -229,15 +229,39 @@
       "requires_approval": true
     },
     "host_list_files": {
-      "enabled": true,
+      "enabled": false,
       "requires_approval": true
     },
     "host_read_file": {
-      "enabled": true,
+      "enabled": false,
       "requires_approval": true
     },
     "host_search_files": {
+      "enabled": false,
+      "requires_approval": true
+    },
+    "operator_task_status": {
       "enabled": true,
+      "requires_approval": false
+    },
+    "operator_steer": {
+      "enabled": true,
+      "requires_approval": false
+    },
+    "operator_cancel": {
+      "enabled": true,
+      "requires_approval": true
+    },
+    "verify_outcome": {
+      "enabled": true,
+      "requires_approval": false
+    },
+    "list_connectors": {
+      "enabled": true,
+      "requires_approval": false
+    },
+    "connector_call": {
+      "enabled": false,
       "requires_approval": true
     }
   },
