@@ -459,6 +459,48 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "operator_task_status": {
+      "description": "Read durable Operator task status and safe activity.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "operator_steer": {
+      "description": "Append user direction to an active Operator task inbox.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "operator_cancel": {
+      "description": "Cancel an active Operator task.",
+      "risk_class": "destructive",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "verify_outcome": {
+      "description": "Record evidence for a task postcondition verification.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "list_connectors": {
+      "description": "List configured connector names and allowlisted actions.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "connector_call": {
+      "description": "Call an allowlisted app action through an operator-configured MCP connector.",
+      "risk_class": "external_mutation",
+      "default_enabled": false,
+      "requires_approval": true,
+      "feature_flag": "AIBA_MCP_ENABLED"
     }
   }
 }
