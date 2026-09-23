@@ -263,6 +263,10 @@
     "connector_call": {
       "enabled": false,
       "requires_approval": true
+    },
+    "operator_start": {
+      "enabled": true,
+      "requires_approval": true
     }
   },
   "blocked_command_fragments": [
