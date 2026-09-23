@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from tools.base import ToolResult
+from security.egress_proxy import PinnedEgressProxy
 
 try:  # pragma: no cover - environment
     from security.urlguard import forbidden_open_target as _url_allowed_reason
@@ -137,6 +138,7 @@ class _PlaywrightDriver(Driver):
         self._context: Any = None
         self._page: Any = None
         self._last_download: Any = None
+        self._egress = PinnedEgressProxy()
 
     def _sync_api(self) -> Any:
         if self._pw is not None:
@@ -157,7 +159,8 @@ class _PlaywrightDriver(Driver):
         if self._page is not None:
             return self._page
         pw = self._sync_api()
-        self._browser = pw.chromium.launch(headless=True)
+        proxy_url = self._egress.start()
+        self._browser = pw.chromium.launch(headless=True, proxy={"server": proxy_url})
         self._context = self._browser.new_context(accept_downloads=True)
         self._page = self._context.new_page()
         page = self._page
@@ -295,6 +298,10 @@ class _PlaywrightDriver(Driver):
             if self._browser is not None:
                 self._browser.close()
         except Exception:  # pragma: no cover
+            pass
+        try:
+            self._egress.close()
+        except Exception:
             pass
         try:
             if self._pw is not None:
