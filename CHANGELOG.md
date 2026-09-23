@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased — parity & hardening initiative
+
+- Established the Phase 0 security baseline and explicit no-certification guardrails.
+- Restored host-file tools to disabled-by-default policy and added a regression test covering high-risk parity surfaces.
+
+
 ## 1.6.0 — 2026-09-04 (v1.6.0-rc.2)
 
 Security-corrected build of the 1.6.0 release (same runtime version 1.6.0 as rc.1;
