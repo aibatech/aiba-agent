@@ -1,5 +1,6 @@
 from __future__ import annotations
 import json,re,shutil
+from skills.guard import SkillsGuard
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -7,7 +8,7 @@ from typing import Any
 class Skill:
     name:str;description:str;version:str;steps:list[dict[str,Any]];path:Path;instructions:str=''
 class SkillManager:
-    def __init__(self,root:Path): self.root=root;root.mkdir(parents=True,exist_ok=True)
+    def __init__(self,root:Path): self.root=root;root.mkdir(parents=True,exist_ok=True);self.guard=SkillsGuard()
     def _safe(self,name:str)->str:
         value=re.sub(r'[^a-z0-9_-]+','-',name.lower()).strip('-')
         if not value:raise ValueError('Invalid skill name')
@@ -74,11 +75,32 @@ class SkillManager:
                 if ':' in line:
                     key,value=line.split(':',1);meta[key.strip()]=value.strip().strip('"\'')
         return meta,body.strip()
-    def import_markdown(self,path:Path):
-        if path.name!='SKILL.md':raise ValueError('Portable skill entrypoint must be named SKILL.md')
-        text=path.read_text(encoding='utf-8');meta,body=self._frontmatter(text);name=self._safe(meta.get('name') or path.parent.name)
-        if not body:raise ValueError('Portable skill instructions cannot be empty')
-        target=self.root/name;target.mkdir(parents=True,exist_ok=True);shutil.copy2(path,target/'SKILL.md');return self.get(name)
+    def _validate_agentskill(self,path:Path):
+        if path.name!='SKILL.md':raise ValueError('Agent Skills entrypoint must be named SKILL.md')
+        text=path.read_text(encoding='utf-8');meta,body=self._frontmatter(text)
+        name=str(meta.get('name') or '');description=str(meta.get('description') or '')
+        if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*',name) or len(name)>64:raise ValueError('Agent Skills name must be 1-64 lowercase letters/numbers/hyphens')
+        if name!=path.parent.name:raise ValueError('Agent Skills name must match parent directory')
+        if not description or len(description)>1024:raise ValueError('Agent Skills description must be 1-1024 characters')
+        compatibility=str(meta.get('compatibility') or '')
+        if compatibility and len(compatibility)>500:raise ValueError('Agent Skills compatibility must be <=500 characters')
+        if not body:raise ValueError('Agent Skills instructions cannot be empty')
+        return meta,body
+
+    def review_package(self,path:Path):
+        entry=path if path.name=='SKILL.md' else path/'SKILL.md'
+        meta,_=self._validate_agentskill(entry)
+        report=self.guard.scan(entry.parent)
+        report['name']=meta['name'];report['license']=meta.get('license','');report['allowed_tools']=meta.get('allowed-tools','')
+        return report
+
+    def import_markdown(self,path:Path,reviewed:bool=False):
+        meta,body=self._validate_agentskill(path);name=self._safe(meta['name']);report=self.guard.scan(path.parent)
+        if report['review_required'] and not reviewed:raise ValueError('Skill package has review findings; inspect review_package() and explicitly import as reviewed')
+        target=self.root/name
+        if target.exists():shutil.rmtree(target)
+        shutil.copytree(path.parent,target,symlinks=False,ignore=shutil.ignore_patterns('.git','__pycache__','*.pyc'))
+        return self.get(name)
     def instructions(self,name):
         skill=self.get(name);return {'name':skill.name,'description':skill.description,'version':skill.version,'instructions':skill.instructions,'executable':bool(skill.steps)}
     def execute(self,name:str,registry,variables:dict[str,Any]|None=None)->list[dict]:
