@@ -65,7 +65,10 @@ class _Handler(BaseHTTPRequestHandler):
             upstream=_connect_ip(ip,port)
             path=(p.path or "/")+("?" + p.query if p.query else "")
             headers="".join(f"{k}: {v}\r\n" for k,v in self.headers.items() if k.lower() not in {"proxy-connection","connection"})
-            request=f"{self.command} {path} HTTP/1.1\r\n{headers}Connection: close\r\n\r\n".encode()
+            length=int(self.headers.get("Content-Length","0") or 0)
+            if length < 0 or length > 10*1024*1024: raise EgressDenied("request body too large")
+            body=self.rfile.read(length) if length else b""
+            request=f"{self.command} {path} HTTP/1.1\r\n{headers}Connection: close\r\n\r\n".encode()+body
             upstream.sendall(request)
             while True:
                 data=upstream.recv(65536)
