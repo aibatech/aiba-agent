@@ -37,11 +37,11 @@
       "requires_approval": true
     },
     "run_shell": {
-      "enabled": true,
+      "enabled": false,
       "requires_approval": true
     },
     "run_python": {
-      "enabled": true,
+      "enabled": false,
       "requires_approval": true
     },
     "web_search": {
@@ -77,11 +77,11 @@
       "requires_approval": true
     },
     "session_search": {
-      "enabled": true,
+      "enabled": false,
       "requires_approval": false
     },
     "session_history": {
-      "enabled": true,
+      "enabled": false,
       "requires_approval": false
     },
     "browser_fetch": {

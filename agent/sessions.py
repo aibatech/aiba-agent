@@ -131,19 +131,28 @@ class SessionStore:
                             (session_id,)).fetchone()
             return dict(row) if row else None
 
+    @staticmethod
+    def _limit(value: int, maximum: int = 50) -> int:
+        try: value=int(value)
+        except (TypeError,ValueError): value=10
+        return max(1,min(value,maximum))
+
     def list_by_user(self, user_key: str, limit: int = 50) -> list[dict[str, Any]]:
         """Most recent sessions for a user, bounded."""
+        limit=self._limit(limit)
         with connect(self.path) as c:
             c.row_factory = sqlite3.Row
             rows = c.execute(
                 "SELECT * FROM sessions WHERE user_key=? "
-                "ORDER BY updated_at DESC LIMIT ?", (user_key, int(limit))
+                "ORDER BY updated_at DESC LIMIT ?", (user_key, limit)
             ).fetchall()
             return [dict(r) for r in rows]
 
     def search(self, user_key: str, query: str, limit: int = 10) -> list[dict[str, Any]]:
         """FTS5 full-text search scoped to one user (no cross-user leak)."""
-        terms = [re.sub(r"[^A-Za-z0-9_-]", "", w) for w in query.split()]
+        limit=self._limit(limit,25)
+        query=str(query or "")[:512]
+        terms = [re.sub(r"[^A-Za-z0-9_-]", "", w)[:64] for w in query.split()[:16]]
         terms = [t for t in terms if t]
         if not terms:
             return []
@@ -156,7 +165,7 @@ class SessionStore:
                 "JOIN sessions s ON s.rowid = sessions_fts.rowid "
                 "WHERE sessions_fts MATCH ? AND s.user_key=? "
                 "ORDER BY rank LIMIT ?",
-                (match_expr, user_key, int(limit)),
+                (match_expr, user_key, limit),
             ).fetchall()
             return [dict(r) for r in rows]
 

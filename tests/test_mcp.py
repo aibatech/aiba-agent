@@ -54,7 +54,7 @@ def _base_stdio_server(**over) -> dict:
         "command": "/usr/bin/python3",
         "args": ["/opt/fake/server.py", "--stdio"],
         "working_dir": ".",
-        "tools": {"ping": {"enabled": True, "requires_approval": False}},
+        "tools": {"ping": {"enabled": True, "requires_approval": False, "input_schema": {"type":"object","properties":{"text":{"type":"string"}},"additionalProperties":False}}},
         "startup_timeout_s": 3,
         "call_timeout_s": 5,
         "max_output_bytes": 4096,
@@ -88,6 +88,14 @@ class ConfigValidationTests(unittest.TestCase):
                 with self.assertRaises(_cfg.MCPConfigError):
                     _cfg.load_config(p)
 
+
+    def test_enabled_tool_requires_schema_catalog(self):
+        r = self.mkcfg()
+        srv = _base_stdio_server(tools={"ping":{"enabled":True,"requires_approval":False}})
+        p = _write_cfg(r, {"s": srv})
+        with self.assertRaises(_cfg.MCPConfigError):
+            _cfg.load_config(p)
+
     def test_remote_must_be_https(self):
         from urllib.parse import urlsplit
         # HTTP (not https) is refused even though every other field is fine.
@@ -111,7 +119,7 @@ class ConfigValidationTests(unittest.TestCase):
             "transport": "http",
             "enabled": True,
             "url": "https://example.invalid/mcp",
-            "tools": {"t": {"enabled": True, "requires_approval": False}},
+            "tools": {"t": {"enabled": True, "requires_approval": False, "input_schema": {"type":"object","properties":{},"additionalProperties":False}}},
         }
         p = _write_cfg(r, {"s": srv})
         ctrl = MCPClientController(enabled=True, root_dir=r, remote_enabled=False)
@@ -190,7 +198,7 @@ class ToolAllowlistPolicyTests(unittest.TestCase):
         d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
         r = Path(d.name)
         # server allowlists only "ping"; "shell" is unlisted -> denied
-        srv = _base_stdio_server(tools={"ping": {"enabled": True, "requires_approval": False}})
+        srv = _base_stdio_server(tools={"ping": {"enabled": True, "requires_approval": False, "input_schema": {"type":"object","properties":{"text":{"type":"string"}},"additionalProperties":False}}})
         p = _write_cfg(r, {"s": srv})
         ctrl = MCPClientController(enabled=True, root_dir=r)
         ok_ping = ctrl.execute("s", "ping", {})
@@ -225,7 +233,7 @@ class ExecuteFailClosedTests(unittest.TestCase):
     def test_disabled_server_denies(self):
         d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
         r = Path(d.name)
-        srv = _base_stdio_server(enabled=False, tools={"ping": {"enabled": True, "requires_approval": False}})
+        srv = _base_stdio_server(enabled=False, tools={"ping": {"enabled": True, "requires_approval": False, "input_schema": {"type":"object","properties":{"text":{"type":"string"}},"additionalProperties":False}}})
         p = _write_cfg(r, {"s": srv})
         ctrl = MCPClientController(enabled=True, root_dir=r)
         res = ctrl.execute("s", "ping", {})
@@ -303,7 +311,7 @@ class FakeStdioServerRoundTripTests(unittest.TestCase):
         # a transport/EOF error, which proves we reached the real spawn layer.
         d = tempfile.TemporaryDirectory(); self.addCleanup(d.cleanup)
         r = Path(d.name)
-        srv = _base_stdio_server(command=sys.executable, args=['-c', 'raise SystemExit(1)'], tools={"x": {"enabled": True, "requires_approval": False}})
+        srv = _base_stdio_server(command=sys.executable, args=['-c', 'raise SystemExit(1)'], tools={"x": {"enabled": True, "requires_approval": False, "input_schema": {"type":"object","properties":{},"additionalProperties":False}}})
         p = _write_cfg(r, {"s": srv})
         ctrl = MCPClientController(enabled=True, root_dir=r)
         res = ctrl.execute("s", "x", {})

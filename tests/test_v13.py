@@ -39,7 +39,7 @@ class ConcurrencyTests(unittest.TestCase):
 class CompatibilityTests(unittest.TestCase):
     def test_portable_markdown_skill_is_discovered_but_not_directly_executed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp);source=root/'incoming';source.mkdir();(source/'SKILL.md').write_text('---\nname: portable-test\ndescription: Safe instructions\nversion: 1.0.0\n---\nDo the reviewed task.')
+            root=Path(tmp);source=root/'portable-test';source.mkdir();(source/'SKILL.md').write_text('---\nname: portable-test\ndescription: Safe instructions\nversion: 1.0.0\n---\nDo the reviewed task.')
             manager=SkillManager(root/'installed');skill=manager.import_markdown(source/'SKILL.md');self.assertEqual(skill.name,'portable-test');self.assertEqual(manager.list()[0]['format'],'portable-markdown');self.assertFalse(manager.instructions('portable-test')['executable'])
             with self.assertRaises(ValueError):manager.execute('portable-test',None)
 

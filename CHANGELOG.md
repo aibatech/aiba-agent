@@ -4,6 +4,16 @@
 
 - Established the Phase 0 security baseline and explicit no-certification guardrails.
 - Restored host-file tools to disabled-by-default policy and added a regression test covering high-risk parity surfaces.
+- Phase 1: enabled MCP remote tools now require an operator-maintained input-schema catalog and calls are validated against it before transport.
+- Phase 1: Chromium browser traffic is routed through a loopback DNS-pinning egress proxy that refuses non-global destinations and connects to the exact reviewed IP.
+- Phase 1: added an HTTPS/HMAC remote computer-node transport primitive with timestamp/nonce replay bounds and optional TLS certificate pinning; it remains unwired/off until explicit operator configuration and target evidence exist.
+- Phase 1: media OCR/ASR/TTS/image generation remains explicitly unavailable rather than receiving partial placeholder implementations.
+- Phase 2: rewrote SECURITY.md around a formal trust-envelope/stance model, explicitly distinguishes OS-level isolation from in-process heuristics, defines uniform external-surface rules, establishes plugin/skill trust policy before a third-party ecosystem exists, and adds explicit vulnerability-disclosure scope.
+- Phase 3: added a TerminalBackend contract, preserved Docker, and added default-off SSH plus self-hostable remote Docker Compose execution. SSH uses mandatory host-key verification and workspace-confined backend file paths; remote execution is explicitly documented as not being a sandbox by itself.
+- Phase 4: added a uniform MessagingAdapter security contract plus default-off Discord and Slack adapters. Both fail closed without owner allowlists; Slack verifies signed events/replay age and outbound rich-text parsing is disabled by default.
+- Phase 5: added Agent Skills core-format validation and package import, plus a Skills Guard static review aid for credential/destructive/network/shell/persistence/prompt-override signals. Agent Skills allowed-tools metadata never grants AIBA permissions, risky packages require explicit reviewed import, and autonomous DSPy/GEPA-style self-evolution remains excluded pending a separate threat model.
+- Phase 6: hardened local FTS5 session retrieval with bounded/sanitized queries, strict authenticated-user scoping, a default-off feature flag plus disabled permission rows, and regression coverage preventing ambient session-history injection. No external user modeling, enrichment, embeddings, analytics, or data-egress service was added.
+- Phase 7: added dry-run-first `aiba claw migrate` and `aiba hermes migrate` commands with `--preset user-data`, conflict-safe imports, secret/infrastructure exclusions, staged skill imports, migration reports, and CONTRIBUTING supply-chain guards for dependencies/MCP/external launches.
 
 
 ## 1.6.0 — 2026-09-04 (v1.6.0-rc.2)
