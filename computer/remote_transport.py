@@ -23,6 +23,26 @@ def verify_request(token:str,method:str,path:str,body:bytes,timestamp:int,nonce:
     expected=sign_request(token,method,path,body,int(timestamp),nonce)
     return hmac.compare_digest(expected,signature or "")
 
+
+class RemoteNodeRequestVerifier:
+    """Server-side signed-request verifier with bounded nonce replay cache."""
+    def __init__(self,token:str,max_skew:int=60,max_nonces:int=4096):
+        if len(token)<32: raise ValueError("remote computer node token is too short")
+        self.token=token;self.max_skew=int(max_skew);self.max_nonces=int(max_nonces);self._seen={};self._lock=__import__("threading").Lock()
+    def verify(self,method:str,path:str,body:bytes,timestamp:str,nonce:str,signature:str,now:int|None=None)->bool:
+        try: ts=int(timestamp)
+        except (TypeError,ValueError): return False
+        current=int(time.time() if now is None else now)
+        if not nonce or len(nonce)>256 or not verify_request(self.token,method,path,body,ts,nonce,signature,now=current,max_skew=self.max_skew): return False
+        with self._lock:
+            cutoff=current-self.max_skew
+            self._seen={n:t for n,t in self._seen.items() if t>=cutoff}
+            if nonce in self._seen:return False
+            if len(self._seen)>=self.max_nonces:
+                oldest=min(self._seen,key=self._seen.get);self._seen.pop(oldest,None)
+            self._seen[nonce]=current
+        return True
+
 @dataclass
 class RemoteNodeTransport:
     base_url:str
