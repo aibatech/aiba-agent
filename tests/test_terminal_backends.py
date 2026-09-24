@@ -17,6 +17,9 @@ class TerminalBackendTests(unittest.TestCase):
         b=SSHBackend("example.com","aiba","/srv/aiba")
         with self.assertRaises(ValueError):b.read_file("../secret",10)
         with self.assertRaises(ValueError):b.write_file("/etc/passwd","x",10)
+        with self.assertRaises(ValueError):b.patch("../secret","a","b",False,10)
+    def test_ssh_port_range(self):
+        with self.assertRaises(ValueError):SSHBackend("example.com","aiba","/srv/aiba",port=70000)
     def test_remote_compose_wraps_command(self):
         seen={}
         def fake(argv,**kw):seen["argv"]=argv;return subprocess.CompletedProcess(argv,0,"","")
