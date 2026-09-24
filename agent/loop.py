@@ -7,6 +7,7 @@ from security.policy import SecurityPolicy
 from approvals.manager import ApprovalManager
 from tools.base import Tool,ToolResult
 from tools.sandbox import Sandbox
+from execution.backends import SSHBackend,RemoteDockerComposeBackend
 from tools.browser import browser_fetch
 from tools.browser_session import BrowserSession, build_browser_tools
 from tools.clarify import Clarify, ClarifyToolFactory
@@ -52,7 +53,12 @@ class AgentLoop:
     def __init__(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
         self.settings=settings or Settings.load();self.audit=AuditLog(self.settings.logs_dir/'audit.jsonl');self.events=EventBus();self._run_lock=RLock();self.metrics=Metrics();self.crashes=CrashReporter(self.settings.logs_dir)
         self.approvals=ApprovalManager(interactive,auto_approve);self.policy=SecurityPolicy(self.settings.workspace_dir,self.settings.permissions_path,self.settings.require_approval)
-        self.sandbox=Sandbox(self.settings.workspace_dir,self.settings.command_timeout,self.policy,self.settings.sandbox_mode,self.settings.docker_image,self.settings.docker_memory,self.settings.docker_cpus,self.settings.sandbox_network)
+        backend=None
+        if self.settings.sandbox_mode=='ssh':
+            backend=SSHBackend(self.settings.ssh_host,self.settings.ssh_user,self.settings.ssh_workspace,self.settings.ssh_key_path or None,self.settings.ssh_port,self.settings.ssh_known_hosts or None)
+        elif self.settings.sandbox_mode=='remote_compose':
+            backend=RemoteDockerComposeBackend(self.settings.ssh_host,self.settings.ssh_user,self.settings.ssh_workspace,self.settings.ssh_key_path or None,self.settings.ssh_port,self.settings.ssh_known_hosts or None,service=self.settings.remote_compose_service,compose_file=self.settings.remote_compose_file)
+        self.sandbox=Sandbox(self.settings.workspace_dir,self.settings.command_timeout,self.policy,self.settings.sandbox_mode,self.settings.docker_image,self.settings.docker_memory,self.settings.docker_cpus,self.settings.sandbox_network,backend=backend)
         self.vault=MemoryVault(self.settings.db_path,self.settings.vault_dir);self.tasks=TaskStore(self.settings.tasks_db_path);self.tasks.recover_interrupted()
         # Session history (Phase 9): per-user chronological log with FTS search,
         # auto-populated as top-level handled turns complete. DB lives under
