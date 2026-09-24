@@ -60,8 +60,8 @@ class SSHBackend(TerminalBackend):
     """
     name="ssh"
     def __init__(self,host:str,user:str,workspace:str,key_path:str|None=None,port:int=22,known_hosts:str|None=None):
-        if not host or any(x in host for x in " \t\n/@"):raise ValueError("invalid SSH host")
-        if not user or any(x in user for x in " \t\n/@"):raise ValueError("invalid SSH user")
+        if not host or not __import__("re").fullmatch(r"[A-Za-z0-9.-]+",host):raise ValueError("invalid SSH host")
+        if not user or not __import__("re").fullmatch(r"[A-Za-z0-9._-]+",user):raise ValueError("invalid SSH user")
         if not workspace.startswith("/"):raise ValueError("SSH workspace must be absolute")
         self.host=host;self.user=user;self.workspace=workspace.rstrip("/");self.key_path=key_path;self.port=int(port);self.known_hosts=known_hosts
         if not 1 <= self.port <= 65535: raise ValueError("SSH port must be 1..65535")
