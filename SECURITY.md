@@ -145,7 +145,11 @@ network access, persistence, or approval. Effective privileges are the
 intersection of the host stance, feature flags, `permissions.json`, tool
 policy, and OS/container envelope. Self-modifying or self-evolving skills require
 a separate threat-model/design review and are not implicitly authorized by the
-ordinary skill system.
+ordinary skill system. AIBA accepts the portable Agent Skills SKILL.md core format
+but deliberately does not treat its experimental allowed-tools metadata as an
+authorization grant. Imported packages are statically reviewed by Skills Guard;
+findings require explicit reviewed import, symlinks are not preserved, and a
+clean scan never upgrades package trust. See docs/AGENT_SKILLS_SECURITY.md.
 
 ### 3.7 Terminal execution backends
 
