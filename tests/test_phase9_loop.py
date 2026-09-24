@@ -30,6 +30,12 @@ def make_settings(tmp: Path) -> Settings:
     cfg = tmp / "config"
     cfg.mkdir(parents=True, exist_ok=True)
     shutil.copy(CANONICAL_PERMISSIONS, cfg / "permissions.json")
+    # Phase 6 keeps session retrieval disabled in canonical production policy.
+    # This integration fixture explicitly opts into the capability locally.
+    permissions = json.loads((cfg / "permissions.json").read_text(encoding="utf-8"))
+    permissions["tools"]["session_search"]["enabled"] = True
+    permissions["tools"]["session_history"]["enabled"] = True
+    (cfg / "permissions.json").write_text(json.dumps(permissions, indent=2) + "\n", encoding="utf-8")
     shutil.copy(CANONICAL_MANIFEST, cfg / "capability_manifest.json")
     di = lambda p: tmp / p  # noqa: E731
     return Settings(
