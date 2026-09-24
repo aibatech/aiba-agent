@@ -52,6 +52,7 @@ def make_settings(tmp: Path) -> Settings:
         api_port=8765, allowed_origins=(), rate_limit_per_minute=60,
         web_enabled=False, computer_node_path=data / "computer_node.json",
         desktop_clipboard_enabled=False, desktop_process_enabled=False,
+        session_search_enabled=True,
     )
 
 
