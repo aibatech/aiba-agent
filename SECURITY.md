@@ -2,37 +2,196 @@
 
 ## Supported release
 
-AIBA v1.5 receives security fixes. Do not expose older developer-preview releases.
+Security fixes target the current maintained AIBA release line. Historical
+developer-preview releases must not be exposed as services. Version labels and
+CI results are not production certification; target evidence is governed by
+`PRODUCTION_GATE.md`.
 
-## Required controls
+## 1. Trust model
+
+### 1.1 Glossary
+
+**Agent process** — the AIBA Python process, its model-facing orchestration,
+tool registry, connectors, and in-process policy code.
+
+**Input surface** — any path by which data or instructions enter the agent:
+local/API chat, Telegram/WhatsApp, web pages, uploaded documents, MCP responses,
+skills, model/provider output, browser content, and computer-node responses.
+
+**Trust envelope** — the OS account, container/VM, filesystem mounts, network
+policy, credentials, and explicitly paired external nodes within which an AIBA
+process is allowed to act. Crossing this envelope requires a separately
+authenticated and authorized interface.
+
+**Stance** — the declared deployment posture for a capability: disabled,
+read-only, isolated execution, operator-approved mutation, or break-glass.
+Stance is configuration plus an operational promise; it is not inferred from
+what a model asks to do.
+
+### 1.2 The load-bearing boundary
+
+**The only real containment boundary for adversarial model-authored code or
+hostile tool input is OS-level isolation plus enforceable network/filesystem
+policy.** AIBA therefore requires Docker isolation for model-authored shell and
+Python execution and recommends a dedicated low-privilege OS account,
+restricted mounts, and outbound network controls.
+
+The following are important defense-in-depth **heuristics and policy checks,
+not isolation boundaries**: the approval manager, `permissions.json`, feature
+flags, capability manifests, owner allowlists, URL/SSRF checks, the browser
+egress proxy, audit/redaction, MCP schemas, document/media validators, Skills
+Guard/scanners, prompt-injection detection, budgets, and model instructions.
+A bypass of one of these can matter, but none should be treated as equivalent
+to a VM/container/OS security boundary.
+
+### 1.3 Trust-envelope rules
+
+AIBA starts from least privilege. High-risk surfaces are disabled unless their
+feature flag and permission row are both enabled. A capability may not silently
+expand the envelope of another capability. For example, enabling MCP does not
+enable arbitrary MCP servers; pairing a computer node does not grant clipboard
+or process control; a messaging allowlist does not grant memory administration.
+
+Uploaded documents, browser pages, remote messages, skills, MCP data, and
+computer-node results are untrusted data even when they come from an
+authenticated source. Authentication answers *who sent it*, not *whether its
+instructions are safe*.
+
+### 1.4 Break-glass stance
+
+Any documented break-glass or sensitive-mode flag is an explicit operator
+choice that weakens a normal guard for a bounded purpose. It must be visible,
+auditable, default-off, and must not be represented as preserving the stronger
+stance. Break-glass does not disable OS-level containment requirements.
+
+## 2. Required controls
 
 1. Generate a unique 256-bit-or-stronger `AIBA_API_TOKEN`; never use an example value.
 2. Generate and back up a separate `AIBA_MASTER_KEY`. Losing it makes dashboard-stored provider keys unrecoverable; changing it requires re-entering those keys.
 3. Terminate HTTPS at a maintained reverse proxy and keep port 8765 on a private interface.
-4. Keep browser, desktop, vision, shell, Python, and **internal subagent** (`delegate_task`) tools disabled until explicitly reviewed. Subagents are additionally governed by `AIBA_SUBAGENTS_ENABLED` (default `false`) and `config/permissions.json` `delegate_task.enabled` (default `false`) — both must be enabled together. When enabled, workers are bounded background executors only: AIBA stays the single user-facing assistant, a worker can never spawn a further worker (recursion depth zero), each worker is confined to the parent's explicitly allowed tool subset with step/time/cost budgets and global+per-parent concurrency caps, and only a concise result summary (never raw prompts, transcripts, or chain-of-thought) returns to the planner.
-5. Use Docker sandbox mode for all model-authored code. Local command execution is refused.
-6. Back up `agent_system/`, restrict its filesystem permissions, and encrypt the host volume.
+4. Keep browser, desktop, vision, shell, Python, internal subagents, MCP, remote-node transports, and future third-party extension surfaces disabled until explicitly reviewed. New high-risk capabilities require both a default-off feature gate and a disabled permission row.
+5. Use Docker sandbox mode for all model-authored code. Local command execution is refused as a production containment posture.
+6. Back up `agent_system/`, restrict filesystem permissions, and encrypt the host volume.
 7. Rotate provider keys, the AIBA token, and affected stored credentials after suspected exposure.
 8. Review `agent_system/logs/audit.jsonl` and container logs; never send secrets in prompts.
-9. Treat uploaded/workspace documents as **untrusted data** and parse them only with the optional, dependency-versioned `[media]` extractors (`media_extract`). These parsers never evaluate spreadsheet formulas, macros, or links and never modify the source file, but a malformed PDF/DOCX/XLSX/PPTX is still attacker-controlled parser input — keep pypdf/python-docx/openpyxl/python-pptx patched and, when processing untrusted documents at scale, run AIBA where it cannot reach resources a malicious parser could pivot toward. OCR/ASR/TTS/image-generation are not enabled until a reviewed backend + test suite exists.
-10. Keep the optional MCP **client** (`mcp_call`) disabled until an operator explicitly opts in and vets a server. MCP is **off by default** on three independent axes — `AIBA_MCP_ENABLED` (default `false`), `config/permissions.json` `mcp_call.enabled` (default `false`), and the absence of any enabled allowlisted server in `config/mcp_servers.json`. When enabled: only servers an operator configures are reachable; remote-tool allow/deny + per-tool approval are set by the operator in `config/mcp_servers.json`, never by a server or the model; stdio servers run as explicit argv (never a shell); remote (http) servers additionally require `AIBA_MCP_REMOTE` (default `false`) and must be HTTPS URLs passing the shared SSRF/urlguard policy with redirect-following disabled; `working_dir` is confined to the config tree; env is forwarded by allowlisted **name only** (never raw secret values in config); call arguments are redacted before audit. AIBA never runs an MCP server and never auto-installs/auto-trusts a third-party server — a remote tool can never broaden AIBA's permission surface beyond the operator's allowlist. Every enabled remote tool must also have an operator-maintained JSON input schema; calls that do not match that catalog are denied before transport. Schema validation is a supply-chain guard/heuristic, not an OS isolation boundary.
+9. Treat workspace documents as untrusted. `media_extract` never evaluates spreadsheet formulas, macros, or links and never modifies source files. OCR/ASR/TTS/image generation remain unavailable until reviewed backends and tests exist.
+10. Enforce host/container outbound policy in addition to application SSRF controls.
 
-## Threat boundaries
+## 3. Capability trust boundaries
 
-Prompt injection is treated as untrusted input. It cannot override the tool policy or workspace boundary. Browser SSRF defenses route Chromium through AIBA's loopback egress proxy: each destination is resolved by the proxy, any non-global answer is refused, and the upstream socket is opened to the exact approved IP. This is an application-layer network control, not a substitute for host/container egress policy. Remote computer transport, when separately configured, requires HTTPS plus HMAC-signed timestamped/nonced requests; optional TLS certificate pinning is supported. The local ComputerNodeGate remains a separate authorization layer, and neither approval nor request signing is OS isolation. Desktop control acts with the privileges of its operating-system session and should use a dedicated low-privilege account. Internal subagent workers are non-user-facing, non-recursive and cannot exceed their parent's own tool privileges: they only ever receive the exact subset of tools the delegating task explicitly listed and that the shared policy enables, so a compromised worker cannot escalate to spawn further workers or reach desktop/process/shell/browser capability that its parent delegation did not grant. Worker objectives, prompts, and transcripts are never written to the subagent store or audit log — only status, allowed-tool names, budget counters, and a concise result summary are persisted, so no prompt-injected content survives in durable storage beyond that summary.
+### 3.1 Subagents
 
-## Reporting
+`delegate_task` is default-off through `AIBA_SUBAGENTS_ENABLED` and
+`permissions.json`. Workers are bounded, non-recursive executors. They receive
+only the parent's explicitly permitted tool subset and budgets. Delegation
+approval never approves a later consequential tool action. Only concise results,
+not private chain-of-thought, return to the planner.
 
-Report vulnerabilities privately to the project owner. Include the release, reproduction steps, impact, and suggested mitigation. Do not include real credentials or personal data.
-# v1.6 identity and delegation review
+### 3.2 Browser and network
 
-Remote chat access and memory administration are separate permissions.
-`AIBA_MEMORY_OWNER_USERS` explicitly grants the full vault view; Telegram and
-WhatsApp chat allowlists do not. The local CLI/bearer-token management API is
-administrative. Preserve the API token as an administrator credential.
+Chromium traffic is routed through AIBA's loopback egress proxy. Each
+destination is resolved by the proxy, any non-global answer is refused, and the
+upstream socket is opened to the approved IP. Static URL checks, DNS filtering,
+and the proxy are application-layer controls; operators should still enforce
+outbound network policy at the host/container boundary.
 
-Subagents inherit a context-local identity and dispatch through the same tool
-registry as the main agent. Feature flags, conversation blocks, argument
-validation and actual-action approvals are rechecked at execution, not merely
-when delegation begins. Shared workspace access is not per-user filesystem
-isolation. See [release blockers](docs/RELEASE_BLOCKERS_v1.6.md) before deployment.
+### 3.3 Computer nodes
+
+The local `ComputerNodeGate` controls pairing, capabilities, emergency stop,
+and budgets. Remote transport is a separate trust boundary: when explicitly
+configured it requires HTTPS plus HMAC-signed timestamped/nonced requests and
+may pin the TLS certificate. Pairing/authentication is not desktop isolation;
+the remote node must run under an appropriately restricted OS account.
+
+### 3.4 MCP
+
+MCP is default-off on independent axes: `AIBA_MCP_ENABLED`, the
+`mcp_call` permission row, and an operator allowlisted server/tool catalog.
+Stdio launches use explicit argv rather than a shell. Remote HTTP requires its
+separate remote flag, HTTPS, SSRF policy, and no redirects. Enabled tools require
+operator-maintained input schemas and calls are validated before transport.
+Secrets are forwarded by allowlisted environment-variable name, not embedded
+in config. MCP schema validation and allowlists are supply-chain guards, not
+process isolation. AIBA never auto-installs or auto-trusts an MCP server.
+
+### 3.5 Messaging / external surfaces
+
+Every external messaging surface must authorize at the boundary and fail closed
+when no owner allowlist is configured. Remote messages run with the
+non-interactive posture: tools requiring interactive approval remain denied.
+Session IDs are routing handles, not authentication credentials. Principals
+inside one configured allowlist are equally trusted for that connector unless a
+stronger per-user policy is explicitly implemented. Any inbound HTTP listener
+must bind loopback by default unless deployment documentation specifies an
+authenticated reverse-proxy boundary.
+
+Chat authorization and memory administration are separate. Connector
+allowlists do not imply `AIBA_MEMORY_OWNER_USERS` membership.
+
+### 3.6 Plugins and skills
+
+Installed skill/plugin content is **code or instructions from another trust
+domain**. Future third-party ecosystems must therefore be opt-in and default-off.
+Installation and activation are separate decisions: downloaded content must be
+reviewable before activation, versioned, attributable to a source, and subject
+to static scanning. A scanner may identify suspicious injection, hidden
+instructions, executable payloads, unexpected network references, or permission
+requests, but it is a review aid—not a security boundary.
+
+A skill/plugin may not grant itself tools, credentials, filesystem mounts,
+network access, persistence, or approval. Effective privileges are the
+intersection of the host stance, feature flags, `permissions.json`, tool
+policy, and OS/container envelope. Self-modifying or self-evolving skills require
+a separate threat-model/design review and are not implicitly authorized by the
+ordinary skill system.
+
+### 3.7 Untrusted documents and media
+
+Parsers operate read-only on source files and do not execute macros, evaluate
+spreadsheet formulas, or follow embedded links. Parser libraries still process
+attacker-controlled bytes, so patched dependencies and OS isolation are required
+for hostile documents at scale. Capability probes must report unavailable
+features honestly rather than simulating OCR/ASR/TTS/image-generation success.
+
+## 4. Vulnerability disclosure scope
+
+Report vulnerabilities privately to the project owner with release/commit,
+reproduction steps, impact, and suggested mitigation. Never include real
+credentials or personal data.
+
+### In scope
+
+- Escape from a declared OS/container/filesystem/network isolation posture.
+- Unauthorized access across an external surface or owner/identity boundary.
+- Credential/key/token exfiltration caused by AIBA code or a bypass that reaches
+  a consequential sink.
+- Authentication, replay, signature, or authorization bypass in computer-node,
+  API, connector, or MCP transport.
+- A default-off capability becoming reachable without the documented gates.
+- A trust-model/documentation violation where implementation materially provides
+  broader privilege than the documented stance.
+- Supply-chain behavior that executes or enables unreviewed third-party code
+  outside the declared trust envelope.
+
+### Normally out of scope by itself
+
+- Bypassing an in-process heuristic (scanner, prompt filter, redaction pattern,
+  schema lint, or model instruction) without a chained security consequence.
+- Prompt injection that only changes model text and does not cross an
+  authorization, confidentiality, integrity, or isolation boundary.
+- Behavior explicitly enabled by a documented break-glass flag when it stays
+  within the weakened stance the operator selected.
+- Denial of service requiring the operator to deliberately grant the attacking
+  principal equivalent local/owner access, absent a boundary escape.
+
+An out-of-scope primitive becomes in scope when it chains into an in-scope
+impact. Severity follows the achieved boundary crossing, not the name of the
+heuristic that failed.
+
+## 5. Release evidence
+
+Source review, unit tests, CI, and this policy do not certify a deployment.
+Clean-install, live-provider, connector, remote-host, soak, backup/restore,
+upgrade, and platform evidence must be produced and retained as required by
+`PRODUCTION_GATE.md`. Agents and contributors must describe missing evidence
+as missing rather than inferring it from passing source tests.
