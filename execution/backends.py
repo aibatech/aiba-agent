@@ -25,6 +25,7 @@ class TerminalBackend(ABC):
     @abstractmethod
     def write_file(self,path:str,content:str,timeout:int)->BackendResult: ...
     def patch(self,path:str,old:str,new:str,replace_all:bool,timeout:int)->BackendResult:
+        if Path(path).is_absolute() or ".." in Path(path).parts: raise ValueError("patch path must stay relative to backend workspace")
         payload=base64.b64encode(json.dumps({"p":path,"o":old,"n":new,"a":replace_all}).encode()).decode()
         script=("import base64,json,pathlib;d=json.loads(base64.b64decode("+repr(payload)+"));"
                 "p=pathlib.Path(d['p']);s=p.read_text();c=s.count(d['o']);"
@@ -63,6 +64,7 @@ class SSHBackend(TerminalBackend):
         if not user or any(x in user for x in " \t\n/@"):raise ValueError("invalid SSH user")
         if not workspace.startswith("/"):raise ValueError("SSH workspace must be absolute")
         self.host=host;self.user=user;self.workspace=workspace.rstrip("/");self.key_path=key_path;self.port=int(port);self.known_hosts=known_hosts
+        if not 1 <= self.port <= 65535: raise ValueError("SSH port must be 1..65535")
     def _argv(self,remote):
         a=["ssh","-o","BatchMode=yes","-o","StrictHostKeyChecking=yes","-p",str(self.port)]
         if self.known_hosts:a+=["-o",f"UserKnownHostsFile={self.known_hosts}"]
