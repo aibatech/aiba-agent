@@ -31,6 +31,7 @@ class Settings:
     subagent_global_concurrency:int=3
     subagent_per_parent_concurrency:int=2
     sessions_db_path:Path|None=None
+    session_search_enabled:bool=False
     media_enabled:bool=True
     mcp_enabled:bool=False
     memory_owner_users: frozenset[str] = frozenset({'default'})
@@ -49,7 +50,7 @@ class Settings:
         s=cls(root,data,data/'workspace',data/'vault',data/'logs',root/'skills',data/'aiba.db',data/'tasks.db',data/'jobs.db',data/'schedules.db',data/'auth.db',data/'providers.db',provider,fallback,os.getenv('AIBA_MODEL','gpt-4.1-mini'),os.getenv('AIBA_FALLBACK_MODEL','local-v1'),_int('AIBA_MAX_STEPS',32),_int('AIBA_COMMAND_TIMEOUT',45),_bool('AIBA_REQUIRE_APPROVAL',True),sandbox,os.getenv('AIBA_DOCKER_IMAGE','python:3.12-slim'),os.getenv('AIBA_DOCKER_MEMORY','512m'),os.getenv('AIBA_DOCKER_CPUS','1.0'),_bool('AIBA_SANDBOX_NETWORK',False),root/'config'/'permissions.json',_bool('AIBA_BROWSER_ENABLED',False),_bool('AIBA_DESKTOP_ENABLED',False),os.getenv('AIBA_VISION_MODEL','gpt-4.1-mini'),_bool('AIBA_WORKER_ENABLED',True),token,os.getenv('AIBA_API_HOST','127.0.0.1'),_int('AIBA_API_PORT',8765),origins,_int('AIBA_RATE_LIMIT_PER_MINUTE',60),_bool('AIBA_WEB_ENABLED',True),data/'computer_node.json',_bool('AIBA_DESKTOP_CLIPBOARD',False),_bool('AIBA_DESKTOP_PROCESS',False),
             terminal_enabled,os.getenv('AIBA_SSH_HOST',''),os.getenv('AIBA_SSH_USER',''),os.getenv('AIBA_SSH_WORKSPACE',''),os.getenv('AIBA_SSH_KEY_PATH',''),_int('AIBA_SSH_PORT',22),os.getenv('AIBA_SSH_KNOWN_HOSTS',''),os.getenv('AIBA_REMOTE_COMPOSE_SERVICE',''),os.getenv('AIBA_REMOTE_COMPOSE_FILE','compose.yaml'),
             _bool('AIBA_SUBAGENTS_ENABLED',False),data/'subagents.db',_int('AIBA_SUBAGENT_CONCURRENCY',3,minimum=1),_int('AIBA_SUBAGENT_PER_PARENT',2,minimum=1),
-            None,_bool('AIBA_MEDIA_ENABLED',True),
+            None,_bool('AIBA_SESSION_SEARCH_ENABLED',False),_bool('AIBA_MEDIA_ENABLED',True),
             _bool('AIBA_MCP_ENABLED',False),
             cls._owner_users_from_env(),
             )

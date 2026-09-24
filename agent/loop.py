@@ -127,6 +127,7 @@ class AgentLoop:
             'AIBA_DESKTOP_ENABLED': bool(self.settings.desktop_enabled),
             'AIBA_VISION_ENABLED': bool(self.settings.vision_model),
             'AIBA_SUBAGENTS_ENABLED': bool(self.settings.subagents_enabled),
+            'AIBA_SESSION_SEARCH_ENABLED': bool(self.settings.session_search_enabled),
             'AIBA_MEDIA_ENABLED': bool(self.settings.media_enabled),
             'AIBA_MCP_ENABLED': bool(self.settings.mcp_enabled),
         }

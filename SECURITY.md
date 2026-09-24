@@ -155,7 +155,13 @@ clean scan never upgrades package trust. See docs/AGENT_SKILLS_SECURITY.md.
 
 Terminal execution is default-off at the tool-policy layer. Docker remains the recommended containment posture for model-authored shell/Python. SSH and remote Docker Compose additionally require `AIBA_TERMINAL_BACKENDS_ENABLED=true` and an explicit `AIBA_SANDBOX_MODE` selection. SSH uses argv-based OpenSSH invocation, BatchMode, mandatory host-key checking, an operator-selected remote workspace, and optional explicit key/known-hosts paths. It isolates execution from the AIBA host but **does not sandbox commands on the remote host**; confinement there is the remote OS account, filesystem permissions, container/VM policy, and network policy. Remote Compose executes inside an already operator-provisioned service and does not create or secure the Docker daemon, mounts, Compose network, or credentials. These backends isolate only terminal/backend-file operations routed through them; they do **not** isolate MCP subprocesses, browser processes, connector processes, plugin/skill loading, or the AIBA process itself.
 
-### 3.8 Untrusted documents and media
+### 3.8 Session search and user modeling
+
+Session FTS is local, read-only retrieval over concise session summaries. It is disabled by default through `AIBA_SESSION_SEARCH_ENABLED` plus disabled permission rows, bounded to 25 search results/50 history rows, sanitizes/bounds FTS input, and always scopes SQL retrieval to the authenticated connector-qualified `user_key`. It is available only through explicit `session_search` / `session_history` tool calls; session results are **not automatically injected** into model context or the durable-memory RetrievalEngine. The SQLite database remains under `AIBA_DATA_DIR` and this feature does not scan arbitrary host paths.
+
+Phase 6 adds no external user-modeling, analytics, enrichment, embeddings, or data-egress service. Any future external profiling/modeling or remote memory index requires a separate privacy/data-egress review, explicit operator opt-in, documented retention/deletion behavior, and provider-boundary analysis.
+
+### 3.9 Untrusted documents and media
 
 Parsers operate read-only on source files and do not execute macros, evaluate
 spreadsheet formulas, or follow embedded links. Parser libraries still process
