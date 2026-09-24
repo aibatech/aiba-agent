@@ -12,6 +12,7 @@
 - Phase 3: added a TerminalBackend contract, preserved Docker, and added default-off SSH plus self-hostable remote Docker Compose execution. SSH uses mandatory host-key verification and workspace-confined backend file paths; remote execution is explicitly documented as not being a sandbox by itself.
 - Phase 4: added a uniform MessagingAdapter security contract plus default-off Discord and Slack adapters. Both fail closed without owner allowlists; Slack verifies signed events/replay age and outbound rich-text parsing is disabled by default.
 - Phase 5: added Agent Skills core-format validation and package import, plus a Skills Guard static review aid for credential/destructive/network/shell/persistence/prompt-override signals. Agent Skills allowed-tools metadata never grants AIBA permissions, risky packages require explicit reviewed import, and autonomous DSPy/GEPA-style self-evolution remains excluded pending a separate threat model.
+- Phase 6: hardened local FTS5 session retrieval with bounded/sanitized queries, strict authenticated-user scoping, a default-off feature flag plus disabled permission rows, and regression coverage preventing ambient session-history injection. No external user modeling, enrichment, embeddings, analytics, or data-egress service was added.
 
 
 ## 1.6.0 — 2026-09-04 (v1.6.0-rc.2)
