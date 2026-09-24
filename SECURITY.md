@@ -155,7 +155,11 @@ clean scan never upgrades package trust. See docs/AGENT_SKILLS_SECURITY.md.
 
 Terminal execution is default-off at the tool-policy layer. Docker remains the recommended containment posture for model-authored shell/Python. SSH and remote Docker Compose additionally require `AIBA_TERMINAL_BACKENDS_ENABLED=true` and an explicit `AIBA_SANDBOX_MODE` selection. SSH uses argv-based OpenSSH invocation, BatchMode, mandatory host-key checking, an operator-selected remote workspace, and optional explicit key/known-hosts paths. It isolates execution from the AIBA host but **does not sandbox commands on the remote host**; confinement there is the remote OS account, filesystem permissions, container/VM policy, and network policy. Remote Compose executes inside an already operator-provisioned service and does not create or secure the Docker daemon, mounts, Compose network, or credentials. These backends isolate only terminal/backend-file operations routed through them; they do **not** isolate MCP subprocesses, browser processes, connector processes, plugin/skill loading, or the AIBA process itself.
 
-### 3.8 Untrusted documents and media
+### 3.8 Agent migration
+
+OpenClaw/Hermes migration is an operator-only import boundary, preview-only unless `--yes` is supplied. Normal presets never import secrets, auth profiles, MCP/plugin launch configuration, hooks, cron jobs, channel bindings, or remote-execution settings. Existing AIBA targets are not overwritten. Imported skill trees are staged under source-specific import directories and do not gain activation, tools, approvals, or trust from migration. Migration reports must not contain credentials. See `docs/AGENT_MIGRATION.md`.
+
+### 3.9 Untrusted documents and media
 
 Parsers operate read-only on source files and do not execute macros, evaluate
 spreadsheet formulas, or follow embedded links. Parser libraries still process

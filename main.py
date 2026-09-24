@@ -20,7 +20,27 @@ def _maybe_capability_cli(argv: list[str] | None = None) -> int | None:
     return None
 
 
+def _maybe_agent_migration_cli(argv:list[str]|None=None)->int|None:
+    argv=list(sys.argv[1:] if argv is None else argv)
+    if len(argv)<2 or argv[0] not in {"claw","hermes"} or argv[1]!="migrate":return None
+    q=argparse.ArgumentParser(prog=f"aiba {argv[0]} migrate")
+    q.add_argument("--source");q.add_argument("--preset",choices=["user-data","full"],default="user-data")
+    q.add_argument("--dry-run",action="store_true");q.add_argument("--yes",action="store_true")
+    ns=q.parse_args(argv[2:])
+    source_root=Path(__file__).resolve().parent;load_env(source_root/".env")
+    root=Path(os.getenv("AIBA_ROOT",source_root)).resolve();data=Path(os.getenv("AIBA_DATA_DIR",root/"agent_system")).resolve()
+    defaults={"claw":Path.home()/".openclaw","hermes":Path.home()/".hermes"}
+    from migration.agent_import import AgentMigration
+    m=AgentMigration(root,data);plan=m.plan(argv[0],Path(ns.source).expanduser() if ns.source else defaults[argv[0]],ns.preset)
+    if ns.dry_run or not ns.yes:
+        print(json.dumps(plan,indent=2))
+        if not ns.dry_run:print("Dry-run preview only. Re-run with --yes to apply.",file=sys.stderr)
+        return 0
+    print(json.dumps(m.apply(plan),indent=2));return 0
+
 def main():
+    migrated=_maybe_agent_migration_cli()
+    if migrated is not None:raise SystemExit(migrated)
     routed = _maybe_capability_cli()
     if routed is not None:
         raise SystemExit(routed)
