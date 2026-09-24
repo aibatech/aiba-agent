@@ -128,6 +128,8 @@ authenticated reverse-proxy boundary.
 Chat authorization and memory administration are separate. Connector
 allowlists do not imply `AIBA_MEMORY_OWNER_USERS` membership.
 
+New adapters implement the `MessagingAdapter` boundary contract. Discord and Slack are disabled unless their connector-specific enable flag is set and refuse startup without an explicit owner allowlist. Discord ignores bot-authored messages and accepts only allowlisted principals. Slack requires a verified signing-secret signature with a five-minute replay window before event processing and accepts only allowlisted principals. Outbound Slack messages disable rich-text interpretation by default. Neither adapter grants interactive approvals, changes tool permissions, or expands memory-admin scope. Discord gateway delivery and Slack HTTP routing remain deployment surfaces: any Slack listener must follow the loopback/reverse-proxy rule above, and production connector claims require target evidence under `PRODUCTION_GATE.md`.
+
 ### 3.6 Plugins and skills
 
 Installed skill/plugin content is **code or instructions from another trust
