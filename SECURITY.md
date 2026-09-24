@@ -145,7 +145,11 @@ policy, and OS/container envelope. Self-modifying or self-evolving skills requir
 a separate threat-model/design review and are not implicitly authorized by the
 ordinary skill system.
 
-### 3.7 Untrusted documents and media
+### 3.7 Terminal execution backends
+
+Terminal execution is default-off at the tool-policy layer. Docker remains the recommended containment posture for model-authored shell/Python. SSH and remote Docker Compose additionally require `AIBA_TERMINAL_BACKENDS_ENABLED=true` and an explicit `AIBA_SANDBOX_MODE` selection. SSH uses argv-based OpenSSH invocation, BatchMode, mandatory host-key checking, an operator-selected remote workspace, and optional explicit key/known-hosts paths. It isolates execution from the AIBA host but **does not sandbox commands on the remote host**; confinement there is the remote OS account, filesystem permissions, container/VM policy, and network policy. Remote Compose executes inside an already operator-provisioned service and does not create or secure the Docker daemon, mounts, Compose network, or credentials. These backends isolate only terminal/backend-file operations routed through them; they do **not** isolate MCP subprocesses, browser processes, connector processes, plugin/skill loading, or the AIBA process itself.
+
+### 3.8 Untrusted documents and media
 
 Parsers operate read-only on source files and do not execute macros, evaluate
 spreadsheet formulas, or follow embedded links. Parser libraries still process
