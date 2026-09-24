@@ -144,6 +144,28 @@ def _build_stdio_env(srv: _cfg.McpServerConfig) -> dict[str, str] | None:
     return env or None
 
 
+
+def _schema_valid(value: Any, schema: dict[str, Any]) -> bool:
+    """Small fail-closed JSON-schema subset for operator-maintained MCP catalogs."""
+    expected=schema.get("type")
+    if expected=="string" and not isinstance(value,str): return False
+    if expected=="integer" and (not isinstance(value,int) or isinstance(value,bool)): return False
+    if expected=="number" and (not isinstance(value,(int,float)) or isinstance(value,bool)): return False
+    if expected=="boolean" and not isinstance(value,bool): return False
+    if expected=="array":
+        if not isinstance(value,list): return False
+        item_schema=schema.get("items")
+        if isinstance(item_schema,dict) and any(not _schema_valid(x,item_schema) for x in value): return False
+    if expected=="object":
+        if not isinstance(value,dict): return False
+        props=schema.get("properties",{})
+        required=schema.get("required",[])
+        if any(k not in value for k in required): return False
+        if schema.get("additionalProperties") is False and any(k not in props for k in value): return False
+        if any(k in props and not _schema_valid(v,props[k]) for k,v in value.items()): return False
+    if "enum" in schema and value not in schema["enum"]: return False
+    return True
+
 class MCPClientController:
     """Gate + synchronous bridge to configured MCP servers.
 
@@ -376,6 +398,10 @@ class MCPClientController:
                 False,
                 error=f"Invalid MCP tool name for server {server_id!r}.",
             )
+        if tool_row.enabled and (not isinstance(tool_row.input_schema, dict) or not _schema_valid(arguments, tool_row.input_schema)):
+            self._write_audit("mcp_call_denied", server_id=server_id, tool=tool, reason="schema validation failed")
+            return _mk_result(False, error=f"Arguments for MCP tool {tool!r} do not match the operator-maintained input schema.")
+
         if not tool_row.enabled:
             self._write_audit(
                 "mcp_call_denied",
