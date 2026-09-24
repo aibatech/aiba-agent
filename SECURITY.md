@@ -161,7 +161,11 @@ Session FTS is local, read-only retrieval over concise session summaries. It is 
 
 Phase 6 adds no external user-modeling, analytics, enrichment, embeddings, or data-egress service. Any future external profiling/modeling or remote memory index requires a separate privacy/data-egress review, explicit operator opt-in, documented retention/deletion behavior, and provider-boundary analysis.
 
-### 3.9 Untrusted documents and media
+### 3.9 Agent migration
+
+OpenClaw/Hermes migration is an operator-only import boundary, preview-only unless `--yes` is supplied. Normal presets never import secrets, auth profiles, MCP/plugin launch configuration, hooks, cron jobs, channel bindings, or remote-execution settings. Existing AIBA targets are not overwritten. Imported skill trees are staged under source-specific import directories and do not gain activation, tools, approvals, or trust from migration. Migration reports must not contain credentials. See `docs/AGENT_MIGRATION.md`.
+
+### 3.10 Untrusted documents and media
 
 Parsers operate read-only on source files and do not execute macros, evaluate
 spreadsheet formulas, or follow embedded links. Parser libraries still process
