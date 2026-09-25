@@ -6,6 +6,9 @@ from unittest.mock import patch
 from connectors.discord import DiscordConnector
 from security.egress_proxy import PinnedEgressProxy
 from skills import SkillsGuard
+from computer.remote_transport import RemoteNodeRequestVerifier, sign_request
+from mcp_client.client import MCPClientController
+from mcp_client.availability import set_sdk_available_override
 
 class _Agent:
     def __init__(self): self.calls=[]; self.crashes=type("C",(),{"capture":lambda s,e,c:"x"})()
@@ -48,6 +51,32 @@ class AdversarialV17Tests(unittest.TestCase):
         for case in cases:
             with self.subTest(case=str(case)[:80]): self.assertFalse(d.process_event(case))
         self.assertEqual(a.calls,[])
+
+    def test_remote_node_verifier_rejects_bad_credentials_and_replay(self):
+        token="a"*40;wrong="b"*40;body=b'{"action":"screen","arguments":{}}';ts=1000;nonce="n"
+        v=RemoteNodeRequestVerifier(token);bad=sign_request(wrong,"POST","/v1/action",body,ts,nonce)
+        self.assertFalse(v.verify("POST","/v1/action",body,str(ts),nonce,bad,now=1000))
+        good=sign_request(token,"POST","/v1/action",body,ts,nonce)
+        self.assertTrue(v.verify("POST","/v1/action",body,str(ts),nonce,good,now=1000))
+        self.assertFalse(v.verify("POST","/v1/action",body,str(ts),nonce,good,now=1000))
+
+    def test_mcp_schema_mismatch_denied_before_execution(self):
+        from tests.test_mcp import _write_cfg, _base_stdio_server
+        set_sdk_available_override(True);self.addCleanup(set_sdk_available_override,None)
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);_write_cfg(root,{"s":_base_stdio_server()})
+            ctrl=MCPClientController(enabled=True,root_dir=root)
+            with patch.object(ctrl,"_run_async",side_effect=AssertionError("execution must not be reached")):
+                result=ctrl.execute("s","ping",{"text":123,"unexpected":"x"})
+            self.assertFalse(result.ok);self.assertIn("schema",result.error.lower())
+
+    def test_high_risk_capability_warning_is_visibility_only(self):
+        from types import SimpleNamespace
+        from agent.loop import AgentLoop
+        loop=object.__new__(AgentLoop)
+        loop.settings=SimpleNamespace(browser_enabled=True,desktop_enabled=True,mcp_enabled=True,subagents_enabled=True,terminal_backends_enabled=False)
+        with self.assertLogs("aiba.security",level="WARNING") as logs:loop._warn_high_risk_capabilities()
+        self.assertIn("Broad AIBA trust envelope",logs.output[0])
 
     def test_skills_guard_plain_injection_detected_obfuscation_limit_documented(self):
         with tempfile.TemporaryDirectory() as td:
