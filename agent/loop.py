@@ -34,6 +34,7 @@ from vision import VisionAnalyzer
 # ``mcp_client`` (underscore) intentionally does not shadow the ``mcp`` SDK.
 from mcp_client.client import MCPClientController
 from threading import RLock
+import logging
 from onboarding import SetupManager
 from diagnostics import Doctor
 from updates import UpdateManager,UpdateChecker
@@ -131,6 +132,7 @@ class AgentLoop:
             'AIBA_MEDIA_ENABLED': bool(self.settings.media_enabled),
             'AIBA_MCP_ENABLED': bool(self.settings.mcp_enabled),
         }
+        self._warn_high_risk_capabilities()
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy,feature_flags=self.runtime_flags,manifest=self.manifest);self._register_tools()
         legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
         self._seed_legacy_provider();self.router=IntelligentRouter(self.providers,legacy)
@@ -155,6 +157,26 @@ class AgentLoop:
         self.worker=Worker(self.queue,{'agent_task':lambda payload:{'result':self.handle(payload['prompt'],propose_skill=False,task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'),user_id=payload.get('user_id'))}});self.scheduler_runner=SchedulerRunner(self.scheduler)
         if start_worker and self.settings.worker_enabled:self.worker.start();self.scheduler_runner.start();self.update_checker.start()
         self.events.subscribe('*',lambda e:self.audit.record('event',**e))
+    def _warn_high_risk_capabilities(self):
+        """Warn when an operator intentionally opens a broad trust envelope.
+
+        This is visibility only: it never changes operator-selected permissions.
+        """
+        high_risk = {
+            "browser": bool(self.settings.browser_enabled),
+            "desktop": bool(self.settings.desktop_enabled),
+            "mcp": bool(self.settings.mcp_enabled),
+            "delegation": bool(self.settings.subagents_enabled),
+            "remote-terminal": bool(self.settings.terminal_backends_enabled),
+        }
+        enabled = sorted(name for name, value in high_risk.items() if value)
+        if len(enabled) >= 4:
+            logging.getLogger("aiba.security").warning(
+                "Broad AIBA trust envelope: %d high-risk capabilities enabled simultaneously (%s). "
+                "Review SECURITY.md trust-envelope guidance; this warning does not override operator configuration.",
+                len(enabled), ", ".join(enabled),
+            )
+
     def _on_clarify_pending(self, q):
         """A clarify question went pending awaiting async delivery. Publish it
         on the event bus so any connector can render it (e.g. Telegram inline
