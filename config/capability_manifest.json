@@ -76,14 +76,14 @@
     "run_shell": {
       "description": "Run command in sandbox.",
       "risk_class": "process_execution",
-      "default_enabled": false,
+      "default_enabled": true,
       "requires_approval": true,
       "feature_flag": "none"
     },
     "run_python": {
       "description": "Run Python in sandbox.",
       "risk_class": "process_execution",
-      "default_enabled": false,
+      "default_enabled": true,
       "requires_approval": true,
       "feature_flag": "none"
     },
@@ -444,23 +444,37 @@
     "host_list_files": {
       "description": "List files at an explicitly requested path on the paired host computer. Read-only and approval-gated.",
       "risk_class": "read_only_local",
-      "default_enabled": false,
+      "default_enabled": true,
       "requires_approval": true,
       "feature_flag": "AIBA_DESKTOP_ENABLED"
     },
     "host_read_file": {
       "description": "Read text from an explicitly requested file on the paired host computer. Read-only and approval-gated.",
       "risk_class": "read_only_local",
-      "default_enabled": false,
+      "default_enabled": true,
       "requires_approval": true,
       "feature_flag": "AIBA_DESKTOP_ENABLED"
     },
     "host_search_files": {
       "description": "Search filenames below an explicitly requested folder on the paired host computer. Read-only and approval-gated.",
       "risk_class": "read_only_local",
-      "default_enabled": false,
+      "default_enabled": true,
       "requires_approval": true,
       "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "host_write_file": {
+      "description": "Write a host text file outside the workspace after explicit owner approval.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
+    },
+    "host_delete_file": {
+      "description": "Delete a host file outside the workspace after explicit owner approval.",
+      "risk_class": "destructive",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
     }
   }
 }
