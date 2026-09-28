@@ -46,8 +46,7 @@ to a VM/container/OS security boundary.
 
 ### 1.3 Trust-envelope rules
 
-AIBA starts from least privilege. High-risk surfaces are disabled unless their
-feature flag and permission row are both enabled. A capability may not silently
+AIBA starts from explicit authority. Capabilities may be present and advertised while consequential actions remain approval-gated. An owner approval can authorize a specific host-file or local-process action using the AIBA process OS account; it never bypasses OS permissions, sudo/root authentication, container/VM boundaries, or remote authentication. Feature-gated surfaces still require their documented feature flag. A capability may not silently
 expand the envelope of another capability. For example, enabling MCP does not
 enable arbitrary MCP servers; pairing a computer node does not grant clipboard
 or process control; a messaging allowlist does not grant memory administration.
