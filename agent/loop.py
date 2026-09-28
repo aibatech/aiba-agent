@@ -206,6 +206,14 @@ class AgentLoop:
         self.registry.register(Tool('extract_archive','Extract a zip/tar archive into a workspace destination, blocking zip-slip.',self.sandbox.extract_archive,{'type':'object','properties':{'path':{'type':'string'},'dest':{'type':'string'}},'required':['path'],'additionalProperties':False}))
         self.registry.register(Tool('run_shell','Run command in sandbox.',self.sandbox.run_shell,{'type':'object','properties':{'command':{'type':'string'}},'required':['command'],'additionalProperties':False}))
         self.registry.register(Tool('run_python','Run Python in sandbox.',self.sandbox.run_python,{'type':'object','properties':{'code':{'type':'string'}},'required':['code'],'additionalProperties':False}))
+        # Owner-escalation host access: capability exists, but every host operation
+        # remains approval-gated by ToolRegistry and subject to OS permissions.
+        host=HostFiles()
+        self.registry.register(Tool('host_list_files','List files outside the AIBA workspace after owner approval.',host.list,{'type':'object','properties':{'path':{'type':'string'},'limit':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
+        self.registry.register(Tool('host_read_file','Read a host text file outside the workspace after owner approval.',host.read,{'type':'object','properties':{'path':{'type':'string'},'max_chars':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
+        self.registry.register(Tool('host_search_files','Search host filenames outside the workspace after owner approval.',host.search,{'type':'object','properties':{'root':{'type':'string'},'name':{'type':'string'},'limit':{'type':'integer'},'max_depth':{'type':'integer'}},'required':['root','name'],'additionalProperties':False}))
+        self.registry.register(Tool('host_write_file','Write a host text file outside the workspace after owner approval.',host.write,{'type':'object','properties':{'path':{'type':'string'},'content':{'type':'string'}},'required':['path','content'],'additionalProperties':False}))
+        self.registry.register(Tool('host_delete_file','Delete a host file outside the workspace after owner approval.',host.delete,{'type':'object','properties':{'path':{'type':'string'}},'required':['path'],'additionalProperties':False}))
         for wt in self.web_tools:self.registry.register(wt)
         # Read-only document/text extraction (Phase 8). Availability (advertised
         # or denied) follows the AIBA_MEDIA_ENABLED manifest feature flag; each
