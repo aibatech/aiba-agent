@@ -40,7 +40,13 @@ class Sandbox:
     def _run(self,command:str)->ToolResult:
         d=self.policy.check_command(command)
         if not d.allowed:return ToolResult(False,error=d.reason)
-        if self.backend is None:return ToolResult(False,error='Execution backend is not configured')
+        if self.backend is None:
+            # Owner-approved local execution uses the AIBA process OS account.
+            # Approval grants authority; it never bypasses OS permissions.
+            try:
+                cp=subprocess.run(command,shell=True,cwd=self.workspace,text=True,capture_output=True,timeout=self.timeout)
+                return ToolResult(cp.returncode==0,{'returncode':cp.returncode,'stdout':cp.stdout[-12000:],'stderr':cp.stderr[-12000:]},None if cp.returncode==0 else 'Command failed')
+            except Exception as exc:return ToolResult(False,error=f'Local execution failed: {exc}')
         try:r=self.backend.execute(command,self.timeout)
         except Exception as exc:return ToolResult(False,error=f'Execution backend failed: {exc}')
         return ToolResult(r.ok,{'returncode':r.returncode,'stdout':r.stdout[-12000:],'stderr':r.stderr[-12000:]},None if r.ok else 'Command failed')
@@ -48,7 +54,7 @@ class Sandbox:
     def run_python(self, code: str) -> ToolResult:
         if self.backend is not None:
             return self._run("python3 -c " + repr(code))
-        return ToolResult(False,error='Python execution requires a configured terminal backend')
+        return self._run(sys.executable + ' -c ' + __import__('shlex').quote(code))
 
     def patch_file(self, path: str, old: str, new: str, replace_all: bool = False) -> ToolResult:
         """Apply a find-and-replace edit to a workspace text file and return the
