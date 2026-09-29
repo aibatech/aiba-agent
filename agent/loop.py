@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from pathlib import Path
 from contextvars import ContextVar
 from config.settings import Settings
@@ -265,6 +266,8 @@ class AgentLoop:
         self.registry.register(Tool('list_skills','List reusable skills.',lambda:ToolResult(True,self.skills.list()),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('skill_instructions','Read a reviewed portable skill instruction contract.',lambda name:ToolResult(True,self.skills.instructions(name)),{'type':'object','properties':{'name':{'type':'string'}},'required':['name'],'additionalProperties':False}))
         self.registry.register(Tool('run_skill','Run a reviewed reusable skill.',lambda name,variables=None:ToolResult(True,self.skills.execute(name,self.registry,variables or {})),{'type':'object','properties':{'name':{'type':'string'},'variables':{'type':'object'}},'required':['name'],'additionalProperties':False}))
+        self.registry.register(Tool('review_skill_proposals','List pending learned skill create/update proposals for owner review.',lambda:ToolResult(True,[json.loads(p.read_text(encoding='utf-8')) for p in sorted(self.improver.proposals_dir.glob('*.json')) if json.loads(p.read_text(encoding='utf-8')).get('status')=='requires_review']),{'type':'object','properties':{},'additionalProperties':False}))
+        self.registry.register(Tool('approve_skill_proposal','Approve and activate a learned skill proposal by task id.',lambda task_id:ToolResult(True,self.improver.approve(self.improver.proposals_dir/(str(task_id)+'.json')).name),{'type':'object','properties':{'task_id':{'type':'string'}},'required':['task_id'],'additionalProperties':False}))\n        self.registry.register(Tool('skill_feedback','Record owner feedback that a learned skill worked or needs improvement; used as evidence for future revisions.',lambda name,positive=True,note='':ToolResult(True,self.improver.reinforce(name,bool(positive),note)),{'type':'object','properties':{'name':{'type':'string'},'positive':{'type':'boolean'},'note':{'type':'string'}},'required':['name'],'additionalProperties':False}))
         self.registry.register(ClarifyToolFactory.make(self.clarify))
         self.registry.register(Tool('enqueue_task','Queue work to run asynchronously as soon as a worker is available. Use for explicit background/asynchronous work, not future or recurring schedules.',lambda prompt:ToolResult(True,{'job_id':self.queue.enqueue('agent_task',{'prompt':prompt,'user_id':self._current_user})}),{'type':'object','properties':{'prompt':{'type':'string'}},'required':['prompt'],'additionalProperties':False}))
         self.registry.register(Tool('schedule_task','Create a persistent recurring AIBA task at a fixed interval. Use when the user asks for every/each/repeated/ongoing scheduled work. interval_seconds is the recurrence interval (minimum 60 seconds); the first run occurs after one interval. Do not use for ordinary immediate requests.',lambda name,prompt,interval_seconds:ToolResult(True,{'schedule_id':self.scheduler.add_interval(name,'agent_task',{'prompt':prompt,'user_id':self._current_user},int(interval_seconds))}),{'type':'object','properties':{'name':{'type':'string'},'prompt':{'type':'string'},'interval_seconds':{'type':'integer'}},'required':['name','prompt','interval_seconds'],'additionalProperties':False}))
@@ -421,7 +424,14 @@ class AgentLoop:
         if _sid is not None:
             try:self.sessions.append(_sid,summary=(answer[:400] or ''));self.sessions.close_session(_sid)
             except Exception:pass
-        ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
+        ref=self.dream.reflect(task_id,text,answer,used)
+        # Learn from both what just worked and durable owner-scoped memory.
+        # Memory is evidence for a proposal, never authority to activate tools.
+        learned_memory=[]
+        if propose_skill and used and status=='complete':
+            try:learned_memory=self.vault.search(text,5,as_user=self._memory_scope(user_id))
+            except Exception:learned_memory=[]
+        proposal=self.improver.propose(task_id,text,used,answer,learned_memory) if propose_skill and used and status=='complete' else None
         self.metrics.increment('tasks_total',status=status);self.events.publish('task_finished',task_id=task_id,status=status,tools=used,reflection=str(ref),skill_proposal=str(proposal) if proposal else None);return answer
     def _export_memories(self, filename, category=None, as_user=None):
         """Export memories (optionally one category) to a markdown doc in the
