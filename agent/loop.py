@@ -421,7 +421,14 @@ class AgentLoop:
         if _sid is not None:
             try:self.sessions.append(_sid,summary=(answer[:400] or ''));self.sessions.close_session(_sid)
             except Exception:pass
-        ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
+        ref=self.dream.reflect(task_id,text,answer,used)
+        # Learn from both what just worked and durable owner-scoped memory.
+        # Memory is evidence for a proposal, never authority to activate tools.
+        learned_memory=[]
+        if propose_skill and used and status=='complete':
+            try:learned_memory=self.vault.search(text,5,as_user=self._memory_scope(user_id))
+            except Exception:learned_memory=[]
+        proposal=self.improver.propose(task_id,text,used,answer,learned_memory) if propose_skill and used and status=='complete' else None
         self.metrics.increment('tasks_total',status=status);self.events.publish('task_finished',task_id=task_id,status=status,tools=used,reflection=str(ref),skill_proposal=str(proposal) if proposal else None);return answer
     def _export_memories(self, filename, category=None, as_user=None):
         """Export memories (optionally one category) to a markdown doc in the
