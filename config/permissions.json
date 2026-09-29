@@ -239,6 +239,14 @@
     "host_search_files": {
       "enabled": false,
       "requires_approval": true
+    },
+    "review_skill_proposals": {
+      "enabled": true,
+      "requires_approval": false
+    },
+    "approve_skill_proposal": {
+      "enabled": true,
+      "requires_approval": true
     }
   },
   "blocked_command_fragments": [
