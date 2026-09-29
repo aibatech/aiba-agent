@@ -247,6 +247,10 @@
     "approve_skill_proposal": {
       "enabled": true,
       "requires_approval": true
+    },
+    "skill_feedback": {
+      "enabled": true,
+      "requires_approval": false
     }
   },
   "blocked_command_fragments": [
