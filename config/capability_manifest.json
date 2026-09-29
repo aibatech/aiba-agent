@@ -461,6 +461,20 @@
       "default_enabled": false,
       "requires_approval": true,
       "feature_flag": "AIBA_DESKTOP_ENABLED"
+    },
+    "review_skill_proposals": {
+      "description": "List pending memory-informed learned skill proposals.",
+      "risk_class": "read_only_local",
+      "default_enabled": true,
+      "requires_approval": false,
+      "feature_flag": "none"
+    },
+    "approve_skill_proposal": {
+      "description": "Approve and activate a staged learned skill create/update proposal.",
+      "risk_class": "local_mutation",
+      "default_enabled": true,
+      "requires_approval": true,
+      "feature_flag": "none"
     }
   }
 }
