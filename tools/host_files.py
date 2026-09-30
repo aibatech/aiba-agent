@@ -99,4 +99,19 @@ class HostFiles:
                     if len(found) >= cap:
                         return ToolResult(True, {"root": str(base), "query": name, "matches": found, "truncated": True})
         return ToolResult(True, {"root": str(base), "query": name, "matches": found, "truncated": False})
-\n    def write(self, path: str, content: str) -> ToolResult:\n        p = _safe_host_path(path)\n        try:\n            p.parent.mkdir(parents=True, exist_ok=True)\n            p.write_text(content, encoding="utf-8")\n        except (PermissionError, OSError) as exc:\n            return ToolResult(False, error=f"Host file write denied by OS: {exc}")\n        return ToolResult(True, {"path": str(p), "bytes": len(content.encode("utf-8"))})\n\n    def delete(self, path: str) -> ToolResult:\n        p = _safe_host_path(path)\n        if not p.is_file(): return ToolResult(False, error=f"Host file does not exist or is not a file: {p}")\n        try: p.unlink()\n        except (PermissionError, OSError) as exc: return ToolResult(False, error=f"Host file delete denied by OS: {exc}")\n        return ToolResult(True, {"deleted": str(p)})\n
+
+    def write(self, path: str, content: str) -> ToolResult:
+        p = _safe_host_path(path)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+        except (PermissionError, OSError) as exc:
+            return ToolResult(False, error=f"Host file write denied by OS: {exc}")
+        return ToolResult(True, {"path": str(p), "bytes": len(content.encode("utf-8"))})
+
+    def delete(self, path: str) -> ToolResult:
+        p = _safe_host_path(path)
+        if not p.is_file(): return ToolResult(False, error=f"Host file does not exist or is not a file: {p}")
+        try: p.unlink()
+        except (PermissionError, OSError) as exc: return ToolResult(False, error=f"Host file delete denied by OS: {exc}")
+        return ToolResult(True, {"deleted": str(p)})
