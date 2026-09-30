@@ -247,6 +247,14 @@
     "host_delete_file": {
       "enabled": true,
       "requires_approval": true
+    },
+    "secret_list_names": {
+      "enabled": true,
+      "requires_approval": true
+    },
+    "secret_copy_env": {
+      "enabled": true,
+      "requires_approval": true
     }
   },
   "blocked_command_fragments": [
