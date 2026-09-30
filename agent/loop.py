@@ -14,6 +14,7 @@ from tools.clarify import Clarify, ClarifyToolFactory
 from tools.web import WebTools, build_web_tools
 from tools.media import MediaExtraction, build_media_tools
 from tools.host_files import HostFiles
+from tools.secret_admin import SecretAdmin
 from tools.registry import ToolRegistry
 from memory.vault import MemoryVault, SHARED
 from memory.retrieval import RetrievalEngine
@@ -206,6 +207,17 @@ class AgentLoop:
         self.registry.register(Tool('extract_archive','Extract a zip/tar archive into a workspace destination, blocking zip-slip.',self.sandbox.extract_archive,{'type':'object','properties':{'path':{'type':'string'},'dest':{'type':'string'}},'required':['path'],'additionalProperties':False}))
         self.registry.register(Tool('run_shell','Run command in sandbox.',self.sandbox.run_shell,{'type':'object','properties':{'command':{'type':'string'}},'required':['command'],'additionalProperties':False}))
         self.registry.register(Tool('run_python','Run Python in sandbox.',self.sandbox.run_python,{'type':'object','properties':{'code':{'type':'string'}},'required':['code'],'additionalProperties':False}))
+        # Owner-escalation host access: capability exists, but every host operation
+        # remains approval-gated by ToolRegistry and subject to OS permissions.
+        host=HostFiles()
+        self.registry.register(Tool('host_list_files','List files outside the AIBA workspace after owner approval.',host.list,{'type':'object','properties':{'path':{'type':'string'},'limit':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
+        self.registry.register(Tool('host_read_file','Read a host text file outside the workspace after owner approval.',host.read,{'type':'object','properties':{'path':{'type':'string'},'max_chars':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
+        self.registry.register(Tool('host_search_files','Search host filenames outside the workspace after owner approval.',host.search,{'type':'object','properties':{'root':{'type':'string'},'name':{'type':'string'},'limit':{'type':'integer'},'max_depth':{'type':'integer'}},'required':['root','name'],'additionalProperties':False}))
+        self.registry.register(Tool('host_write_file','Write a host text file outside the workspace after owner approval.',host.write,{'type':'object','properties':{'path':{'type':'string'},'content':{'type':'string'}},'required':['path','content'],'additionalProperties':False}))
+        self.registry.register(Tool('host_delete_file','Delete a host file outside the workspace after owner approval.',host.delete,{'type':'object','properties':{'path':{'type':'string'}},'required':['path'],'additionalProperties':False}))
+        secrets=SecretAdmin()
+        self.registry.register(Tool('secret_list_names','List environment variable names in an owner-selected .env without exposing values.',secrets.list_names,{'type':'object','properties':{'source_path':{'type':'string'}},'required':['source_path'],'additionalProperties':False}))
+        self.registry.register(Tool('secret_copy_env','Copy one named secret between owner-selected .env files without exposing its value to the model.',secrets.copy_env_secret,{'type':'object','properties':{'source_path':{'type':'string'},'destination_path':{'type':'string'},'key':{'type':'string'}},'required':['source_path','destination_path','key'],'additionalProperties':False}))
         for wt in self.web_tools:self.registry.register(wt)
         # Read-only document/text extraction (Phase 8). Availability (advertised
         # or denied) follows the AIBA_MEDIA_ENABLED manifest feature flag; each
@@ -253,14 +265,6 @@ class AgentLoop:
         self.registry.register(Tool('desktop_clipboard_read','Read clipboard (opt-in).',lambda: self.computer.clipboard_read(),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('desktop_clipboard_write','Set clipboard to a string.',lambda text:self.computer.clipboard_write(text),{'type':'object','properties':{'text':{'type':'string'}},'required':['text'],'additionalProperties':False}))
         self.registry.register(Tool('desktop_node_status','Report node pairing + remaining budget.',lambda: ToolResult(True,self.computer_node.status()),{'type':'object','properties':{},'additionalProperties':False}))
-        # Host files are deliberately separate from sandbox files. They exist only
-        # when desktop access is explicitly enabled, are read-only, and every call
-        # is approval-gated by permissions.json with the requested path visible.
-        if self.settings.desktop_enabled:
-            host_files=HostFiles()
-            self.registry.register(Tool('host_list_files','List files on the paired host computer at an explicitly requested path. Requires user approval; read-only.',host_files.list,{'type':'object','properties':{'path':{'type':'string'},'limit':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
-            self.registry.register(Tool('host_read_file','Read a text file from the paired host computer. Requires user approval; read-only; credential/key directories are blocked.',host_files.read,{'type':'object','properties':{'path':{'type':'string'},'max_chars':{'type':'integer'}},'required':['path'],'additionalProperties':False}))
-            self.registry.register(Tool('host_search_files','Search filenames below an explicitly requested host folder. Requires user approval; read-only; does not follow symlinks.',host_files.search,{'type':'object','properties':{'root':{'type':'string'},'name':{'type':'string'},'limit':{'type':'integer'},'max_depth':{'type':'integer'}},'required':['root','name'],'additionalProperties':False}))
         self.registry.register(Tool('vision_analyze','Analyze a workspace image.',lambda image_path,instruction='Describe actionable interface elements.':self.vision.analyze(str(self.sandbox.resolve(image_path)),instruction),{'type':'object','properties':{'image_path':{'type':'string'},'instruction':{'type':'string'}},'required':['image_path'],'additionalProperties':False}))
         self.registry.register(Tool('list_skills','List reusable skills.',lambda:ToolResult(True,self.skills.list()),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('skill_instructions','Read a reviewed portable skill instruction contract.',lambda name:ToolResult(True,self.skills.instructions(name)),{'type':'object','properties':{'name':{'type':'string'}},'required':['name'],'additionalProperties':False}))

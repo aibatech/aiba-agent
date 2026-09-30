@@ -1,4 +1,4 @@
-"""Approval-gated, read-only host filesystem access for a paired desktop.
+"""Approval-gated host filesystem access for an owner-controlled AIBA session.
 
 These tools are intentionally separate from the sandbox. They never write, execute,
 or silently broaden access. The ToolRegistry approval prompt includes the requested
@@ -99,3 +99,19 @@ class HostFiles:
                     if len(found) >= cap:
                         return ToolResult(True, {"root": str(base), "query": name, "matches": found, "truncated": True})
         return ToolResult(True, {"root": str(base), "query": name, "matches": found, "truncated": False})
+
+    def write(self, path: str, content: str) -> ToolResult:
+        p = _safe_host_path(path)
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(content, encoding="utf-8")
+        except (PermissionError, OSError) as exc:
+            return ToolResult(False, error=f"Host file write denied by OS: {exc}")
+        return ToolResult(True, {"path": str(p), "bytes": len(content.encode("utf-8"))})
+
+    def delete(self, path: str) -> ToolResult:
+        p = _safe_host_path(path)
+        if not p.is_file(): return ToolResult(False, error=f"Host file does not exist or is not a file: {p}")
+        try: p.unlink()
+        except (PermissionError, OSError) as exc: return ToolResult(False, error=f"Host file delete denied by OS: {exc}")
+        return ToolResult(True, {"deleted": str(p)})

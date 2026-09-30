@@ -37,11 +37,11 @@
       "requires_approval": true
     },
     "run_shell": {
-      "enabled": false,
+      "enabled": true,
       "requires_approval": true
     },
     "run_python": {
-      "enabled": false,
+      "enabled": true,
       "requires_approval": true
     },
     "web_search": {
@@ -229,15 +229,31 @@
       "requires_approval": true
     },
     "host_list_files": {
-      "enabled": false,
+      "enabled": true,
       "requires_approval": true
     },
     "host_read_file": {
-      "enabled": false,
+      "enabled": true,
       "requires_approval": true
     },
     "host_search_files": {
-      "enabled": false,
+      "enabled": true,
+      "requires_approval": true
+    },
+    "host_write_file": {
+      "enabled": true,
+      "requires_approval": true
+    },
+    "host_delete_file": {
+      "enabled": true,
+      "requires_approval": true
+    },
+    "secret_list_names": {
+      "enabled": true,
+      "requires_approval": true
+    },
+    "secret_copy_env": {
+      "enabled": true,
       "requires_approval": true
     }
   },
