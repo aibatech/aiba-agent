@@ -6,6 +6,7 @@ from security.audit import AuditLog
 from tools.registry import ToolRegistry
 from tools.base import Tool
 from tools.host_files import HostFiles
+from tools.sandbox import Sandbox
 
 class OwnerCapabilityTests(unittest.TestCase):
     def test_host_write_requires_approval_then_executes(self):
@@ -19,4 +20,15 @@ class OwnerCapabilityTests(unittest.TestCase):
             with approvals.request_scope(['host_write_file']):
                 ok=reg.execute('host_write_file',{'path':str(target),'content':'x'});self.assertTrue(ok.ok);self.assertEqual(target.read_text(),'x')
 
+    def test_local_shell_and_python_execute_without_shell_true(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);ws=root/'ws';ws.mkdir();perms=root/'p.json'
+            perms.write_text(json.dumps({'version':1,'tools':{}}))
+            policy=SecurityPolicy(ws,perms,False);box=Sandbox(ws,10,policy)
+            shell=box.run_shell('echo aiba-owner-shell')
+            self.assertTrue(shell.ok);self.assertIn('aiba-owner-shell',shell.output['stdout'])
+            py=box.run_python("print('aiba-owner-python')")
+            self.assertTrue(py.ok);self.assertIn('aiba-owner-python',py.output['stdout'])
+
 if __name__=='__main__':unittest.main()
+
