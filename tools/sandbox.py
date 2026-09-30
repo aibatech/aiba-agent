@@ -1,5 +1,5 @@
 from __future__ import annotations
-import shutil,subprocess,sys
+import os,shlex,shutil,subprocess,sys
 from execution.backends import DockerBackend,SSHBackend,RemoteDockerComposeBackend
 from pathlib import Path
 from .base import ToolResult
@@ -44,7 +44,14 @@ class Sandbox:
             # Owner-approved local execution uses the AIBA process OS account.
             # Approval grants authority; it never bypasses OS permissions.
             try:
-                cp=subprocess.run(command,shell=True,cwd=self.workspace,text=True,capture_output=True,timeout=self.timeout)
+                # Invoke an explicit OS shell executable without Python's shell=True.
+                # This remains an approval-gated owner capability; argv prevents
+                # Python from implicitly selecting/interpolating a shell.
+                if os.name == 'nt':
+                    argv=[os.environ.get('COMSPEC','cmd.exe'),'/d','/s','/c',command]
+                else:
+                    argv=[os.environ.get('SHELL') or '/bin/sh','-c',command]
+                cp=subprocess.run(argv,shell=False,cwd=self.workspace,text=True,capture_output=True,timeout=self.timeout)
                 return ToolResult(cp.returncode==0,{'returncode':cp.returncode,'stdout':cp.stdout[-12000:],'stderr':cp.stderr[-12000:]},None if cp.returncode==0 else 'Command failed')
             except Exception as exc:return ToolResult(False,error=f'Local execution failed: {exc}')
         try:r=self.backend.execute(command,self.timeout)
@@ -54,7 +61,12 @@ class Sandbox:
     def run_python(self, code: str) -> ToolResult:
         if self.backend is not None:
             return self._run("python3 -c " + repr(code))
-        return self._run(sys.executable + ' -c ' + __import__('shlex').quote(code))
+        d=self.policy.check_command("python -c <approved code>")
+        if not d.allowed:return ToolResult(False,error=d.reason)
+        try:
+            cp=subprocess.run([sys.executable,'-c',code],shell=False,cwd=self.workspace,text=True,capture_output=True,timeout=self.timeout)
+            return ToolResult(cp.returncode==0,{'returncode':cp.returncode,'stdout':cp.stdout[-12000:],'stderr':cp.stderr[-12000:]},None if cp.returncode==0 else 'Command failed')
+        except Exception as exc:return ToolResult(False,error=f'Local Python execution failed: {exc}')
 
     def patch_file(self, path: str, old: str, new: str, replace_all: bool = False) -> ToolResult:
         """Apply a find-and-replace edit to a workspace text file and return the
