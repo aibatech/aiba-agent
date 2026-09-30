@@ -14,6 +14,7 @@ from tools.clarify import Clarify, ClarifyToolFactory
 from tools.web import WebTools, build_web_tools
 from tools.media import MediaExtraction, build_media_tools
 from tools.host_files import HostFiles
+from tools.secret_admin import SecretAdmin
 from tools.registry import ToolRegistry
 from memory.vault import MemoryVault, SHARED
 from memory.retrieval import RetrievalEngine
@@ -214,6 +215,9 @@ class AgentLoop:
         self.registry.register(Tool('host_search_files','Search host filenames outside the workspace after owner approval.',host.search,{'type':'object','properties':{'root':{'type':'string'},'name':{'type':'string'},'limit':{'type':'integer'},'max_depth':{'type':'integer'}},'required':['root','name'],'additionalProperties':False}))
         self.registry.register(Tool('host_write_file','Write a host text file outside the workspace after owner approval.',host.write,{'type':'object','properties':{'path':{'type':'string'},'content':{'type':'string'}},'required':['path','content'],'additionalProperties':False}))
         self.registry.register(Tool('host_delete_file','Delete a host file outside the workspace after owner approval.',host.delete,{'type':'object','properties':{'path':{'type':'string'}},'required':['path'],'additionalProperties':False}))
+        secrets=SecretAdmin()
+        self.registry.register(Tool('secret_list_names','List environment variable names in an owner-selected .env without exposing values.',secrets.list_names,{'type':'object','properties':{'source_path':{'type':'string'}},'required':['source_path'],'additionalProperties':False}))
+        self.registry.register(Tool('secret_copy_env','Copy one named secret between owner-selected .env files without exposing its value to the model.',secrets.copy_env_secret,{'type':'object','properties':{'source_path':{'type':'string'},'destination_path':{'type':'string'},'key':{'type':'string'}},'required':['source_path','destination_path','key'],'additionalProperties':False}))
         for wt in self.web_tools:self.registry.register(wt)
         # Read-only document/text extraction (Phase 8). Availability (advertised
         # or denied) follows the AIBA_MEDIA_ENABLED manifest feature flag; each
