@@ -33,6 +33,7 @@ class TelegramConnector:
         self.transport = transport or self._request
         self.stop_event = threading.Event();self.thread: threading.Thread | None = None;self.offset = 0
         self._typing_threads: dict[int, threading.Thread] = {};self._last_hb: dict[int, float] = {};self._hb_lock = threading.Lock()
+        self._callback_lock = threading.Lock();self._callback_inflight: set[str] = set()
         self._update_prompted_version: str | None = None
 
     @classmethod
@@ -102,15 +103,29 @@ class TelegramConnector:
         return processed
 
     def handle_callback(self,callback_query:dict)->str|None:
-        data=callback_query.get("data") or "";user=(callback_query.get("from") or {}).get("id");chat_id=((callback_query.get("message") or {}).get("chat") or {}).get("id")
+        data=callback_query.get("data") or "";user=(callback_query.get("from") or {}).get("id");message=callback_query.get("message") or {};chat_id=(message.get("chat") or {}).get("id");callback_id=str(callback_query.get("id") or "")
         if user not in self.allowed_users or not chat_id:return None
-        answer=self.on_callback(int(chat_id),data)
-        try:
-            payload={"callback_query_id":callback_query.get("id","")}
-            if answer is not None:payload["text"]=answer
-            self.transport("answerCallbackQuery",payload)
+        # Acknowledge immediately so Telegram stops the button spinner. Do not
+        # wait for the model response before giving the user click feedback.
+        try:self.transport("answerCallbackQuery",{"callback_query_id":callback_id,"text":"Working…"})
         except Exception:pass
-        return data
+        # Telegram may redeliver an update, and a user can tap twice before the
+        # first model turn finishes. Treat the question id as an idempotency key.
+        qid=data.split(":",2)[1] if data.startswith("clar:") and len(data.split(":",2))==3 else ""
+        key=f"clar:{qid}" if qid else f"callback:{callback_id or data}"
+        with self._callback_lock:
+            if key in self._callback_inflight:return data
+            self._callback_inflight.add(key)
+        try:
+            answer=self.on_callback(int(chat_id),data)
+            # Remove the keyboard as soon as the choice is accepted so it cannot
+            # be tapped again while AIBA is generating the continuation.
+            if qid:
+                try:self.transport("editMessageReplyMarkup",{"chat_id":int(chat_id),"message_id":message.get("message_id"),"reply_markup":json.dumps({"inline_keyboard":[]})})
+                except Exception:pass
+            return data
+        finally:
+            with self._callback_lock:self._callback_inflight.discard(key)
 
     def on_callback(self,chat_id:int,data:str)->str|None:
         if data.startswith("update:"):
@@ -137,6 +152,7 @@ class TelegramConnector:
                 _,qid,choice=parts
                 try:
                     get_question=getattr(self.agent.clarify,"get",None);q=get_question(qid) if callable(get_question) else None
+                    if q is None or q.answer is not None:return "Already handled."
                     if not self.agent.clarify.answer(qid,choice):return None
                     selected=choice
                     if q is not None:
