@@ -2,6 +2,8 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Callable, Iterable
+import hashlib
+import json
 
 
 class ApprovalManager:
@@ -31,6 +33,28 @@ class ApprovalManager:
         finally:
             self._requested.reset(request_token)
             self._grants.reset(grant_token)
+
+    @staticmethod
+    def action_fingerprint(action: str, arguments: dict) -> str:
+        canonical = json.dumps({"tool": action, "arguments": arguments}, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    def approve_exact(self, action: str, arguments: dict, reason: str = "") -> bool:
+        fingerprint = self.action_fingerprint(action, arguments)
+        # Existing tool-only grants remain supported for backward compatibility,
+        # but sensitive callers can require the exact fingerprint grant.
+        if fingerprint in self._grants.get():
+            return True
+        if self.auto_approve:
+            return True
+        if not self.interactive:
+            current = list(self._requested.get())
+            item = {"tool": action, "fingerprint": fingerprint, "reason": reason}
+            if item not in current:
+                current.append(item)
+                self._requested.set(tuple(current))
+            return False
+        return self.input_fn(f"Approve exact {action} ({reason})? [y/N] ").strip().lower() in {"y", "yes"}
 
     def pending_requests(self) -> list[dict[str, str]]:
         return [dict(item) for item in self._requested.get()]
