@@ -118,7 +118,7 @@ class ToolRegistry:
         decision=self.policy.check_tool(name)
         if tool is None:
             return ToolResult(False,error=f'Unknown tool: {name}')
-        if decision.requires_approval and not self.approvals.approve(name,str(_scrub_args_for_surface(name,args))[:500]):
+        if decision.requires_approval and not (self.approvals.approve_exact(name,args,str(_scrub_args_for_surface(name,args))[:500]) if name.startswith(('host_', 'secret_')) else self.approvals.approve(name,str(_scrub_args_for_surface(name,args))[:500])):
             self.audit.record('tool_denied',tool=name,arguments=_scrub_args_for_surface(name,args)); return ToolResult(False,error='User approval denied')
         if not isinstance(args,dict):return ToolResult(False,error='Tool arguments must be an object')
         schema=tool.parameters; props=schema.get('properties',{}); required=schema.get('required',[])
