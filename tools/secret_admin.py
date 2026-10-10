@@ -35,20 +35,22 @@ class SecretAdmin:
         try:
             src=_env(source_path); values=_parse(src)
             if key not in values:return ToolResult(False,error=f"Secret key not found: {key}")
-            dest=Path(os.path.expanduser(os.path.expandvars(destination_path)))\n            if dest.is_symlink(): return ToolResult(False,error="Destination symlinks are not supported")\n            dest=dest.resolve()
+            dest=Path(os.path.expanduser(os.path.expandvars(destination_path)))
+            if dest.is_symlink(): return ToolResult(False,error="Destination symlinks are not supported")
+            dest=dest.resolve()
             if src == dest: return ToolResult(False,error="Source and destination must differ")
             if dest.is_symlink(): return ToolResult(False,error="Destination symlinks are not supported")
             dest.parent.mkdir(parents=True,exist_ok=True)
             original=dest.read_text(encoding="utf-8") if dest.is_file() else ""
             lines=original.splitlines(keepends=True)
-            replacement=key+"="+values[key]+"\\n"
+            replacement=key+"="+values[key]+"\n"
             matched=False
             for i,line in enumerate(lines):
                 if line.strip().startswith(key+"="):
                     lines[i]=replacement
                     matched=True
             if not matched:
-                if lines and not lines[-1].endswith("\\n"): lines.append("\\n")
+                if lines and not lines[-1].endswith("\n"): lines.append("\n")
                 lines.append(replacement)
             fd,tmp=tempfile.mkstemp(prefix=".aiba-secret-",dir=str(dest.parent))
             try:
