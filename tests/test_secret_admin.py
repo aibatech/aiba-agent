@@ -14,4 +14,21 @@ class SecretAdminTests(unittest.TestCase):
             self.assertIn("GEMINI_API_KEY=super-secret-value",dst.read_text())
             self.assertNotIn("OTHER_KEY",dst.read_text())
 
+    def test_preserves_unrelated_config_and_comments(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);src=root/"source.env";dst=root/"target.env"
+            src.write_text("API_KEY=new-value\\n")
+            dst.write_text("# preserve this\\nOTHER_KEY=keep\\nAPI_KEY=old-value\\n")
+            result=SecretAdmin().copy_env_secret(str(src),str(dst),"API_KEY")
+            self.assertTrue(result.ok)
+            self.assertEqual(dst.read_text(),"# preserve this\\nOTHER_KEY=keep\\nAPI_KEY=new-value\\n")
+    def test_refuses_same_file_and_destination_symlink(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td);src=root/"source.env";src.write_text("API_KEY=secret\\n")
+            self.assertFalse(SecretAdmin().copy_env_secret(str(src),str(src),"API_KEY").ok)
+            link=root/"link.env"
+            try: link.symlink_to(src)
+            except (OSError,NotImplementedError): return
+            self.assertFalse(SecretAdmin().copy_env_secret(str(src),str(link),"API_KEY").ok)
+
 if __name__=="__main__":unittest.main()
