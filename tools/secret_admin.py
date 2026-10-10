@@ -35,7 +35,7 @@ class SecretAdmin:
         try:
             src=_env(source_path); values=_parse(src)
             if key not in values:return ToolResult(False,error=f"Secret key not found: {key}")
-            dest=Path(os.path.expanduser(os.path.expandvars(destination_path))).resolve()
+            dest=Path(os.path.expanduser(os.path.expandvars(destination_path)))\n            if dest.is_symlink(): return ToolResult(False,error="Destination symlinks are not supported")\n            dest=dest.resolve()
             if src == dest: return ToolResult(False,error="Source and destination must differ")
             if dest.is_symlink(): return ToolResult(False,error="Destination symlinks are not supported")
             dest.parent.mkdir(parents=True,exist_ok=True)
