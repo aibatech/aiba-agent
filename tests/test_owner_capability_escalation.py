@@ -17,7 +17,7 @@ class OwnerCapabilityTests(unittest.TestCase):
             target=root/'outside.txt'
             with approvals.request_scope():
                 denied=reg.execute('host_write_file',{'path':str(target),'content':'x'});self.assertFalse(denied.ok);self.assertFalse(target.exists());self.assertEqual(approvals.pending_requests()[0]['tool'],'host_write_file')
-            with approvals.request_scope(['host_write_file']):
+            with approvals.request_scope([approvals.action_fingerprint('host_write_file',{'path':str(target),'content':'x'})]):
                 ok=reg.execute('host_write_file',{'path':str(target),'content':'x'});self.assertTrue(ok.ok);self.assertEqual(target.read_text(),'x')
 
     def test_local_shell_and_python_execute_without_shell_true(self):
