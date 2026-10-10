@@ -5,7 +5,7 @@ conversation context, or audit arguments. Explicit approval is supplied by the
 ToolRegistry permission row.
 """
 from __future__ import annotations
-import os,re
+import os,re,tempfile
 from pathlib import Path
 from .base import ToolResult
 
@@ -36,13 +36,29 @@ class SecretAdmin:
             src=_env(source_path); values=_parse(src)
             if key not in values:return ToolResult(False,error=f"Secret key not found: {key}")
             dest=Path(os.path.expanduser(os.path.expandvars(destination_path))).resolve()
-            existing=_parse(dest) if dest.is_file() else {}
-            existing[key]=values[key]
+            if src == dest: return ToolResult(False,error="Source and destination must differ")
+            if dest.is_symlink(): return ToolResult(False,error="Destination symlinks are not supported")
             dest.parent.mkdir(parents=True,exist_ok=True)
-            tmp=dest.with_name(dest.name+".aiba-tmp")
-            tmp.write_text("\n".join(f"{k}={v}" for k,v in existing.items())+"\n",encoding="utf-8")
-            try: os.chmod(tmp,0o600)
-            except OSError: pass
-            os.replace(tmp,dest)
+            original=dest.read_text(encoding="utf-8") if dest.is_file() else ""
+            lines=original.splitlines(keepends=True)
+            replacement=key+"="+values[key]+"\\n"
+            matched=False
+            for i,line in enumerate(lines):
+                if line.strip().startswith(key+"="):
+                    lines[i]=replacement
+                    matched=True
+            if not matched:
+                if lines and not lines[-1].endswith("\\n"): lines.append("\\n")
+                lines.append(replacement)
+            fd,tmp=tempfile.mkstemp(prefix=".aiba-secret-",dir=str(dest.parent))
+            try:
+                os.fchmod(fd,0o600)
+                with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                    handle.writelines(lines)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(tmp,dest)
+            finally:
+                if os.path.exists(tmp): os.unlink(tmp)
             return ToolResult(True,{"copied":key,"destination":str(dest),"secret_value":"[REDACTED]"})
         except Exception as exc:return ToolResult(False,error=f"Secret transfer failed: {type(exc).__name__}: {exc}")
