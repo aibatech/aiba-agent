@@ -25,6 +25,11 @@ class ExactApprovalTests(unittest.TestCase):
                 self.assertFalse(registry.execute("host_write_file",args).ok)
                 self.assertFalse(registry.execute("host_write_file",{"path":"/tmp/other","content":"hello"}).ok)
                 self.assertEqual(calls,["/tmp/approved"])
+    def test_auto_approve_cannot_bypass_sensitive_approval(self):
+        approvals=ApprovalManager(interactive=False,auto_approve=True)
+        with approvals.request_scope():
+            self.assertFalse(approvals.approve_exact("secret_copy_env",{"key":"TOKEN"}))
+
     def test_legacy_tool_name_does_not_grant_sensitive_operation(self):
         approvals=ApprovalManager(interactive=False)
         with approvals.request_scope(["secret_copy_env"]):
