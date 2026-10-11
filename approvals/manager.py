@@ -17,6 +17,7 @@ class ApprovalManager:
         self._grants: ContextVar[frozenset[str]] = ContextVar(
             "aiba_approval_grants", default=frozenset()
         )
+        self._consumed: ContextVar[frozenset[str]] = ContextVar("aiba_consumed", default=frozenset())
         self._requested: ContextVar[tuple[dict[str, str], ...]] = ContextVar(
             "aiba_approval_requests", default=()
         )
@@ -28,9 +29,11 @@ class ApprovalManager:
         )
         grant_token = self._grants.set(grants)
         request_token = self._requested.set(())
+        consumed_token = self._consumed.set(frozenset())
         try:
             yield self
         finally:
+            self._consumed.reset(consumed_token)
             self._requested.reset(request_token)
             self._grants.reset(grant_token)
 
@@ -43,7 +46,8 @@ class ApprovalManager:
         fingerprint = self.action_fingerprint(action, arguments)
         # Existing tool-only grants remain supported for backward compatibility,
         # but sensitive callers can require the exact fingerprint grant.
-        if fingerprint in self._grants.get():
+        if fingerprint in self._grants.get() and fingerprint not in self._consumed.get():
+            self._consumed.set(self._consumed.get() | {fingerprint})
             return True
         if self.auto_approve:
             return True
