@@ -22,6 +22,7 @@ class ExactApprovalTests(unittest.TestCase):
             token=approvals.action_fingerprint("host_write_file",args)
             with approvals.request_scope([token]):
                 self.assertTrue(registry.execute("host_write_file",args).ok)
+                self.assertFalse(registry.execute("host_write_file",args).ok)
                 self.assertFalse(registry.execute("host_write_file",{"path":"/tmp/other","content":"hello"}).ok)
                 self.assertEqual(calls,["/tmp/approved"])
     def test_legacy_tool_name_does_not_grant_sensitive_operation(self):
