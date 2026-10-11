@@ -49,8 +49,6 @@ class ApprovalManager:
         if fingerprint in self._grants.get() and fingerprint not in self._consumed.get():
             self._consumed.set(self._consumed.get() | {fingerprint})
             return True
-        if self.auto_approve:
-            return True
         if not self.interactive:
             current = list(self._requested.get())
             item = {"tool": action, "fingerprint": fingerprint, "reason": reason}
