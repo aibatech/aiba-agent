@@ -6,7 +6,7 @@ from approvals.manager import ApprovalManager
 from security.audit import AuditLog
 from security.policy import SecurityPolicy
 from tools.base import Tool, ToolResult
-from tools.registry import ToolRegistry
+from tools.registry import ToolRegistry, _scrub_args_for_surface
 
 class ExactApprovalTests(unittest.TestCase):
     def test_exact_grant_does_not_authorize_different_path(self):
@@ -25,6 +25,12 @@ class ExactApprovalTests(unittest.TestCase):
                 self.assertFalse(registry.execute("host_write_file",args).ok)
                 self.assertFalse(registry.execute("host_write_file",{"path":"/tmp/other","content":"hello"}).ok)
                 self.assertEqual(calls,["/tmp/approved"])
+    def test_host_content_never_appears_in_audit_arguments(self):
+        args={"path":"/tmp/test","content":"customer-private-document"}
+        shown=_scrub_args_for_surface("host_write_file",args)
+        self.assertNotIn("customer-private-document",str(shown))
+        self.assertEqual(shown["path"],"/tmp/test")
+
     def test_auto_approve_cannot_bypass_sensitive_approval(self):
         approvals=ApprovalManager(interactive=False,auto_approve=True)
         with approvals.request_scope():
