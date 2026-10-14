@@ -58,7 +58,8 @@ def _scrub_args_for_surface(name: str, arguments: dict[str, Any]) -> dict[str, A
     def marker(value: Any) -> str:
         raw = value if isinstance(value, str) else str(value)
         return f"[REDACTED len={len(raw)}]"
-    scrubbed: dict[str, Any] = {}\n    opaque_payload_tools = {"host_write_file", "run_python", "run_shell", "secret_copy_env"}
+    scrubbed: dict[str, Any] = {}
+    opaque_payload_tools = {"host_write_file", "run_python", "run_shell", "secret_copy_env"}
     for key, val in arguments.items():
         kl = key.lower()
         if (name in opaque_payload_tools and kl in {"content", "code", "command"}) or any(h in kl for h in _ALWAYS_SECRET_KEYS):
