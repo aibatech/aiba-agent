@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from approvals.manager import ApprovalManager
 from security.audit import AuditLog
@@ -25,6 +26,13 @@ class ExactApprovalTests(unittest.TestCase):
                 self.assertFalse(registry.execute("host_write_file",args).ok)
                 self.assertFalse(registry.execute("host_write_file",{"path":"/tmp/other","content":"hello"}).ok)
                 self.assertEqual(calls,["/tmp/approved"])
+    def test_exact_grant_expires(self):
+        approvals=ApprovalManager(interactive=False)
+        token=approvals.action_fingerprint("host_read_file",{"path":"/tmp/file"})
+        with patch("approvals.manager.time.monotonic", side_effect=[100.0, 102.0]):
+            with approvals.request_scope([token], ttl_seconds=1.0):
+                self.assertFalse(approvals.approve_exact("host_read_file",{"path":"/tmp/file"}))
+
     def test_host_content_never_appears_in_audit_arguments(self):
         args={"path":"/tmp/test","content":"customer-private-document"}
         shown=_scrub_args_for_surface("host_write_file",args)
