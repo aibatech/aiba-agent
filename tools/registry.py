@@ -119,14 +119,14 @@ class ToolRegistry:
         decision=self.policy.check_tool(name)
         if tool is None:
             return ToolResult(False,error=f'Unknown tool: {name}')
-        if decision.requires_approval and not (self.approvals.approve_exact(name,args,str(_scrub_args_for_surface(name,args))[:500]) if name.startswith(('host_', 'secret_')) else self.approvals.approve(name,str(_scrub_args_for_surface(name,args))[:500])):
-            self.audit.record('tool_denied',tool=name,arguments=_scrub_args_for_surface(name,args)); return ToolResult(False,error='User approval denied')
         if not isinstance(args,dict):return ToolResult(False,error='Tool arguments must be an object')
         schema=tool.parameters; props=schema.get('properties',{}); required=schema.get('required',[])
         missing=[x for x in required if x not in args]
         unknown=[x for x in args if x not in props] if schema.get('additionalProperties') is False else []
         invalid=[x for x,v in args.items() if x in props and not _valid(v,props[x])]
         if missing or unknown or invalid:return ToolResult(False,error=f'Invalid arguments; missing={missing}, unknown={unknown}, invalid_types={invalid}')
+        if decision.requires_approval and not (self.approvals.approve_exact(name,args,str(_scrub_args_for_surface(name,args))[:500]) if name.startswith(('host_', 'secret_')) else self.approvals.approve(name,str(_scrub_args_for_surface(name,args))[:500])):
+            self.audit.record('tool_denied',tool=name,arguments=_scrub_args_for_surface(name,args)); return ToolResult(False,error='User approval denied')
         self.audit.record('tool_start',tool=name,arguments=_scrub_args_for_surface(name,args))
         try:result=tool.run(**args)
         except TypeError as exc:result=ToolResult(False,error=f'Invalid tool arguments: {exc}')
