@@ -24,7 +24,7 @@ class AgentLoop(BaseAgentLoop):
         # Prevent a background job from calling the overridden handle() before
         # the new conversation/learning stores exist.
         super().__init__(*args, start_worker=False, **kwargs)
-        self._outcome = ContextVar("task_outcome", default=None)
+        self._outcome: ContextVar[dict | None] = ContextVar("task_outcome", default=None)
         self.worker.handlers["agent_task"] = self._run_background
         self.conversations = ConversationStore(self.settings.data_dir / "conversations.db")
         self.learner = AutoLearner(self.vault)
@@ -131,8 +131,8 @@ class AgentLoop(BaseAgentLoop):
                 prompt_context,
                 blocked_tools=self.personal.blocked_tools(user_id),
             )
-            self.tasks.finish(task_id, answer)
-            status = "complete"
+            status = getattr(self.engine, "execution_status", "complete")
+            self.tasks.finish(task_id, answer, status)
         except Exception as exc:
             crash_id = self.crashes.capture(exc, {"task_id": task_id})
             self.metrics.increment("task_failures_total", error=type(exc).__name__)
@@ -168,7 +168,7 @@ class AgentLoop(BaseAgentLoop):
             review = self.conversation_reviewer.review(task_id, cid, text, answer, used, status)
         except Exception:
             review = {"needs_review": False, "signals": []}
-        proposal = self.improver.propose(task_id, text, used, answer) if propose_skill and used else None
+        proposal = self.improver.propose(task_id, text, used, answer) if propose_skill and used and status == "complete" else None
         self.metrics.increment("tasks_total", status=status)
         self.events.publish(
             "task_finished",

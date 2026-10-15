@@ -1,5 +1,7 @@
 # AIBA Agent mission acceptance register
 
+The current requirement-by-requirement status and rubric are in **BENCHMARK_SCORECARD.md**. The historical baseline below is retained for traceability and is superseded where the scorecard records tested repairs.
+
 This register describes release evidence, not a claim of certification. **No benchmark is 10/10 without passing evidence for every acceptance criterion.** The six areas are tracked independently.
 
 | Benchmark | Required acceptance evidence | Current result |

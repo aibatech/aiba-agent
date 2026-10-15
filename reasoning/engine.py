@@ -1,6 +1,7 @@
 from __future__ import annotations
 import json,re
 from tools.registry import _scrub_args_for_surface
+from approvals.manager import ApprovalManager
 
 SYSTEM=(
     'You are AIBA, a calm, capable, playful personal AI agent. Be warm, curious, confident, and honest. '
@@ -30,6 +31,7 @@ class ReasoningEngine:
     def __init__(self,provider,registry,retrieval,tasks,max_steps=15,reasoning=None):
         self.provider=provider;self.registry=registry;self.retrieval=retrieval;self.tasks=tasks;self.max_steps=max_steps
         self._reasoning=reasoning
+        self.execution_status = "complete"
 
     def _parse(self,text):
         if isinstance(text,dict):a=text
@@ -43,6 +45,8 @@ class ReasoningEngine:
         return a
 
     def run(self,task_id,user_input,task_type=None,manual_model_id=None,prompt_context=None,blocked_tools=None):
+        self.execution_status = "complete"
+        outcomes = {}
         memories=self.retrieval.retrieve(user_input,10);schemas=self.registry.schemas(blocked_tools or set())
         persona=('\nPersonal context:\n'+prompt_context) if prompt_context else ''
         messages=[
@@ -58,6 +62,9 @@ class ReasoningEngine:
                 event_action['arguments'] = _scrub_args_for_surface(str(action.get('tool','')), action.get('arguments') or {})
             self.tasks.event(task_id,{'step':step,'action':event_action,'route':getattr(self.provider,'last_route',None)})
             if action['type']=='final':
+                if any(not ok for ok in outcomes.values()):
+                    self.execution_status = 'partial'
+                    return 'I could not verify completion: one or more tool actions failed or were blocked. Review the task progress before retrying.', used
                 if self._reasoning:self._reasoning.final(response_preview=str(action.get('response','')),tool_count=len(used))
                 return str(action.get('response','')),used
 
@@ -66,8 +73,9 @@ class ReasoningEngine:
                 instruction=str(action.get('instruction','')).strip()
                 name='delegate_task'
                 args={'objectives':[f'{role}: {instruction}']}
-                if self._reasoning:self._reasoning.tool(name,args,tool_index=step)
+                if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
                 res=self.registry.execute(name,args,blocked=blocked_tools or set())
+                outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok
                 used.append(name)
                 if self._reasoning:self._reasoning.result(name,res.ok,output_preview=str(res.output if res.ok else res.error))
                 messages += [
@@ -78,8 +86,9 @@ class ReasoningEngine:
                 continue
 
             name=action.get('tool');args=action.get('arguments') or {}
-            if self._reasoning:self._reasoning.tool(name,args,tool_index=step)
+            if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
             res=self.registry.execute(name,args,blocked=blocked_tools or set());used.append(name)
+            outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok
             if self._reasoning:self._reasoning.result(name,res.ok,output_preview=str(res.output if res.ok else res.error))
             feedback={'ok':res.ok,'output':res.output,'error':res.error}
             # A pending clarify question has already been published to the connector UI.

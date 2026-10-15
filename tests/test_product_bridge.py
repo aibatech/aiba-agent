@@ -123,6 +123,15 @@ class ProductBridgeApiTests(unittest.TestCase):
         self.assertEqual(second.json()["status"], "complete")
         self.assertEqual(second.json()["approval_required"], [])
 
+    def test_grant_cannot_cross_users_or_replay(self):
+        first=self.client.post('/v1/product/execute',headers=self.headers,json={'instruction':'Click Continue'})
+        token=first.json()['approval_required'][0]['approval_token']
+        body={'instruction':'Click Continue','approved_tools':[token]}
+        other={**self.headers,'X-AIBA-User-ID':'other'}
+        self.assertEqual(self.client.post('/v1/product/execute',headers=other,json=body).json()['status'],'approval_required')
+        self.assertEqual(self.client.post('/v1/product/execute',headers=self.headers,json=body).json()['status'],'complete')
+        self.assertEqual(self.client.post('/v1/product/execute',headers=self.headers,json=body).json()['status'],'approval_required')
+
     def test_bridge_requires_auth_and_user_identity(self):
         response = self.client.post("/v1/product/execute", json={"instruction": "Research this"})
         self.assertEqual(response.status_code, 401)

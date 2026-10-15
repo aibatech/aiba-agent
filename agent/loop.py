@@ -418,14 +418,14 @@ class AgentLoop:
         except Exception:_sid=None
         self.engine._reasoning=VisibleReasoning(self.events.publish,task_id)
         self.engine._reasoning.plan(f"Task accepted: {text[:80]}", steps=self.engine.max_steps)
-        try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id),blocked_tools=self.personal.blocked_tools(user_id));self.tasks.finish(task_id,answer);status='complete'
+        try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id),blocked_tools=self.personal.blocked_tools(user_id));status=getattr(self.engine,'execution_status','complete');self.tasks.finish(task_id,answer,status)
         except Exception as exc:
             crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status='failed';self.tasks.finish(task_id,answer,status)
         # Best-effort session close/status: complete/failed both map to closed.
         if _sid is not None:
             try:self.sessions.append(_sid,summary=(answer[:400] or ''));self.sessions.close_session(_sid)
             except Exception:pass
-        ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
+        ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used and status=='complete' else None
         self.metrics.increment('tasks_total',status=status);self.events.publish('task_finished',task_id=task_id,status=status,tools=used,reflection=str(ref),skill_proposal=str(proposal) if proposal else None);return answer
     def _export_memories(self, filename, category=None, as_user=None):
         """Export memories (optionally one category) to a markdown doc in the

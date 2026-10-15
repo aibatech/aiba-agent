@@ -22,7 +22,7 @@ class ApprovalManager:
         )
         self._consumed: ContextVar[set[str] | None] = ContextVar("aiba_consumed", default=None)
         self._consume_lock = threading.Lock()
-        self._principal = ContextVar("approval_principal", default=None)
+        self._principal: ContextVar[str | None] = ContextVar("approval_principal", default=None)
         self._store = ContextVar("approval_store", default=None)
         self._deadline: ContextVar[float | None] = ContextVar('aiba_approval_deadline', default=None)
         self._requested: ContextVar[tuple[dict[str, str], ...]] = ContextVar(
