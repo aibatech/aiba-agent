@@ -18,7 +18,7 @@ Substantial implementation and regression remediation completed on `hardening/mi
 
 ## Verification and limitations
 
-Initial baseline: 428 tests, 8 skips. Final local run: **442 tests passed, 1 skipped** after optional dependencies were installed. The optional skip does not earn certification credit. The retained certification reports and final CI snapshot identify exact subsequent test runs. Pyright, Bandit high-severity checks, dependency audit, secret scan and capability consistency checks were executed. Real HTTP load used a temporary profile and ephemeral generated credentials.
+Initial baseline: 428 tests, 8 skips. Final local run: **442 tests passed, 1 skipped** after optional dependencies were installed. The one skip is the Windows-only personality permission test on Linux; Windows behavior is covered by the passing CI matrix. The retained certification reports and final CI snapshot identify exact subsequent test runs. Pyright, Bandit high-severity checks, dependency audit, secret scan and capability consistency checks were executed. Real HTTP load used a temporary profile and ephemeral generated credentials.
 
 The first pushed implementation fixed Windows 3.11/3.12 failures across the full OS matrix. CI then found a ContextVar type inference error; it was repaired rather than disabling the gate. Full-runtime acceptance tests use a scripted provider to execute an approved write, verify read-back, restart, recover scoped memories and exercise provider failure. Skill lifecycle tests include denial without execution approval and rollback. These tests do not certify live accounts, model planning quality, mobile devices or signed installers.
 
@@ -32,4 +32,8 @@ Draft PR: https://github.com/aibatech/aiba-agent/pull/34
 
 Initial implementation: https://github.com/aibatech/aiba-agent/commit/d0d8a94716dbdfd01c7906533aa9a2db564a4470
 
-Follow-up implementation/evidence commits remain on the same branch. See `docs/certification/ci-summary.json` when present for retained final observed CI status. No merge, deployment, stable tag, or signing operation was performed.
+Follow-up implementation/evidence commit: `42fcc78fb459d939bf914f1084110c428305f25a`. All 12 Production Gate jobs and MCP Integration passed on that SHA. See `docs/certification/ci-summary.json` when present for retained final observed CI status. No merge, deployment, stable tag, or signing operation was performed.
+
+## Final schema regression fix
+
+A real authenticated operator API test found the existing nested-object `additionalProperties: false` check reversed. It required optional properties and allowed unexpected ones when known properties were present. Corrected and covered with positive/negative schema tests plus the complete HTTP review/install/rate-limit path. After environment recreation, the final local suite ran **444 tests with 3 optional/platform skips**, all remaining tests passed; capability and secret scans passed. Earlier full-extras run was 442 tests with one platform skip. See CI on the final branch head for the corresponding OS matrix evidence.

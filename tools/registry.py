@@ -15,7 +15,7 @@ def _valid(value,schema):
     if isinstance(value,dict) and expected=='object':
         props=schema.get('properties',{});required=schema.get('required',[])
         if any(k not in value for k in required):return False
-        if schema.get('additionalProperties') is False and any(k not in value for k in props):return False
+        if schema.get('additionalProperties') is False and any(k not in props for k in value):return False
         if any(k in props and not _valid(v,props[k]) for k,v in value.items()):return False
     return True
 

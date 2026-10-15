@@ -39,3 +39,9 @@ The inspected PR #34 head was `4f1ea2222dc45682041c711d4ad0d63531349829`; no new
 See `BENCHMARK_SCORECARD.md` for all sixty requirements and the scoring rubric; `docs/INSTALL_UPGRADE_RC.md` for installation, the breaking approval contract, migration and rollback. Remaining implementation gaps include semantic retrieval, conflict resolution, full owner erasure, outcome-based learning measurement, scheduler crash/idempotency guarantees, filesystem race protection, and comprehensive log/injection threat tests. External gates include client/voice/accessibility/messaging devices, live providers, deployed VPS restoration, a one-hour leak-monitored soak and signed artifacts.
 
 **Decision: NOT FULLY CERTIFIED.** This work is an engineering candidate, not authorization for a stable release. Do not interpret a local JSON `certified: true` as six-benchmark certification.
+
+## Final observed implementation CI
+
+Implementation `42fcc78fb459d939bf914f1084110c428305f25a`: [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38681728084) **passed all 12 jobs**, including nine OS/Python matrix jobs, security, container and capability checks. [MCP Integration](https://github.com/aibatech/aiba-agent/actions/runs/38681728190) **passed**. Retained job identifiers are in `docs/certification/ci-summary.json`. Local optional-dependency run: 442 tests, one platform-specific skip (`test_windows_permissions_not_faked`, intentionally off-POSIX only). No missing dependency was silently counted as live certification. These results do not close the remaining code and external gates.
+
+Final schema follow-up: nested object optional/unknown-property regression and authenticated skill review/install/rate-limit tests pass. Final local run: 444 tests, 3 optional/platform skips. The retained CI snapshot names its exact implementation SHA; it must not be silently interpreted as a later commit result.

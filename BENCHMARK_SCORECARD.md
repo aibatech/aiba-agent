@@ -13,7 +13,7 @@ Target for every benchmark: **10/10**. Release status: **NOT FULLY CERTIFIED**.
 | Self-Improvement | 10/10 | 6/10 | Requirement register below | 4 requirements |
 | Privacy & Security | 10/10 | 4/10 | Requirement register below | 6 requirements |
 | Human-Centered UX | 10/10 | 5/10 | Requirement register below | 5 requirements |
-| Production Reliability | 10/10 | 5/10 | Requirement register below | 5 requirements |
+| Production Reliability | 10/10 | 7/10 | Requirement register below | 3 requirements |
 
 ## Memory
 
@@ -106,8 +106,8 @@ Test filenames refer to `tests/` unless a different path is shown.
 
 | # | Requirement | Status | Evidence | Scope / gap |
 |---|---|---|---|---|
-| 1 | Windows | GAP | Latest CI pending | Must pass on final implementation SHA |
-| 2 | macOS | GAP | Latest CI pending | Must pass on final implementation SHA |
+| 1 | Windows | PASS | docs/certification/ci-summary.json | Python 3.11–3.13 at implementation SHA 42fcc78 |
+| 2 | macOS | PASS | docs/certification/ci-summary.json | Python 3.11–3.13 at implementation SHA 42fcc78 |
 | 3 | Linux | PASS | scripts/certify_install.py; docs/certification/linux-x86_64.json | Local compile, suite, clean-profile doctor |
 | 4 | Cloud/VPS | GAP | Container CI is separate from deployed VPS | Live ready/restore drill not run |
 | 5 | Automated tests | PASS | scripts/certify_install.py | Unit/integration/security suite |

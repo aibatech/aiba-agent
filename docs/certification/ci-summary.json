@@ -1,0 +1,93 @@
+{
+  "implementation_commit": "42fcc78fb459d939bf914f1084110c428305f25a",
+  "production_gate": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084",
+  "mcp_gate": "https://github.com/aibatech/aiba-agent/actions/runs/38681728190",
+  "conclusion": "success",
+  "jobs": [
+    {
+      "id": 116247565248,
+      "name": "container",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565248"
+    },
+    {
+      "id": 116247565422,
+      "name": "capabilities",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565422"
+    },
+    {
+      "id": 116247565475,
+      "name": "security",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565475"
+    },
+    {
+      "id": 116247565485,
+      "name": "test (macos-14, 3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565485"
+    },
+    {
+      "id": 116247565510,
+      "name": "test (ubuntu-latest, 3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565510"
+    },
+    {
+      "id": 116247565618,
+      "name": "test (windows-latest, 3.11)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565618"
+    },
+    {
+      "id": 116247565626,
+      "name": "test (ubuntu-latest, 3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565626"
+    },
+    {
+      "id": 116247565647,
+      "name": "test (ubuntu-latest, 3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565647"
+    },
+    {
+      "id": 116247565683,
+      "name": "test (windows-latest, 3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565683"
+    },
+    {
+      "id": 116247565711,
+      "name": "test (windows-latest, 3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565711"
+    },
+    {
+      "id": 116247565712,
+      "name": "test (macos-14, 3.12)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565712"
+    },
+    {
+      "id": 116247565915,
+      "name": "test (macos-14, 3.13)",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/aibatech/aiba-agent/actions/runs/38681728084/job/116247565915"
+    }
+  ],
+  "production_certified": false
+}

@@ -56,3 +56,32 @@ class MissionEndToEndTests(unittest.TestCase):
                 self.assertNotIn('saved successfully',result['result'])
                 self.assertFalse((loop.settings.workspace_dir/'denied.txt').exists())
             finally:loop.close()
+
+    def test_operator_skill_review_install_and_rate_limit_http(self):
+        try:
+            from fastapi.testclient import TestClient
+        except ImportError:
+            self.skipTest('API optional dependencies unavailable')
+        from api.server import create_app
+        from dataclasses import replace
+        with tempfile.TemporaryDirectory() as tmp:
+            settings=replace(make_settings(Path(tmp)),rate_limit_per_minute=10)
+            loop=AgentLoop(settings=settings,interactive=False,start_worker=False)
+            try:
+                client=TestClient(create_app(loop))
+                proposal=loop.improver.propose('httpjob','read the workspace',['list_files'],'ok')
+                review_url='/v1/skill-proposals/httpjob/review'
+                body={'steps':[{'tool':'list_files','arguments':{}}],'feedback':'Approved workflow'}
+                self.assertEqual(client.post(review_url,json=body).status_code,401)
+                headers={'Authorization':'Bearer '+settings.api_token}
+                review=client.post(review_url,headers=headers,json=body)
+                self.assertEqual(review.status_code,200,review.text)
+                response=client.post('/v1/skill-proposals/httpjob/install',headers=headers,
+                                     json={'review_digest':review.json()['review_digest']})
+                self.assertEqual(response.status_code,200)
+                self.assertEqual(response.json()['status'],'installed')
+                self.assertTrue(loop.skills.execute(response.json()['name'],loop.registry)[0]['ok'])
+                responses=[client.get('/v1/skills',headers=headers) for _ in range(11)]
+                self.assertEqual(responses[-1].status_code,429)
+                self.assertEqual(responses[-1].headers['retry-after'],'60')
+            finally:loop.close()

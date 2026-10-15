@@ -59,3 +59,11 @@ class SkillLifecycleTests(unittest.TestCase):
             for action in (lambda: manager.create('evil', '', []), lambda: manager.get('evil')):
                 with self.assertRaises(ValueError):
                     action()
+
+    def test_optional_fields_and_unknown_fields_validate_correctly(self):
+        from tools.registry import _valid
+        schema={'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}
+        self.assertTrue(_valid({},schema))
+        self.assertTrue(_valid({'path':'.'},schema))
+        self.assertFalse(_valid({'path':'.','injected':'value'},schema))
+        self.assertFalse(_valid({'injected':'value'},schema))
