@@ -26,6 +26,20 @@ class ExactApprovalTests(unittest.TestCase):
                 self.assertFalse(registry.execute("host_write_file",args).ok)
                 self.assertFalse(registry.execute("host_write_file",{"path":"/tmp/other","content":"hello"}).ok)
                 self.assertEqual(calls,["/tmp/approved"])
+    def test_invalid_arguments_do_not_consume_one_time_grant(self):
+        with tempfile.TemporaryDirectory() as td:
+            root=Path(td)
+            p=root/"permissions.json"
+            p.write_text(json.dumps({"version":1,"tools":{"host_read_file":{"enabled":True,"requires_approval":True}}}))
+            approvals=ApprovalManager(interactive=False)
+            registry=ToolRegistry(AuditLog(root/"audit.jsonl"),approvals,SecurityPolicy(root,p,True))
+            registry.register(Tool("host_read_file","test",lambda path: ToolResult(True,{"path":path}),{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":False}))
+            args={"path":"/tmp/file","extra":"invalid"}
+            token=approvals.action_fingerprint("host_read_file",args)
+            with approvals.request_scope([token]):
+                self.assertFalse(registry.execute("host_read_file",args).ok)
+                self.assertTrue(approvals.approve_exact("host_read_file",args))
+
     def test_exact_grant_expires(self):
         approvals=ApprovalManager(interactive=False)
         token=approvals.action_fingerprint("host_read_file",{"path":"/tmp/file"})
