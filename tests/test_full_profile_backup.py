@@ -27,7 +27,7 @@ class FullProfileBackupTests(unittest.TestCase):
 
     def test_restore_io_failure_rolls_back_prior_replacements(self):
         with tempfile.TemporaryDirectory() as tmp:
-            data=Path(tmp);(data/'a.txt').write_text('old-a');(data/'b.txt').write_text('old-b')
+            data=Path(tmp).resolve();(data/'a.txt').write_text('old-a');(data/'b.txt').write_text('old-b')
             backup=BackupManager(data);bid=backup.create()['backup_id']
             (data/'a.txt').write_text('current-a');(data/'b.txt').write_text('current-b')
             replace=os.replace
