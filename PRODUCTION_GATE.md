@@ -59,3 +59,9 @@ Follow-up: local suite now **458 tests, 3 skips, zero failures**. Added POSIX de
 Implementation `7d659ab8c88d2b51c080c2553547c6095a688360`: [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38733650290) passed all 12 jobs (nine OS/Python combinations, security, capabilities/types and container). [MCP SDK integration](https://github.com/aibatech/aiba-agent/actions/runs/38733650315) passed.
 
 Final discovery correction adds eight existing function-style tests to unittest discovery. They previously were not executed by that runner. Their default-permission check exposed enabled host-file defaults; host file tools now require owner opt-in as well as exact approval. The corrected local suite ran **466 tests, zero failures, nine skips** in the base runtime (optional API/MCP dependencies unavailable after environment reset). Earlier 458-test run used API dependencies and skipped three. New CI is required for this final correction; no optional capability is claimed tested merely because its test skipped.
+
+## Continued implementation (post-e034db8)
+
+472 local tests, zero failures, nine optional/platform skips. New tests cover false-positive write claims, read-back/absence postconditions, scoped erasure with restore suppression, confirmation mismatch, confidential reflection retention, skill failure propagation and inherited blocked tools. Earlier final e034db8 CI passed: [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38788437418), [MCP](https://github.com/aibatech/aiba-agent/actions/runs/38788437357). New code requires its own CI.
+
+Isolated Runtime Soak workflow now executes 3600 seconds of HTTP load with Linux process RSS sampling and a 64 MiB post-warmup growth budget. Passing it supports only the health-endpoint workload, not live model tasks or a universal absence-of-leaks claim. No result is asserted until the workflow completes.

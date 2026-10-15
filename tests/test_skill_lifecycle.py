@@ -46,6 +46,25 @@ class SkillLifecycleTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 improver.propose('../escape', 'task', [], '')
 
+    def test_nested_execution_preserves_blocked_tools_and_reports_failure(self):
+        from agent.loop import AgentLoop
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);manager=SkillManager(root/'skills')
+            manager.create('workflow','test',[{'tool':'remember','arguments':{'content':'private'}}])
+            calls=[]
+            class Registry:
+                def execute(self,name,args,blocked=None):
+                    calls.append((name,blocked))
+                    return ToolResult(False,error='blocked') if name in (blocked or set()) else ToolResult(True)
+            loop=SimpleNamespace(skills=manager,registry=Registry(),_current_user='alice',
+                personal=SimpleNamespace(blocked_tools=lambda user:{'remember'}))
+            result=AgentLoop._run_skill(loop,'workflow')
+            self.assertFalse(result.ok)
+            self.assertIn('remember',calls[0][1])
+            manager.create('recursive','test',[{'tool':'run_skill','arguments':{'name':'recursive'}}])
+            self.assertFalse(manager.execute('recursive',loop.registry)[0]['ok'])
+
     def test_symlink_skill_cannot_read_or_overwrite_external_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

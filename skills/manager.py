@@ -120,7 +120,7 @@ class SkillManager:
         return self.get(name)
     def instructions(self,name):
         skill=self.get(name);return {'name':skill.name,'description':skill.description,'version':skill.version,'instructions':skill.instructions,'executable':bool(skill.steps)}
-    def execute(self,name:str,registry,variables:dict[str,Any]|None=None)->list[dict]:
+    def execute(self,name:str,registry,variables:dict[str,Any]|None=None,blocked:set[str]|None=None)->list[dict]:
         skill=self.get(name); variables=variables or {}; outputs=[]
         if not skill.steps:raise ValueError('Instruction-only portable skills must be reviewed by the model and cannot execute tools directly')
         for index,step in enumerate(skill.steps):
@@ -129,6 +129,6 @@ class SkillManager:
                 if isinstance(v,str):
                     for key,value in variables.items():v=v.replace('{{'+key+'}}',str(value))
                     args[k]=v
-            res=registry.execute(tool,args);outputs.append({'step':index,'tool':tool,'ok':res.ok,'output':res.output,'error':res.error})
+            res=registry.execute(tool,args,blocked=set(blocked or ()) | {'run_skill'});outputs.append({'step':index,'tool':tool,'ok':res.ok,'output':res.output,'error':res.error})
             if not res.ok:break
         return outputs

@@ -94,8 +94,8 @@ class AgentLoop(BaseAgentLoop):
             raise ValueError("A resolved conversation_id is required")
         cid = conversation_id
 
-        task_id = self.tasks.create(text)
-        self.events.publish("task_started", task_id=task_id, task=text)
+        task_id = self.tasks.create(text, owner=user_id or "default")
+        self.events.publish("task_started", task_id=task_id)
         user_key = user_id or "default"
         self._current_user = user_key
         engine_scope = self._memory_scope(user_id)
@@ -163,7 +163,7 @@ class AgentLoop(BaseAgentLoop):
         except Exception:
             learned_ids = []
 
-        ref = self.dream.reflect(task_id, text, answer, used)
+        ref = self.dream.reflect(task_id, text, answer, used, owner=user_key, status=status)
         try:
             review = self.conversation_reviewer.review(task_id, cid, text, answer, used, status)
         except Exception:

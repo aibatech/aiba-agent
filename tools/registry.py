@@ -136,4 +136,12 @@ class ToolRegistry:
         except TypeError as exc:result=ToolResult(False,error=f'Invalid tool arguments: {exc}')
         except Exception as exc:result=ToolResult(False,error=f'{type(exc).__name__}: {exc}')
         if not isinstance(result,ToolResult):result=ToolResult(True,result)
-        self.audit.record('tool_end',tool=name,ok=result.ok,error='Tool execution failed; inspect the owner-visible task result' if result.error else None); return result
+        if result.ok and tool.verifier is not None:
+            try:
+                result.verified = tool.verifier(args, result) is True
+            except Exception:
+                result.verified = False
+            if not result.verified:
+                result.ok = False
+                result.error = 'The action ran, but its postcondition could not be verified. Inspect state before retrying.'
+        self.audit.record('tool_end',tool=name,verified=result.verified,ok=result.ok,error='Tool execution failed; inspect the owner-visible task result' if result.error else None); return result

@@ -7,13 +7,17 @@ def now():return datetime.now(timezone.utc).isoformat()
 class TaskStore:
     def __init__(self,path:Path):self.path=path;self._init()
     def _init(self):
-        with connect(self.path) as c:c.execute('CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,input TEXT NOT NULL,status TEXT NOT NULL,steps INTEGER NOT NULL DEFAULT 0,result TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,events TEXT NOT NULL DEFAULT "[]",checkpoint TEXT)')
-    def create(self,text):
+        with connect(self.path) as c:
+            c.execute('CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,input TEXT NOT NULL,status TEXT NOT NULL,steps INTEGER NOT NULL DEFAULT 0,result TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,events TEXT NOT NULL DEFAULT "[]",checkpoint TEXT)')
+            cols={row[1] for row in c.execute('PRAGMA table_info(tasks)')}
+            if 'owner' not in cols:c.execute('ALTER TABLE tasks ADD COLUMN owner TEXT')
+    def create(self,text,owner=None):
         i=str(uuid.uuid4());t=now()
-        with connect(self.path) as c:c.execute('INSERT INTO tasks(id,input,status,created_at,updated_at) VALUES(?,?,?,?,?)',(i,text,'running',t,t))
+        with connect(self.path) as c:c.execute('INSERT INTO tasks(id,input,status,created_at,updated_at,owner) VALUES(?,?,?,?,?,?)',(i,text,'running',t,t,owner))
         return i
     def event(self,i,event):
         with connect(self.path) as c:
+            c.execute('BEGIN IMMEDIATE')
             row=c.execute('SELECT events,steps FROM tasks WHERE id=?',(i,)).fetchone();events=json.loads(row[0]);events.append(event)
             c.execute('UPDATE tasks SET events=?,steps=?,checkpoint=?,updated_at=? WHERE id=?',(json.dumps(events),row[1]+1,json.dumps(event),now(),i))
     def finish(self,i,result,status='complete'):

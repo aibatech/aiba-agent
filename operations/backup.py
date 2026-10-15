@@ -29,7 +29,7 @@ class BackupManager:
     def _sources(self):
         for path in sorted(self.data_dir.rglob('*')):
             rel=path.relative_to(self.data_dir)
-            if rel.parts[0]=='backups' or path.name=='approvals.db' or path.name.endswith(('-wal','-shm')):continue
+            if rel.parts[0]=='backups' or path.name in {'approvals.db','privacy-erasure.json'} or path.name.endswith(('-wal','-shm')):continue
             if path.is_symlink():raise BackupError('Profile symlinks cannot be backed up')
             if path.is_file():yield 'data/'+rel.as_posix(),path
         if self.skills_dir:
@@ -72,7 +72,7 @@ class BackupManager:
             relative=parts[1:]
             if parts[0]=='skills' and len(relative)<2:raise BackupError('Only installed skill directories may be restored')
         else:raise BackupError('Unsupported backup format')
-        if relative[0]=='backups' or relative[-1]=='approvals.db' or relative[-1].endswith(('-wal','-shm')):raise BackupError('Forbidden restore entry')
+        if relative[0]=='backups' or relative[-1] in {'approvals.db','privacy-erasure.json'} or relative[-1].endswith(('-wal','-shm')):raise BackupError('Forbidden restore entry')
         target=root.joinpath(*relative)
         for node in (target,*target.parents):
             if node==root.parent:break
@@ -140,6 +140,8 @@ class BackupManager:
         approval_db=self.data_dir/'approvals.db'
         if approval_db.exists():
             with connect(approval_db) as db:db.execute('DELETE FROM approval_challenges')
+        from privacy.erasure import OwnerErasure
+        OwnerErasure(self.data_dir).enforce_after_restore()
         return {'restored':True,'backup_id':bid,'safety_backup_id':safety['backup_id']}
 
     def list(self):

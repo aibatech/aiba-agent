@@ -89,6 +89,7 @@ class ReasoningEngine:
             if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
             res=self.registry.execute(name,args,blocked=blocked_tools or set());used.append(name)
             outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok
+            self.tasks.event(task_id, {'step':step, 'tool_result':{'tool':name,'ok':res.ok,'verified':getattr(res,'verified',None)}})
             if self._reasoning:self._reasoning.result(name,res.ok,output_preview=str(res.output if res.ok else res.error))
             feedback={'ok':res.ok,'output':res.output,'error':res.error}
             # A pending clarify question has already been published to the connector UI.
