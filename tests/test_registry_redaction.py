@@ -51,6 +51,14 @@ class RegistrySecretRedactionTests(unittest.TestCase):
     def _audit_text(self, audit: AuditLog) -> str:
         return audit.path.read_text(encoding="utf-8", errors="replace")
 
+    def test_raw_tool_errors_not_copied_to_audit(self):
+        reg, audit = self._make("error", tools={"explode": {"enabled": True, "requires_approval": False}})
+        secret = "confidential-value-without-markers"
+        reg.register(Tool("explode", "test failure", lambda: ToolResult(False, error=secret), {"type": "object", "properties": {}}))
+        result = reg.execute("explode", {})
+        self.assertEqual(result.error, secret)
+        self.assertNotIn(secret, self._audit_text(audit))
+
     def test_secret_named_key_redacted_from_tool_start(self):
         reg, audit = self._make("k", tools={
             "store_token": {"enabled": True, "requires_approval": False}})

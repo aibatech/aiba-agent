@@ -8,8 +8,8 @@ Target for every benchmark: **10/10**. Release status: **NOT FULLY CERTIFIED**.
 
 | Benchmark | Target | Verified score | Evidence | Remaining gaps |
 |---|---|---|---|---|
-| Memory | 10/10 | 5/10 | Requirement register below | 5 requirements |
-| Autonomous Execution | 10/10 | 5/10 | Requirement register below | 5 requirements |
+| Memory | 10/10 | 6/10 | Requirement register below | 4 requirements |
+| Autonomous Execution | 10/10 | 6/10 | Requirement register below | 4 requirements |
 | Self-Improvement | 10/10 | 6/10 | Requirement register below | 4 requirements |
 | Privacy & Security | 10/10 | 4/10 | Requirement register below | 6 requirements |
 | Human-Centered UX | 10/10 | 5/10 | Requirement register below | 5 requirements |
@@ -23,14 +23,14 @@ Test filenames refer to `tests/` unless a different path is shown.
 |---|---|---|---|---|
 | 1 | Persistent conversations | PASS | test_conversation_learning.py; test_mission_e2e.py | Restart and scoped history |
 | 2 | Durable goals/preferences/projects | PASS | test_conversation_learning.py; test_mission_e2e.py | Conservative learner; not all dialogue is durable |
-| 3 | Semantic retrieval | GAP | memory/retrieval.py | FTS lexical search only; no embedding retrieval quality gate |
-| 4 | Context selection/prioritization | GAP | memory/vault.py | BM25/importance and limits exist; contextual relevance benchmark missing |
+| 3 | Semantic retrieval | GAP | memory/retrieval.py | Opt-in local embedding and hybrid retrieval implemented (test_memory_semantics.py); real model quality gate outstanding |
+| 4 | Context selection/prioritization | GAP | memory/vault.py | Hybrid relevance, importance and character budget tested; real contextual relevance corpus missing |
 | 5 | Updates/corrections | PASS | test_memory_edit.py; test_memory_recovery_acceptance.py | Corrections survive source resync and restart |
-| 6 | Duplicate/conflicting memories | GAP | test_memory_recovery_acceptance.py | Exact dedupe tested; conflicting facts retained, no resolution policy |
+| 6 | Duplicate/conflicting memories | PASS | test_memory_semantics.py; test_memory_recovery_acceptance.py | Owner-scoped dedupe and explicit fact-key supersession, persistent auditable history and deletion |
 | 7 | Deletion/privacy controls | GAP | test_memory_recovery_acceptance.py | Search deletion persists; source files, reflections and historical backups need unified erasure policy |
 | 8 | User isolation | PASS | test_memory_user_isolation.py; test_memory_ownership.py | Trusted backend must bind header identity to signed-in user |
 | 9 | Persistence after restart | PASS | test_mission_e2e.py | Real runtime restart with scripted provider |
-| 10 | Backup/restore/migration | GAP | test_v13.py; test_memory_recovery_acceptance.py | Database recovery tested; complete vault/skills/workspace disaster restore not certified |
+| 10 | Backup/restore/migration | GAP | test_v13.py; test_memory_recovery_acceptance.py | Full-profile restore and injected-failure rollback tested (test_full_profile_backup.py); external disaster drill and cross-process consistency outstanding |
 
 ## Autonomous Execution
 
@@ -43,7 +43,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 3 | Web research | GAP | test_web.py | Mock coverage; live retrieval certification outstanding |
 | 4 | File/workspace operations | PASS | test_sandbox.py; test_mission_e2e.py | Actual write and read-back |
 | 5 | Command/code execution | PASS | test_terminal_backends.py; test_sandbox.py | Supported local test paths; remote host certification separate |
-| 6 | Background/scheduled work | GAP | test_scheduling_intent.py; test_v02.py | Exists; concurrent scheduler crash/idempotency certification missing |
+| 6 | Background/scheduled work | PASS | test_scheduling_intent.py; test_v02.py; test_scheduler_reliability.py | Concurrent ticks and crash after enqueue deduplicated; stale worker completion fenced |
 | 7 | Progress/status | PASS | test_protocol.py; test_execution_recovery_acceptance.py | Events and persistent task/job state |
 | 8 | Retry/timeout/cancellation/recovery | GAP | test_execution_recovery_acceptance.py | Queue retries/cancel/recovery tested; in-flight external cancellation and safe replay remain |
 | 9 | Sensitive authorization | PASS | test_exact_owner_approvals.py; test_approval_replay.py | Exact operation approval through registry |
@@ -77,7 +77,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 3 | Exact operation approval | PASS | test_exact_owner_approvals.py; test_skill_lifecycle.py | All policy-gated tools now use argument fingerprints |
 | 4 | One-use expiring grants | PASS | test_approval_replay.py; test_product_bridge.py | Durable product challenges; concurrent/restart/user/replay tests |
 | 5 | Secret handling | GAP | test_secret_admin.py | Windows handle defect fixed; complete dotenv grammar and Windows ACL certification outstanding |
-| 6 | Sensitive redaction | GAP | test_registry_redaction.py | Argument redaction improved; error strings/output previews need comprehensive leakage corpus |
+| 6 | Sensitive redaction | GAP | test_registry_redaction.py | Raw audit errors and reasoning output/response previews withheld; nested-list secrets tested; remaining diagnostic surfaces need leakage corpus |
 | 7 | Host filesystem/command safeguards | GAP | test_host_files.py; test_skill_lifecycle.py | Path checks exist; adversarial TOCTOU race certification outstanding |
 | 8 | Prompt injection defense | GAP | reasoning/engine.py | Untrusted-data instruction and policy gates; no adversarial model corpus certification |
 | 9 | Confidential audit trail | GAP | test_registry_redaction.py | Tool/task argument redaction tested; all diagnostic surfaces not certified |

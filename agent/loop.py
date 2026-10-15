@@ -133,7 +133,7 @@ class AgentLoop:
             'AIBA_MCP_ENABLED': bool(self.settings.mcp_enabled),
         }
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy,feature_flags=self.runtime_flags,manifest=self.manifest);self._register_tools()
-        legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
+        legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir,self.settings.skills_dir)
         self._seed_legacy_provider();self.router=IntelligentRouter(self.providers,legacy)
         self.engine=ReasoningEngine(self.router,self.registry,RetrievalEngine(self.vault),self.tasks,self.settings.max_steps);self.dream=DreamEngine(self.settings.vault_dir/'reflections',self.vault)
         # Opt-in bounded internal subagents (Phase 3). Disabled until
@@ -230,7 +230,7 @@ class AgentLoop:
         # (full view incl 'shared'/legacy); a distinct non-operator identity is
         # confined to its own rows for reads and mutations alike — it can never
         # read, search, export, update or delete 'shared'/another user's memory.
-        self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance,owner=self._memory_writer_owner())}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
+        self.registry.register(Tool('remember','Store durable memory. For an explicit correction, reuse its stable fact_key to supersede the old fact; do not group unrelated goals.',lambda content,category='general',importance=.5,fact_key=None:ToolResult(True,{'memory_id':self.vault.add(content,category,importance,owner=self._memory_writer_owner(),fact_key=fact_key)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'},'fact_key':{'type':'string'}},'required':['content'],'additionalProperties':False}))
         self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit),as_user=self._memory_scope())),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         # --- Memory maintenance + session search (Phase 9) ---
         # Memory edits/mutations mirror write_file/delete_file approval posture.

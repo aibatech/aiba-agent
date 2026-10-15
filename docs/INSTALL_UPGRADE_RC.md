@@ -28,7 +28,7 @@ Operator API (operator bearer authentication required):
 
 ## Upgrade, migration and rollback
 
-Stop the API, workers and schedulers before migration or restore. Preserve the exact old code revision and environment dependency inventory. Make and verify a database backup using the existing BackupManager/operations API; separately copy the entire private data directory and installed skills to owner-controlled encrypted storage. The built-in backup is database-focused and is not a complete workspace/skills/vault backup. Preserve the encryption master key separately; losing it makes encrypted credentials unrecoverable.
+Stop the API, workers and schedulers before migration or restore. Preserve the exact old code revision and environment dependency inventory. Make and verify a database backup using the existing BackupManager/operations API; separately copy the entire private data directory and installed skills to owner-controlled encrypted storage. Format-2 built-in backups now include data files and installed skill directories when skills_dir is configured. They exclude old backups, approval grants and SQLite journals. Restore replaces snapshot entries but does not delete newer extra files, so it is not an erasure mechanism. Caught filesystem failures are rolled back; multi-file power-loss atomicity and distributed maintenance locks are not provided. Preserve the encryption master key separately; losing it makes encrypted credentials unrecoverable.
 
 Run `python main.py --migrate` and the certification scripts in a staging copy first. Memory source-override schema creation is additive and idempotent. Corrected/deleted markdown memories are suppressed from automatic re-import; source files remain on disk. Do not downgrade to old code that ignores these overrides after privacy-sensitive corrections/deletions.
 
@@ -37,3 +37,9 @@ For rollback, stop all processes, restore the previous code/environment plus mat
 ## Client integration boundary
 
 `aibatech/aiba_app_full` is accessible as a separate client repository. This change does not certify its UI or implement microphone capture, STT/TTS, interruption, accessibility, or physical-device synchronization. Voice and text use the same runtime bridge envelope; that does not establish voice feature parity. Client owners must integrate opaque confirmations and honor failed task status before live certification.
+
+## Optional semantic memory and additive migrations
+
+Install `python -m pip install -e '.[semantic]'` and provision a reviewed sentence-transformers model directory locally. Set `AIBA_MEMORY_EMBEDDING_MODEL` to it and `AIBA_MEMORY_EMBEDDING_REVISION` to its fingerprint. No automatic model download or remote model code is permitted. Change the revision when weights change. Text is embedded locally after owner filtering; cached vectors are removed on edit/deletion. Unconfigured profiles retain lexical search. A real model quality corpus remains required.
+
+Queue idempotency/claim columns and memory fact tables are additive. Scheduled occurrences use durable idempotency keys; claims have heartbeats and periodic stale recovery. This protects job status, not external side effects: use idempotent provider APIs or reconcile before replay. Stop all workers before downgrade. Supply memory `fact_key` only for deliberate updates to one owner's evolving fact. Superseded records remain in operator history and can be explicitly deleted by their owner.

@@ -17,10 +17,11 @@ class Scheduler:
         return i
     def tick(self)->int:
         now=now_dt();count=0
-        with connect(self.path) as c:
-            rows=c.execute('SELECT id,kind,payload,interval_seconds FROM schedules WHERE enabled=1 AND next_run<=?',(now.isoformat(),)).fetchall()
-            for i,kind,payload,seconds in rows:
-                self.queue.enqueue(kind,json.loads(payload));c.execute('UPDATE schedules SET next_run=? WHERE id=?',((now+timedelta(seconds=seconds)).isoformat(),i));count+=1
+        with connect(self.path,timeout=10) as c:
+            c.execute('BEGIN IMMEDIATE')
+            rows=c.execute('SELECT id,kind,payload,interval_seconds,next_run FROM schedules WHERE enabled=1 AND next_run<=?',(now.isoformat(),)).fetchall()
+            for i,kind,payload,seconds,due in rows:
+                self.queue.enqueue(kind,json.loads(payload),idempotency_key=f'schedule:{i}:{due}');c.execute('UPDATE schedules SET next_run=? WHERE id=?',((now+timedelta(seconds=seconds)).isoformat(),i));count+=1
         return count
 
 from threading import Event,Thread
