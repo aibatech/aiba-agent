@@ -87,7 +87,9 @@ class CrossUserMemoryIsolationTests(unittest.TestCase):
         self.loop._current_user = user or 'default'
 
     def _run(self, name, args):
-        res = self.loop.registry.execute(name, args)
+        grant = self.loop.approvals.action_fingerprint(name, args)
+        with self.loop.approvals.request_scope([grant]):
+            res = self.loop.registry.execute(name, args)
         self.assertTrue(res.ok, f"{name} failed: {res.error}")
         out = res.output
         if isinstance(out, dict):
@@ -154,12 +156,12 @@ class CrossUserMemoryIsolationTests(unittest.TestCase):
 
     def test_worker_requires_actual_action_approval_and_schema(self):
         resolved = self.loop._subagent_resolve_tools(['write_file'])['write_file']
-        with patch.object(self.loop.approvals, 'approve', return_value=False) as approve:
+        with patch.object(self.loop.approvals, 'approve_exact', return_value=False) as approve:
             result = resolved['handler'](path='denied.txt', content='test')
         self.assertFalse(result.ok)
         approve.assert_called_once()
         self.assertFalse((self.settings.workspace_dir / 'denied.txt').exists())
-        with patch.object(self.loop.approvals, 'approve', return_value=True):
+        with patch.object(self.loop.approvals, 'approve_exact', return_value=True):
             invalid = resolved['handler'](path='invalid.txt', content=42)
         self.assertFalse(invalid.ok)
         self.assertFalse((self.settings.workspace_dir / 'invalid.txt').exists())

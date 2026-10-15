@@ -45,6 +45,8 @@ class MemoryVault:
                 # backfilled to 'shared' by this single atomic statement.
                 c.execute(f"ALTER TABLE memories ADD COLUMN owner TEXT NOT NULL DEFAULT '{SHARED}'")
 
+            c.execute('CREATE TABLE IF NOT EXISTS memory_source_overrides(source_path TEXT PRIMARY KEY)')
+
     def _scope(self, as_user):
         """Return (sql_fragment, args) to restrict a query to one user's OWN
         rows. Unscoped (as_user=None) returns ('', []) -> whole table (primary
@@ -92,6 +94,9 @@ class MemoryVault:
         sql='UPDATE memories SET '+', '.join(sets)+' WHERE id=?'
         if scope:sql+=' AND '+scope
         with connect(self.db_path) as c:
+            row = c.execute('SELECT source_path FROM memories WHERE id=?' + (' AND '+scope if scope else ''), [int(memory_id)]+args).fetchone()
+            if row and row[0]:
+                c.execute('INSERT OR IGNORE INTO memory_source_overrides VALUES (?)', (row[0],))
             c.execute(sql,vals+[int(memory_id)]+args)
         # The UPDATE may have matched nothing (e.g. a scoped caller targeting a
         # 'shared' or foreign row); no cross-owner mutation can occur.
@@ -100,6 +105,9 @@ class MemoryVault:
         with connect(self.db_path) as c:
             sql='DELETE FROM memories WHERE id=?'
             if scope:sql+=' AND '+scope
+            row = c.execute('SELECT source_path FROM memories WHERE id=?' + (' AND '+scope if scope else ''), [int(memory_id)]+args).fetchone()
+            if row and row[0]:
+                c.execute('INSERT OR IGNORE INTO memory_source_overrides VALUES (?)', (row[0],))
             cur=c.execute(sql,[int(memory_id)]+args);return cur.rowcount>0  # FTS in sync via memories_ad trigger
     def list(self,limit:int=100,category:str|None=None,as_user=None):
         sql='SELECT * FROM memories';args=[]
@@ -116,7 +124,11 @@ class MemoryVault:
         return [{'id':r['id'],'content':r['content'],'category':r['category'],'importance':r['importance'],'created_at':r['created_at'],'source_path':r.get('source_path')} for r in rows]
     def sync_markdown(self,owner=None):
         for p in self.vault_dir.rglob('*.md'):
-            rel=str(p.relative_to(self.vault_dir)); content=p.read_text(encoding='utf-8',errors='replace'); category=rel.split('/')[0] if '/' in rel else 'general'
+            if p.is_symlink():continue
+            rel=str(p.relative_to(self.vault_dir))
+            with connect(self.db_path) as c:
+                if c.execute('SELECT 1 FROM memory_source_overrides WHERE source_path=?',(rel,)).fetchone():continue
+            content=p.read_text(encoding='utf-8',errors='replace'); category=rel.split('/')[0] if '/' in rel else 'general'
             with connect(self.db_path) as c:
                 row=c.execute('SELECT id,content FROM memories WHERE source_path=?',(rel,)).fetchone()
                 if row and row[1]!=content:c.execute('UPDATE memories SET content=?,category=? WHERE id=?',(content,category,row[0]))

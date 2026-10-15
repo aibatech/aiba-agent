@@ -102,7 +102,7 @@ class RegistrySecretRedactionTests(unittest.TestCase):
         seen = []
 
         class _CaptureApprover:
-            def approve(self, name, reason):
+            def approve_exact(self, name, arguments, reason):
                 seen.append(reason)
                 return True
 

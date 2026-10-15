@@ -18,6 +18,8 @@ class BackupManager:
         with tempfile.TemporaryDirectory(prefix='aiba-backup-',dir=self.root) as temp:
             stage=Path(temp);files=[]
             for source in sorted(self.data_dir.glob('*.db')):
+                if source.is_symlink():raise BackupError('Database symlinks are forbidden')
+                if source.name == 'approvals.db':continue  # grants must never be resurrected by a restore
                 target=stage/source.name
                 with connect(source) as src,connect(target) as dst:src.backup(dst)
                 with connect(target) as db:
@@ -32,7 +34,11 @@ class BackupManager:
     def verify(self,backup_id):
         folder=self._folder(backup_id);manifest=json.loads((folder/'manifest.json').read_text())
         for item in manifest['files']:
-            path=folder/item['name']
+            name=item['name']
+            if not isinstance(name,str) or Path(name).name!=name or '/' in name or '\\' in name or name in {'.','..','approvals.db'}:
+                raise BackupError('Unsafe backup entry')
+            path=folder/name
+            if path.is_symlink() or (self.data_dir/name).is_symlink():raise BackupError('Backup symlinks are forbidden')
             if not path.is_file() or digest(path)!=item['sha256']:raise BackupError(f"Backup verification failed: {item['name']}")
             if path.suffix=='.db':
                 with connect(f'file:{path}?mode=ro',uri=True) as db:
@@ -43,8 +49,18 @@ class BackupManager:
         self.verify(backup_id);folder=self._folder(backup_id);safety=self.create('automatic pre-restore safety backup')
         manifest=json.loads((folder/'manifest.json').read_text())
         for item in manifest['files']:
-            source=folder/item['name'];target=self.data_dir/item['name'];temporary=target.with_suffix(target.suffix+'.restore')
-            shutil.copy2(source,temporary);os.replace(temporary,target)
+            source=folder/item['name'];target=self.data_dir/item['name']
+            fd, temporary = tempfile.mkstemp(prefix='.restore-', dir=self.data_dir)
+            try:
+                with os.fdopen(fd,'wb') as output, source.open('rb') as input_file:
+                    shutil.copyfileobj(input_file, output)
+                    output.flush();os.fsync(output.fileno())
+                os.replace(temporary,target)
+            finally:
+                if os.path.exists(temporary):os.unlink(temporary)
+        approval_db=self.data_dir/'approvals.db'
+        if approval_db.exists():
+            with connect(approval_db) as db:db.execute('DELETE FROM approval_challenges')
         return {'restored':True,'backup_id':backup_id,'safety_backup_id':safety['backup_id']}
     def list(self):
         result=[]
@@ -54,6 +70,8 @@ class BackupManager:
         return result
     def _folder(self,backup_id):
         if not backup_id or Path(backup_id).name!=backup_id:raise BackupError('Invalid backup id')
+        if '/' in backup_id or '\\' in backup_id or backup_id in {'.','..'}:raise BackupError('Invalid backup id')
         folder=self.root/backup_id
+        if folder.is_symlink():raise BackupError('Backup symlinks are forbidden')
         if not folder.is_dir():raise BackupError('Backup not found')
         return folder

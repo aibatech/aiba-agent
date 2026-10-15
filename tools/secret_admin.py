@@ -54,8 +54,8 @@ class SecretAdmin:
                 lines.append(replacement)
             fd,tmp=tempfile.mkstemp(prefix=".aiba-secret-",dir=str(dest.parent))
             try:
-                os.fchmod(fd,0o600)
                 with os.fdopen(fd,"w",encoding="utf-8") as handle:
+                    if hasattr(os,"fchmod"):os.fchmod(handle.fileno(),0o600)
                     handle.writelines(lines)
                     handle.flush()
                     os.fsync(handle.fileno())

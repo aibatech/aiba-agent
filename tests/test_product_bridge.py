@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from approvals.manager import ApprovalManager
+from approvals.store import ApprovalStore
 from api.product_bridge import _principal, create_product_app
 from api.version import runtime_version
 
@@ -74,7 +75,10 @@ class ProductBridgeApiTests(unittest.TestCase):
         except ImportError:
             self.skipTest("FastAPI test dependencies are not installed")
         self.agent = _FakeAgent()
-        self.client = TestClient(create_product_app(self.agent, bridge_token="test-token"))
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = ApprovalStore(Path(self.tmp.name) / "approvals.db")
+        self.client = TestClient(create_product_app(self.agent, bridge_token="test-token", approval_store=self.store))
         self.headers = {
             "Authorization": "Bearer test-token",
             "X-AIBA-User-ID": "abc123",
@@ -113,7 +117,7 @@ class ProductBridgeApiTests(unittest.TestCase):
             "/v1/product/execute",
             headers=self.headers,
             json={"instruction": "Click Continue", "input_mode": "text",
-                  "approved_tools": ["browser_click"]},
+                  "approved_tools": [first.json()["approval_required"][0]["approval_token"]]},
         )
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.json()["status"], "complete")

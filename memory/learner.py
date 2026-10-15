@@ -50,10 +50,8 @@ class AutoLearner:
             existing = self._normalize(str(row.get("content", "")))
             if existing == target:
                 return True
-            # Strong near-duplicate guard for repeated standing facts.
-            a, b = set(target.split()), set(existing.split())
-            if a and b and len(a & b) / max(1, min(len(a), len(b))) >= 0.85:
-                return True
+            # Similar wording can carry opposite facts or changed quantities.
+            # Only normalized equality is safe to discard automatically.
         return False
 
     def learn(self, user_text: str, owner: str, as_user=None,
