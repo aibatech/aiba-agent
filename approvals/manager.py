@@ -4,6 +4,7 @@ from contextvars import ContextVar
 from typing import Callable, Iterable
 import hashlib
 import json
+import time
 
 
 class ApprovalManager:
@@ -18,16 +19,20 @@ class ApprovalManager:
             "aiba_approval_grants", default=frozenset()
         )
         self._consumed: ContextVar[frozenset[str]] = ContextVar("aiba_consumed", default=frozenset())
+        self._deadline: ContextVar[float | None] = ContextVar('aiba_approval_deadline', default=None)
         self._requested: ContextVar[tuple[dict[str, str], ...]] = ContextVar(
             "aiba_approval_requests", default=()
         )
 
     @contextmanager
-    def request_scope(self, approved_tools: Iterable[str] | None = None):
+    def request_scope(self, approved_tools: Iterable[str] | None = None, *, ttl_seconds: float | None = None):
         grants = frozenset(
             str(name).strip() for name in (approved_tools or ()) if str(name).strip()
         )
+        if ttl_seconds is not None and ttl_seconds <= 0:
+            raise ValueError('Approval TTL must be positive')
         grant_token = self._grants.set(grants)
+        deadline_token = self._deadline.set(time.monotonic() + ttl_seconds if ttl_seconds is not None else None)
         request_token = self._requested.set(())
         consumed_token = self._consumed.set(frozenset())
         try:
@@ -35,6 +40,7 @@ class ApprovalManager:
         finally:
             self._consumed.reset(consumed_token)
             self._requested.reset(request_token)
+            self._deadline.reset(deadline_token)
             self._grants.reset(grant_token)
 
     @staticmethod
@@ -46,7 +52,9 @@ class ApprovalManager:
         fingerprint = self.action_fingerprint(action, arguments)
         # Existing tool-only grants remain supported for backward compatibility,
         # but sensitive callers can require the exact fingerprint grant.
-        if fingerprint in self._grants.get() and fingerprint not in self._consumed.get():
+        deadline = self._deadline.get()
+        unexpired = deadline is None or time.monotonic() < deadline
+        if unexpired and fingerprint in self._grants.get() and fingerprint not in self._consumed.get():
             self._consumed.set(self._consumed.get() | {fingerprint})
             return True
         if not self.interactive:
