@@ -8,7 +8,7 @@ from security.auth import AuthStore
 from tools.base import ToolResult
 
 class FakeRegistry:
-    def execute(self,name,args):return ToolResult(True,{'name':name,'args':args})
+    def execute(self,name,args,blocked=None):return ToolResult(False,error='blocked') if name in (blocked or set()) else ToolResult(True,{'name':name,'args':args})
 
 class V03Tests(unittest.TestCase):
     def test_queue_worker_and_recovery(self):

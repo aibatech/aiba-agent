@@ -198,11 +198,9 @@ class SubagentsLoopIntegrationTests(unittest.TestCase):
             {"type": "final", "response": "Concluded: workspace is empty"},
         ])
         loop.router.complete = fake.complete
-        res = loop.registry.execute(
-            "delegate_task",
-            {"objectives": ["summarise the workspace"],
-             "tools": ["list_files"]},
-        )
+        args = {"objectives": ["summarise the workspace"], "tools": ["list_files"]}
+        with loop.approvals.request_scope([loop.approvals.action_fingerprint('delegate_task', args)]):
+            res = loop.registry.execute('delegate_task', args)
         self.assertTrue(res.ok, msg=f"delegation failed: {res.error}")
         payload = res.output
         self.assertIsInstance(payload, dict)

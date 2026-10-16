@@ -198,26 +198,30 @@ class Phase9LoopIntegrationTests(unittest.TestCase):
     # -- memory maintenance tools ------------------------------------------
     def test_memory_update_delete_list_export_roundtrip(self):
         loop = self._make_loop(auto_approve=True)
+        def execute(name, args):
+            grant = loop.approvals.action_fingerprint(name, args)
+            with loop.approvals.request_scope([grant]):
+                return loop.registry.execute(name, args)
         try:
-            add = loop.registry.execute(
+            add = execute(
                 "remember",
                 {"content": "client prefers navy awnings", "category": "prefs",
                  "importance": 0.8})
             self.assertTrue(add.ok)
             mid = add.output["memory_id"]
-            upd = loop.registry.execute(
+            upd = execute(
                 "update_memory",
                 {"memory_id": mid, "content": "client prefers charcoal awnings"})
             self.assertTrue(upd.ok, msg=f"update failed: {upd.error}")
             got = loop.vault.get(mid)
             self.assertEqual(got["content"], "client prefers charcoal awnings")
-            lst = loop.registry.execute("list_memories", {"category": "prefs"})
+            lst = execute("list_memories", {"category": "prefs"})
             self.assertTrue(lst.ok)
             self.assertTrue(any(r["id"] == mid for r in lst.output))
-            exp = loop.registry.execute("export_memories", {"filename": "m.md"})
+            exp = execute("export_memories", {"filename": "m.md"})
             self.assertTrue(exp.ok, msg=f"export failed: {exp.error}")
             self.assertTrue((loop.settings.workspace_dir / "m.md").exists())
-            dele = loop.registry.execute("delete_memory", {"memory_id": mid})
+            dele = execute("delete_memory", {"memory_id": mid})
             self.assertTrue(dele.ok, msg=f"delete failed: {dele.error}")
             self.assertIsNone(loop.vault.get(mid))
         finally:

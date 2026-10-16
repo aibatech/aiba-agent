@@ -1,0 +1,47 @@
+{
+  "checks": [
+    {
+      "name": "health",
+      "passed": true,
+      "status": 200,
+      "body": "{\"ok\":true,\"version\":\"1.7.0\",\"provider\":\"local\",\"sandbox\":\"local\",\"managed_models\":0}"
+    },
+    {
+      "name": "ready",
+      "passed": true,
+      "status": 200,
+      "body": "{\"ready\":true,\"migrations\":[{\"database\":\"providers.db\",\"current\":2,\"target\":2,\"exists\":true,\"ready\":true},{\"database\":\"jobs.db\",\"current\":2,\"target\":2,\"exists\":true,\"ready\":true},{\"database\":\"tasks.db\",\"current\":1,\"target\":1,\"exists\":true,\"ready\":true},{\"database\":\"schedules.db\",\"current\":1,\"target\""
+    },
+    {
+      "name": "auth-required",
+      "passed": true,
+      "status": 401,
+      "body": "{\"detail\":\"Valid bearer token required\"}"
+    },
+    {
+      "name": "operations",
+      "passed": true,
+      "status": 200,
+      "body": "{\"migrations\":[{\"database\":\"providers.db\",\"current\":2,\"target\":2,\"exists\":true,\"ready\":true},{\"database\":\"jobs.db\",\"current\":2,\"target\":2,\"exists\":true,\"ready\":true},{\"database\":\"tasks.db\",\"current\":1,\"target\":1,\"exists\":true,\"ready\":true},{\"database\":\"schedules.db\",\"current\":1,\"target\":1,\"exists\":t"
+    },
+    {
+      "name": "metrics",
+      "passed": true,
+      "status": 200,
+      "body": "# TYPE aiba_uptime_seconds gauge\naiba_uptime_seconds 0.159\naiba_http_requests_total{method=\"GET\",path=\"/health\",status=\"200\"} 1\naiba_http_requests_total{method=\"GET\",path=\"/ready\",status=\"200\"} 1\naiba_http_requests_total{method=\"GET\",path=\"/v1/operations\",status=\"200\"} 1\naiba_http_requests_total{met"
+    },
+    {
+      "name": "backup-create",
+      "passed": true,
+      "status": 201,
+      "body": "{\"format\":1,\"backup_id\":\"20261015T042140Z-afd5bb8b\",\"created_at\":\"2026-10-15T04:21:40.735986+00:00\",\"label\":\"API backup\",\"files\":[{\"name\":\"aiba.db\",\"sha256\":\"db4cca11b7161ad0286e76f75f4cc80dad6f2506e2d2bc52b38a89a66b860989\",\"bytes\":40960},{\"name\":\"jobs.db\",\"sha256\":\"51399a0961d4b0ba5f6db5932a6efabff"
+    },
+    {
+      "name": "backup-verify",
+      "passed": true,
+      "status": 200,
+      "body": "{\"verified\":true,\"backup_id\":\"20261015T042140Z-afd5bb8b\",\"files\":7}"
+    }
+  ],
+  "passed": true
+}

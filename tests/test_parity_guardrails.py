@@ -17,3 +17,12 @@ def test_high_risk_parity_surfaces_default_off():
     ):
         assert name in tools, f"{name} must have an explicit policy row"
         assert tools[name]["enabled"] is False, f"{name} must default off"
+
+
+def load_tests(loader, tests, pattern):
+    """Include function-style acceptance cases in the standard CI runner."""
+    import unittest
+    for name, case in sorted(globals().items()):
+        if name.startswith("test_") and callable(case):
+            tests.addTest(unittest.FunctionTestCase(case))
+    return tests

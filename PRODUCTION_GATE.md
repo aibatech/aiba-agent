@@ -24,3 +24,66 @@ Clean Windows/macOS computers or hosted runners must execute the certification w
 ## Release decision
 
 A stable tag is permitted only when every required job passes and `certification/RELEASE_CANDIDATE.json` names the exact commit, artifact SHA-256, target environments, provider test results, open security findings, rollback result, and approver. Missing evidence means Beta or Release Candidate—not Production Certified.
+
+## 2026-10-15 engineering remediation evidence
+
+The inspected PR #34 head was `4f1ea2222dc45682041c711d4ad0d63531349829`; no newer commits existed at inspection. Default branch was `e8c01f43b39adddd4b590ac8328fb3ecb546474e`. PR remains draft and must not be merged or deployed without owner approval.
+
+- Baseline: 428 unit tests, 8 optional-dependency skips on Linux.
+- Baseline [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38680119058): Windows 3.11/3.12 failed secret-copy cleanup; the unsupported `fchmod` path left a descriptor open. Fixed with platform-aware permission handling inside the closing file context.
+- First implementation commit: `d0d8a94716dbdfd01c7906533aa9a2db564a4470`. [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38681108541): all nine OS/Python jobs, security and container passed. Capability Pyright failed on a new ContextVar annotation; the follow-up explicitly types the outcome context. Earlier green jobs do not certify a later SHA.
+- Local Pyright 1.1.411: zero errors. Bandit high-severity scan: passed. `pip-audit --strict -r requirements.txt`: no known vulnerabilities. Capability validator and secret scanner passed.
+- Retained local reports: `docs/certification/`. Short real HTTP load: 12,350 successful requests, zero errors, 25 concurrent clients, p95 77.96 ms. **Not** the required one-hour soak or a model/task latency benchmark.
+- New deterministic integrated scenarios: `tests/test_mission_e2e.py`, `test_skill_lifecycle.py`, `test_memory_recovery_acceptance.py`, `test_approval_replay.py`, `test_execution_recovery_acceptance.py`. Scripted providers/mocked accounts are labeled; no live-provider certification claimed.
+
+See `BENCHMARK_SCORECARD.md` for all sixty requirements and the scoring rubric; `docs/INSTALL_UPGRADE_RC.md` for installation, the breaking approval contract, migration and rollback. Remaining implementation gaps include semantic retrieval, conflict resolution, full owner erasure, outcome-based learning measurement, scheduler crash/idempotency guarantees, filesystem race protection, and comprehensive log/injection threat tests. External gates include client/voice/accessibility/messaging devices, live providers, deployed VPS restoration, a one-hour leak-monitored soak and signed artifacts.
+
+**Decision: NOT FULLY CERTIFIED.** This work is an engineering candidate, not authorization for a stable release. Do not interpret a local JSON `certified: true` as six-benchmark certification.
+
+## Final observed implementation CI
+
+Implementation `42fcc78fb459d939bf914f1084110c428305f25a`: [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38681728084) **passed all 12 jobs**, including nine OS/Python matrix jobs, security, container and capability checks. [MCP Integration](https://github.com/aibatech/aiba-agent/actions/runs/38681728190) **passed**. Retained job identifiers are in `docs/certification/ci-summary.json`. Local optional-dependency run: 442 tests, one platform-specific skip (`test_windows_permissions_not_faked`, intentionally off-POSIX only). No missing dependency was silently counted as live certification. These results do not close the remaining code and external gates.
+
+Final schema follow-up: nested object optional/unknown-property regression and authenticated skill review/install/rate-limit tests pass. Final local run: 444 tests, 3 optional/platform skips. The retained CI snapshot names its exact implementation SHA; it must not be silently interpreted as a later commit result.
+
+## Additional remediation evidence — 2026-10-15
+
+Local suite: **455 tests, 3 skips, zero failures** (`python -m unittest discover -s tests`). Implemented optional local semantic retrieval/cache, bounded hybrid context, explicit owner-scoped fact supersession/history, full-profile backup with verified staging and caught-failure rollback, durable scheduled-occurrence deduplication, worker heartbeat/claim fencing and periodic stale recovery. Removed raw tool errors from registry audit and raw output/response/error previews from reasoning telemetry; nested lists now receive credential-key redaction.
+
+New regression modules: test_memory_semantics.py, test_full_profile_backup.py, test_scheduler_reliability.py; expanded test_protocol.py and test_registry_redaction.py. The semantic fixture is deterministic, not a real-model quality certification. Backup restores do not erase extra files or provide multi-file power-loss atomicity. External action replay still requires reconciliation. Latest code requires new CI evidence; earlier green runs do not certify these changes. Scores: Memory 6, Execution 6, Learning 6, Security 4, UX 5, Reliability 7. **Not fully certified; not approved for production deployment.**
+
+Follow-up: local suite now **458 tests, 3 skips, zero failures**. Added POSIX descriptor-relative host read/write/delete, bounded reads and atomic replacement writes; adversarial ancestor-swap and hard-link regression tests pass. Windows keeps atomic writes and bounded reads, but equivalent descriptor-relative race guarantees are not certified. Fixed backup failure-injection test to compare canonical paths on macOS and Windows; no test was skipped to bypass the failure.
+
+### Verified CI and discovery correction
+
+Implementation `7d659ab8c88d2b51c080c2553547c6095a688360`: [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38733650290) passed all 12 jobs (nine OS/Python combinations, security, capabilities/types and container). [MCP SDK integration](https://github.com/aibatech/aiba-agent/actions/runs/38733650315) passed.
+
+Final discovery correction adds eight existing function-style tests to unittest discovery. They previously were not executed by that runner. Their default-permission check exposed enabled host-file defaults; host file tools now require owner opt-in as well as exact approval. The corrected local suite ran **466 tests, zero failures, nine skips** in the base runtime (optional API/MCP dependencies unavailable after environment reset). Earlier 458-test run used API dependencies and skipped three. New CI is required for this final correction; no optional capability is claimed tested merely because its test skipped.
+
+## Continued implementation (post-e034db8)
+
+472 local tests, zero failures, nine optional/platform skips. New tests cover false-positive write claims, read-back/absence postconditions, scoped erasure with restore suppression, confirmation mismatch, confidential reflection retention, skill failure propagation and inherited blocked tools. Earlier final e034db8 CI passed: [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38788437418), [MCP](https://github.com/aibatech/aiba-agent/actions/runs/38788437357). New code requires its own CI.
+
+Isolated Runtime Soak workflow now executes 3600 seconds of HTTP load with Linux process RSS sampling and a 64 MiB post-warmup growth budget. Passing it supports only the health-endpoint workload, not live model tasks or a universal absence-of-leaks claim. No result is asserted until the workflow completes.
+
+## Retained one-hour soak and continued learning/privacy work
+
+Commit 68dcd8d passed [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38792898735), [MCP](https://github.com/aibatech/aiba-agent/actions/runs/38792898605), and [Isolated Runtime Soak](https://github.com/aibatech/aiba-agent/actions/runs/38792886989). Retained full RSS samples: docs/certification/runtime-soak-68dcd8d.json. Results: 3600.06 seconds; 4,223,100 successes; zero errors; p95 30 ms; 884,736-byte post-warmup RSS growth. Artifact SHA-256: 63321abeee4e1c59d7bfe585ae3c91071079f05079b44a5a9f1e26eb4644776d. This is an HTTP health-workload gate, not a model throughput claim.
+
+Further implementation adds owner-scoped skill outcome history/comparison and authenticated reporting; real matched-file workflow regression (3/3 baseline and candidate outcomes, tool calls reduced from 3 to 2); attributed profile/reflection/proposal deletion with restored-copy suppression; persisted step plans with incomplete-work gating. No automatic skill promotion or claim of general learning quality. Remaining criteria stay explicitly open in the scorecard.
+
+## Diagnostic privacy, secret transfer and planned delegation
+
+Verified parent c39eff6 passed [Production Gate](https://github.com/aibatech/aiba-agent/actions/runs/38850441114) and [MCP SDK integration](https://github.com/aibatech/aiba-agent/actions/runs/38850441123).
+
+Further repairs withhold raw exception messages, source lines, request paths, free-form audit payload fields and unsupported object representations. Audit records retain action fingerprints. Secret transfer recognizes export/whitespace assignments, preserves quoted single-line values, refuses duplicate source assignments, multiline/malformed values and invalid UTF-8 before writing, and omits exception contents from errors. Planned legacy delegation now validates its plan index before dispatch and records progress/results through the same durable plan interface.
+
+Validation: `python -m unittest discover -s tests`: 484 tests, zero failures, 10 optional/platform skips. Capability consistency and repository secret scan passed. Regression coverage includes tests/test_diagnostic_privacy.py, test_secret_admin.py and test_execution_plans.py. Tests use synthetic secrets and a headless screenshot fixture, not physical device certification. New implementation requires its own CI. Benchmark scores remain 6/6/7/4/5/8; arbitrary strings in unknown audit fields, external logs, full dotenv grammar, Windows ACL/race protection, live providers and client/hardware certification remain outside this evidence. No merge or deployment performed.
+
+### Secret transfer descriptor hardening
+
+Secret reads are limited to 1 MiB and regular files. POSIX source reads and destination read/atomic replacement now use pinned ancestor descriptors and no-follow opens; temporary files remain mode 0600. Regression tests reject replacement source symlinks, keep destination-parent swaps from redirecting secrets, and reject FIFOs without blocking. Windows retains the portable path implementation and does not inherit the POSIX race guarantee. Full suite: 488 tests, zero failures, 10 optional/platform skips; repository secret scan and diff checks pass. Scores remain unchanged pending all acceptance criteria.
+
+### Windows CI remediation and installer log privacy
+
+Run 38875036187 caught CRLF double translation in secret-copy output on Windows. The implementation now normalizes input newlines before platform text writes; a byte-level CRLF regression runs on every OS. Headless/redirected setup also withholds the authentication URL instead of copying its bearer token into installer/CI logs; interactive local setup retains the sign-in link. Local suite: 490 tests, zero failures, 10 skips. This supersedes the failed 863c19a Windows result; replacement CI must pass before certification.

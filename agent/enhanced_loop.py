@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from contextvars import ContextVar
 
 from agent.conversation_store import ConversationStore, default_conversation_id
 from agent.conversation_review import ConversationReviewer
@@ -23,12 +24,27 @@ class AgentLoop(BaseAgentLoop):
         # Prevent a background job from calling the overridden handle() before
         # the new conversation/learning stores exist.
         super().__init__(*args, start_worker=False, **kwargs)
+        self._outcome: ContextVar[dict | None] = ContextVar("task_outcome", default=None)
+        self.worker.handlers["agent_task"] = self._run_background
         self.conversations = ConversationStore(self.settings.data_dir / "conversations.db")
         self.learner = AutoLearner(self.vault)
         self.conversation_reviewer = ConversationReviewer(self.settings.vault_dir / "conversation_reviews")
         self._cli_conversation_id = default_conversation_id("default")
         if requested_start and self.settings.worker_enabled:
             self.worker.start();self.scheduler_runner.start();self.update_checker.start()
+
+    def handle_result(self, text, **kwargs):
+        self._outcome.set(None)
+        answer = self.handle(text, **kwargs)
+        return self._outcome.get() or {'status': 'complete', 'result': answer}
+
+    def _run_background(self, payload):
+        result = self.handle_result(payload['prompt'], propose_skill=False,
+                                    task_type=payload.get('task_type'), manual_model_id=payload.get('manual_model_id'),
+                                    user_id=payload.get('user_id'))
+        if result['status'] != 'complete':
+            raise RuntimeError('Background task did not complete; inspect task status')
+        return result
 
     @staticmethod
     def _history_context(history: list[dict[str, str]]) -> str:
@@ -78,8 +94,8 @@ class AgentLoop(BaseAgentLoop):
             raise ValueError("A resolved conversation_id is required")
         cid = conversation_id
 
-        task_id = self.tasks.create(text)
-        self.events.publish("task_started", task_id=task_id, task=text)
+        task_id = self.tasks.create(text, owner=user_id or "default")
+        self.events.publish("task_started", task_id=task_id)
         user_key = user_id or "default"
         self._current_user = user_key
         engine_scope = self._memory_scope(user_id)
@@ -115,8 +131,8 @@ class AgentLoop(BaseAgentLoop):
                 prompt_context,
                 blocked_tools=self.personal.blocked_tools(user_id),
             )
-            self.tasks.finish(task_id, answer)
-            status = "complete"
+            status = getattr(self.engine, "execution_status", "complete")
+            self.tasks.finish(task_id, answer, status)
         except Exception as exc:
             crash_id = self.crashes.capture(exc, {"task_id": task_id})
             self.metrics.increment("task_failures_total", error=type(exc).__name__)
@@ -147,12 +163,12 @@ class AgentLoop(BaseAgentLoop):
         except Exception:
             learned_ids = []
 
-        ref = self.dream.reflect(task_id, text, answer, used)
+        ref = self.dream.reflect(task_id, text, answer, used, owner=user_key, status=status)
         try:
             review = self.conversation_reviewer.review(task_id, cid, text, answer, used, status)
         except Exception:
             review = {"needs_review": False, "signals": []}
-        proposal = self.improver.propose(task_id, text, used, answer) if propose_skill and used else None
+        proposal = self.improver.propose(task_id, text, used, answer) if propose_skill and used and status == "complete" else None
         self.metrics.increment("tasks_total", status=status)
         self.events.publish(
             "task_finished",
@@ -165,10 +181,12 @@ class AgentLoop(BaseAgentLoop):
             skill_proposal=str(proposal) if proposal else None,
             self_improvement_review=review,
         )
+        self._outcome.set({'status': status, 'result': answer, 'task_id': task_id,
+                           'tools': used, 'conversation_id': cid})
         return answer
 
     def run(self):
-        print(f"AIBA Agent v1.6 | persistent conversation | routing=auto | sandbox={self.settings.sandbox_mode} | /exit to quit")
+        print("AIBA is ready. Tell me what you’d like to work on. Type /exit to quit.")
         print("Tip: /new starts a fresh conversation. Your durable memories remain available.")
         while True:
             try:

@@ -25,6 +25,19 @@ class Metrics:
 class CrashReporter:
     def __init__(self,logs_dir:Path):self.path=logs_dir/'crashes.jsonl';self.path.parent.mkdir(parents=True,exist_ok=True);self._lock=threading.Lock()
     def capture(self,exc,context=None):
-        crash_id=str(uuid.uuid4());row={'id':crash_id,'timestamp':datetime.now(timezone.utc).isoformat(),'type':type(exc).__name__,'message':str(exc)[:2000],'context':context or {},'traceback':''.join(traceback.format_exception(exc))[-12000:]}
+        crash_id=str(uuid.uuid4())
+        # Exception text, source lines, locals and request paths can contain secrets.
+        frames=[{'file':Path(frame.filename).name,'line':frame.lineno,'function':frame.name}
+                for frame in traceback.extract_tb(exc.__traceback__)[-30:]]
+        safe_context={}
+        if isinstance(context,dict):
+            candidate=context.get('task_id')
+            if isinstance(candidate,str):
+                try:safe_context['task_id']=str(uuid.UUID(candidate))
+                except ValueError:pass
+            if isinstance(context.get('method'),str) and context['method'] in {'GET','POST','PUT','DELETE','PATCH','HEAD','OPTIONS'}:
+                safe_context['method']=context['method']
+        row={'id':crash_id,'timestamp':datetime.now(timezone.utc).isoformat(),'type':type(exc).__name__,
+             'message':'Exception details withheld from diagnostics','context':safe_context,'frames':frames}
         with self._lock,self.path.open('a',encoding='utf-8') as f:f.write(json.dumps(row,default=str)+'\n')
         return crash_id

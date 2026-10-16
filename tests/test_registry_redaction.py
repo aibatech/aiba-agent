@@ -51,6 +51,14 @@ class RegistrySecretRedactionTests(unittest.TestCase):
     def _audit_text(self, audit: AuditLog) -> str:
         return audit.path.read_text(encoding="utf-8", errors="replace")
 
+    def test_raw_tool_errors_not_copied_to_audit(self):
+        reg, audit = self._make("error", tools={"explode": {"enabled": True, "requires_approval": False}})
+        secret = "confidential-value-without-markers"
+        reg.register(Tool("explode", "test failure", lambda: ToolResult(False, error=secret), {"type": "object", "properties": {}}))
+        result = reg.execute("explode", {})
+        self.assertEqual(result.error, secret)
+        self.assertNotIn(secret, self._audit_text(audit))
+
     def test_secret_named_key_redacted_from_tool_start(self):
         reg, audit = self._make("k", tools={
             "store_token": {"enabled": True, "requires_approval": False}})
@@ -76,13 +84,14 @@ class RegistrySecretRedactionTests(unittest.TestCase):
         self.assertNotIn(secret, text)
         self.assertIn("[REDACTED", text)
 
-    def test_benign_typed_text_preserved_in_audit(self):
+    def test_typed_text_is_withheld_even_without_secret_markers(self):
         reg, audit = self._make("b", tools={
             "desktop_type": {"enabled": True, "requires_approval": False}})
         benign = "type the reply now and continue working"
         reg.register(_str_tool("desktop_type", "text"))
         reg.execute("desktop_type", {"text": benign})
-        self.assertIn(benign, self._audit_text(audit))
+        self.assertNotIn(benign, self._audit_text(audit))
+        self.assertIn("fingerprint", self._audit_text(audit))
 
     def test_non_secret_looking_unrelated_args_not_redacted(self):
         reg, audit = self._make("s", tools={
@@ -102,7 +111,7 @@ class RegistrySecretRedactionTests(unittest.TestCase):
         seen = []
 
         class _CaptureApprover:
-            def approve(self, name, reason):
+            def approve_exact(self, name, arguments, reason):
                 seen.append(reason)
                 return True
 
