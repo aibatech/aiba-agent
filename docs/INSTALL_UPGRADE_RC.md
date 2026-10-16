@@ -59,3 +59,7 @@ Skill outcome summaries are available to authenticated operators through `GET /v
 ### Secret transfer input compatibility
 
 The owner-approved secret-copy tool accepts uppercase environment keys, optional `export`, whitespace around `=`, and single-line quoted or unquoted values. It preserves the value syntax without expansion. Duplicate source keys, malformed/multiline assignments, invalid UTF-8 and unsupported assignment syntax fail before destination changes. Use a supported single-line representation; never paste secrets into chat. This tool does not certify Windows ACLs or protection against every concurrent filesystem mutation.
+
+### Secret transfer descriptor hardening
+
+Secret reads are limited to 1 MiB and regular files. POSIX source reads and destination read/atomic replacement now use pinned ancestor descriptors and no-follow opens; temporary files remain mode 0600. Regression tests reject replacement source symlinks, keep destination-parent swaps from redirecting secrets, and reject FIFOs without blocking. Windows retains the portable path implementation and does not inherit the POSIX race guarantee. Full suite: 488 tests, zero failures, 10 optional/platform skips; repository secret scan and diff checks pass. Scores remain unchanged pending all acceptance criteria.
