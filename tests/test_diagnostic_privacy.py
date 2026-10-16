@@ -36,3 +36,17 @@ class DiagnosticPrivacyTests(unittest.TestCase):
             text=audit.path.read_text()
             self.assertNotIn(secret,text)
             self.assertEqual(json.loads(text)['tool'],'read_file')
+
+    def test_headless_setup_does_not_print_authentication_link(self):
+        import io
+        from unittest.mock import patch
+        import setup_cli
+        output=io.StringIO()
+        with patch.object(setup_cli,'SetupManager') as manager, \
+             patch.object(setup_cli.sys,'argv',['setup_cli.py','--no-browser']), \
+             patch.object(setup_cli.sys,'stdout',output):
+            manager.return_value.ensure_configuration.return_value={'api_token':'synthetic-private-token'}
+            setup_cli.main()
+        self.assertNotIn('synthetic-private-token',output.getvalue())
+        self.assertNotIn('#token=',output.getvalue())
+        self.assertIn('withheld',output.getvalue())

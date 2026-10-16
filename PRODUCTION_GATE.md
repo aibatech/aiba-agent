@@ -83,3 +83,7 @@ Validation: `python -m unittest discover -s tests`: 484 tests, zero failures, 10
 ### Secret transfer descriptor hardening
 
 Secret reads are limited to 1 MiB and regular files. POSIX source reads and destination read/atomic replacement now use pinned ancestor descriptors and no-follow opens; temporary files remain mode 0600. Regression tests reject replacement source symlinks, keep destination-parent swaps from redirecting secrets, and reject FIFOs without blocking. Windows retains the portable path implementation and does not inherit the POSIX race guarantee. Full suite: 488 tests, zero failures, 10 optional/platform skips; repository secret scan and diff checks pass. Scores remain unchanged pending all acceptance criteria.
+
+### Windows CI remediation and installer log privacy
+
+Run 38875036187 caught CRLF double translation in secret-copy output on Windows. The implementation now normalizes input newlines before platform text writes; a byte-level CRLF regression runs on every OS. Headless/redirected setup also withholds the authentication URL instead of copying its bearer token into installer/CI logs; interactive local setup retains the sign-in link. Local suite: 490 tests, zero failures, 10 skips. This supersedes the failed 863c19a Windows result; replacement CI must pass before certification.

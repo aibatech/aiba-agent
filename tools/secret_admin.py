@@ -30,7 +30,7 @@ def _read_env(path: Path, parent=None) -> str:
         content = stream.read(_MAX_ENV_BYTES + 1)
     if len(content) > _MAX_ENV_BYTES:
         raise ValueError("Environment input exceeds size limit")
-    return content.decode("utf-8")
+    return content.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
 
 
 _ASSIGNMENT = re.compile(r"^(?:export\s+)?([A-Z][A-Z0-9_]{1,127})\s*=\s*(.*)$")

@@ -119,4 +119,14 @@ class SecretAdminTests(unittest.TestCase):
             src.write_text('API_KEY=approved\n');os.mkfifo(dst)
             self.assertFalse(SecretAdmin().copy_env_secret(str(src),str(dst),'API_KEY').ok)
 
+    def test_crlf_read_normalizes_before_platform_text_write(self):
+        from tools.secret_admin import _read_env
+        with tempfile.TemporaryDirectory() as td:
+            src,dst=Path(td)/'src.env',Path(td)/'dst.env'
+            src.write_bytes(b'API_KEY=new\r\n')
+            dst.write_bytes(b'# comment\r\nOTHER_KEY=keep\r\nAPI_KEY=old\r\n')
+            self.assertEqual(_read_env(dst),'# comment\nOTHER_KEY=keep\nAPI_KEY=old\n')
+            self.assertTrue(SecretAdmin().copy_env_secret(str(src),str(dst),'API_KEY').ok)
+            self.assertEqual(dst.read_text(),'# comment\nOTHER_KEY=keep\nAPI_KEY=new\n')
+
 if __name__=="__main__":unittest.main()
