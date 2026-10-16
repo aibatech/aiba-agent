@@ -165,6 +165,7 @@ def create_app(agent):
     def task_status(task_id:str,authorization:str|None=Header(default=None)):
         authorize(authorization);item=agent.tasks.get(task_id)
         if not item:raise HTTPException(404,'Not found')
+        item['plan']=agent.tasks.plan(task_id)
         return item
     class SkillReviewIn(BaseModel):
         steps: list[dict] = Field(min_length=1, max_length=100)
@@ -183,6 +184,20 @@ def create_app(agent):
         return {'name': skill.name, 'version': skill.version, 'status': 'installed'}
     @app.get('/v1/skills')
     def skills(authorization:str|None=Header(default=None)):authorize(authorization);return agent.skills.list()
+    @app.get('/v1/skills/{name}/outcomes')
+    def skill_outcomes(name: str, owner: str, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        if agent.skills.outcomes is None:raise HTTPException(503,'Skill outcome store unavailable')
+        return {'owner':owner,'name':name,'versions':agent.skills.outcomes.summary(owner,name)}
+    class SkillCompareIn(BaseModel):
+        owner: str = Field(min_length=1)
+        baseline_digest: str = Field(min_length=64,max_length=64)
+        candidate_digest: str = Field(min_length=64,max_length=64)
+    @app.post('/v1/skills/{name}/compare')
+    def skill_comparison(name: str, body: SkillCompareIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        if agent.skills.outcomes is None:raise HTTPException(503,'Skill outcome store unavailable')
+        return agent.skills.outcomes.compare(body.owner,name,body.baseline_digest,body.candidate_digest)
     @app.get('/v1/providers/presets')
     def provider_presets(authorization:str|None=Header(default=None)):authorize(authorization);return agent.providers.presets()
     @app.get('/v1/providers')

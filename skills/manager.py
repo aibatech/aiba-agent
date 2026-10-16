@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,re,shutil
+import json,re,shutil,time
 from skills.guard import SkillsGuard
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,7 +8,10 @@ from typing import Any
 class Skill:
     name:str;description:str;version:str;steps:list[dict[str,Any]];path:Path;instructions:str=''
 class SkillManager:
-    def __init__(self,root:Path): self.root=root;root.mkdir(parents=True,exist_ok=True);self.guard=SkillsGuard()
+    def __init__(self,root:Path,outcomes_path:Path|None=None):
+        self.root=root;root.mkdir(parents=True,exist_ok=True);self.guard=SkillsGuard()
+        from skills.outcomes import SkillOutcomes
+        self.outcomes=SkillOutcomes(outcomes_path) if outcomes_path else None
     def _safe(self,name:str)->str:
         value=re.sub(r'[^a-z0-9_-]+','-',name.lower()).strip('-')
         if not value:raise ValueError('Invalid skill name')
@@ -120,8 +123,8 @@ class SkillManager:
         return self.get(name)
     def instructions(self,name):
         skill=self.get(name);return {'name':skill.name,'description':skill.description,'version':skill.version,'instructions':skill.instructions,'executable':bool(skill.steps)}
-    def execute(self,name:str,registry,variables:dict[str,Any]|None=None,blocked:set[str]|None=None)->list[dict]:
-        skill=self.get(name); variables=variables or {}; outputs=[]
+    def execute(self,name:str,registry,variables:dict[str,Any]|None=None,blocked:set[str]|None=None,owner:str="default")->list[dict]:
+        skill=self.get(name); variables=variables or {}; outputs=[];started=time.monotonic()
         if not skill.steps:raise ValueError('Instruction-only portable skills must be reviewed by the model and cannot execute tools directly')
         for index,step in enumerate(skill.steps):
             tool=step['tool'];args=json.loads(json.dumps(step.get('arguments',{})))
@@ -129,6 +132,7 @@ class SkillManager:
                 if isinstance(v,str):
                     for key,value in variables.items():v=v.replace('{{'+key+'}}',str(value))
                     args[k]=v
-            res=registry.execute(tool,args,blocked=set(blocked or ()) | {'run_skill'});outputs.append({'step':index,'tool':tool,'ok':res.ok,'output':res.output,'error':res.error})
+            res=registry.execute(tool,args,blocked=set(blocked or ()) | {'run_skill'});outputs.append({'step':index,'tool':tool,'ok':res.ok,'output':res.output,'error':res.error,'verified':getattr(res,'verified',None)})
             if not res.ok:break
+        if self.outcomes:self.outcomes.record(owner,skill,outputs,(time.monotonic()-started)*1000)
         return outputs

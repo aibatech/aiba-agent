@@ -10,10 +10,10 @@ Target for every benchmark: **10/10**. Release status: **NOT FULLY CERTIFIED**.
 |---|---|---|---|---|
 | Memory | 10/10 | 6/10 | Requirement register below | 4 requirements |
 | Autonomous Execution | 10/10 | 6/10 | Requirement register below | 4 requirements |
-| Self-Improvement | 10/10 | 6/10 | Requirement register below | 4 requirements |
+| Self-Improvement | 10/10 | 7/10 | Requirement register below | 3 requirements |
 | Privacy & Security | 10/10 | 4/10 | Requirement register below | 6 requirements |
 | Human-Centered UX | 10/10 | 5/10 | Requirement register below | 5 requirements |
-| Production Reliability | 10/10 | 7/10 | Requirement register below | 3 requirements |
+| Production Reliability | 10/10 | 8/10 | Requirement register below | 2 requirements |
 
 ## Memory
 
@@ -27,7 +27,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 4 | Context selection/prioritization | GAP | memory/vault.py | Hybrid relevance, importance and character budget tested; real contextual relevance corpus missing |
 | 5 | Updates/corrections | PASS | test_memory_edit.py; test_memory_recovery_acceptance.py | Corrections survive source resync and restart |
 | 6 | Duplicate/conflicting memories | PASS | test_memory_semantics.py; test_memory_recovery_acceptance.py | Owner-scoped dedupe and explicit fact-key supersession, persistent auditable history and deletion |
-| 7 | Deletion/privacy controls | GAP | test_memory_recovery_acceptance.py | Search deletion persists; source files, reflections and historical backups need unified erasure policy |
+| 7 | Deletion/privacy controls | GAP | test_memory_recovery_acceptance.py | Scoped record/profile/reflection/proposal erasure plus restore suppression tested; unattributed legacy files, source documents and external copies remain explicit limits |
 | 8 | User isolation | PASS | test_memory_user_isolation.py; test_memory_ownership.py | Trusted backend must bind header identity to signed-in user |
 | 9 | Persistence after restart | PASS | test_mission_e2e.py | Real runtime restart with scripted provider |
 | 10 | Backup/restore/migration | GAP | test_v13.py; test_memory_recovery_acceptance.py | Full-profile restore and injected-failure rollback tested (test_full_profile_backup.py); external disaster drill and cross-process consistency outstanding |
@@ -38,7 +38,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 
 | # | Requirement | Status | Evidence | Scope / gap |
 |---|---|---|---|---|
-| 1 | Multi-step planning | GAP | test_mission_e2e.py | Tool sequences work; planner quality and plan recovery benchmark missing |
+| 1 | Multi-step planning | GAP | test_mission_e2e.py | Persistent bounded plans and partial-completion gating tested in test_execution_plans.py; live planner quality remains unverified |
 | 2 | Tool discovery/execution | PASS | test_capability_integration.py; test_mission_e2e.py | Policy and feature flags enforced |
 | 3 | Web research | GAP | test_web.py | Mock coverage; live retrieval certification outstanding |
 | 4 | File/workspace operations | PASS | test_sandbox.py; test_mission_e2e.py | Actual write and read-back |
@@ -47,7 +47,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 7 | Progress/status | PASS | test_protocol.py; test_execution_recovery_acceptance.py | Events and persistent task/job state |
 | 8 | Retry/timeout/cancellation/recovery | GAP | test_execution_recovery_acceptance.py | Queue retries/cancel/recovery tested; in-flight external cancellation and safe replay remain |
 | 9 | Sensitive authorization | PASS | test_exact_owner_approvals.py; test_approval_replay.py | Exact operation approval through registry |
-| 10 | Verified completion claims | GAP | test_mission_e2e.py | Provider failures now fail; model-authored success still needs outcome verifier |
+| 10 | Verified completion claims | GAP | test_mission_e2e.py | Workspace mutation postconditions and nested-skill failure propagation tested; other action adapters still need domain-specific outcome verifiers |
 
 ## Self-Improvement
 
@@ -63,7 +63,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 6 | Owner approval before installation | PASS | test_skill_lifecycle.py | Authenticated operator API plus exact review digest; no model tool for approval |
 | 7 | Permission-enforced execution | PASS | test_skill_lifecycle.py | Installation grants no execution privileges |
 | 8 | Versioning/rollback | PASS | test_skill_versioning.py; test_skill_lifecycle.py | Prior version restored; traversal rejected |
-| 9 | Measured improvement | GAP | No retained comparative benchmark | Need fixed task corpus, baseline and learned runs, success/cost/latency deltas |
+| 9 | Measured improvement | PASS | test_skill_outcomes.py | Matched three-case real-file corpus through review/install/registry: 3/3 successes for both versions, mean tool calls 3 to 2; scoped durable timing/success statistics. No claim of general model intelligence or statistically faster latency |
 | 10 | Unsafe self-modification prevention | GAP | test_agent_skills_guard.py | Registry gates retained; filesystem race and host execution boundaries not fully certified |
 
 ## Privacy & Security
@@ -114,5 +114,5 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 6 | End-to-end acceptance | PASS | test_mission_e2e.py; test_skill_lifecycle.py | Deterministic real runtime, scripted provider; live cases remain scoped separately |
 | 7 | Provider failure/recovery | PASS | test_mission_e2e.py; test_provider_onboarding.py | Failure status and background propagation; mocked provider |
 | 8 | Database integrity/migration/restore | PASS | test_v13.py; test_memory_recovery_acceptance.py | Database-only scope; restore requires stopped service |
-| 9 | Performance/concurrency/soak | GAP | docs/certification/runtime-load.json | 30-second HTTP load is not the required one-hour leak-monitored soak |
+| 9 | Performance/concurrency/soak | PASS | docs/certification/runtime-soak-68dcd8d.json; Actions 38792886989 | 3600.06 seconds, 4,223,100 requests, zero errors, p95 30 ms; RSS growth 884,736 bytes within 64 MiB budget. HTTP health workload only; live model throughput is not certified |
 | 10 | Install/upgrade/rollback/release | GAP | PRODUCTION_GATE.md | Signing identities, final artifact hashes and release rollback drill outstanding |

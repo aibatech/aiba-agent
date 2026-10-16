@@ -28,3 +28,33 @@ class TaskStore:
     def get(self,i):
         with connect(self.path) as c:
             c.row_factory=sqlite3.Row;r=c.execute('SELECT * FROM tasks WHERE id=?',(i,)).fetchone();return dict(r) if r else None
+
+    def set_plan(self, task_id, steps):
+        if not isinstance(steps,list) or not 1<=len(steps)<=20 or any(not isinstance(s,str) or not s.strip() or len(s)>500 for s in steps):
+            raise ValueError('Plan requires 1-20 short, nonempty steps')
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT checkpoint FROM tasks WHERE id=?',(task_id,)).fetchone()
+            if row is None:raise KeyError(task_id)
+            db.execute('CREATE TABLE IF NOT EXISTS task_plans(task_id TEXT PRIMARY KEY, steps TEXT NOT NULL)')
+            if db.execute('SELECT 1 FROM task_plans WHERE task_id=?',(task_id,)).fetchone():
+                raise ValueError('An active plan cannot be silently replaced')
+            db.execute('INSERT INTO task_plans VALUES (?,?)',(task_id,json.dumps([{'description':s,'status':'pending'} for s in steps])))
+        return self.plan(task_id)
+
+    def plan(self, task_id):
+        with connect(self.path) as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_plans'").fetchone():return []
+            row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+            return json.loads(row[0]) if row else []
+
+    def plan_result(self, task_id, index, ok, verified=None):
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+            if not row:raise ValueError('No active plan')
+            steps=json.loads(row[0])
+            if type(index) is not int or not 0<=index<len(steps):raise ValueError('Invalid plan step')
+            steps[index]['status']='verified' if ok and verified is True else ('executed' if ok else 'blocked')
+            db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
+        return steps

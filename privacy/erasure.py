@@ -15,6 +15,7 @@ LEDGER = 'privacy-erasure.json'
 # Static identifiers only: caller data is always bound as a SQL parameter.
 SCOPES = {
     'conversation_messages': 'user_key', 'conversations': 'user_key',
+    'skill_runs': 'owner',
     'sessions': 'user_key', 'tasks': 'owner', 'memories': 'owner',
     'memory_facts': 'owner', 'approval_challenges': 'principal',
 }
@@ -33,6 +34,35 @@ class OwnerErasure:
         path = self.root / LEDGER
         if path.is_symlink(): raise ValueError('Erasure ledger symlinks are forbidden')
         return json.loads(path.read_text()) if path.exists() else {'owners': []}
+
+    def _owned_files(self, owner):
+        task_ids = set()
+        for database in self._databases():
+            with connect(database) as db:
+                columns = {r[1] for r in db.execute('PRAGMA table_info(tasks)')}
+                if 'owner' in columns:
+                    task_ids.update(r[0] for r in db.execute('SELECT id FROM tasks WHERE owner=?', (owner,)))
+        files = set()
+        roots = (self.root/'profiles', self.root/'vault'/'reflections', self.root/'vault'/'skill_proposals')
+        for folder in roots:
+            if folder.is_symlink(): raise ValueError('Private file directory symlinks are forbidden')
+            if not folder.exists(): continue
+            folder.resolve().relative_to(self.root)
+            for path in folder.glob('*.json'):
+                if path.is_symlink(): raise ValueError('Private file symlinks are forbidden')
+                try:
+                    record=json.loads(path.read_text(encoding='utf-8'))
+                except (ValueError,UnicodeError):
+                    continue  # Unattributed legacy files are reported as retained.
+                if not isinstance(record,dict):continue
+                if record.get('owner')==owner or record.get('user_id')==owner or record.get('task_id') in task_ids:
+                    files.add(path)
+                    companions = [path.with_suffix('.md')] if folder.name=='reflections' else []
+                    if folder.name=='profiles':companions.append(path.with_name(path.stem+'-USER.md'))
+                    for companion in companions:
+                        if companion.is_symlink():raise ValueError('Private file symlinks are forbidden')
+                        if companion.is_file():files.add(companion)
+        return sorted(files)
 
     def preview(self, owner):
         if not isinstance(owner, str) or not owner.strip(): raise ValueError('Exact owner identity required')
@@ -54,6 +84,7 @@ class OwnerErasure:
                         count = db.execute(f"SELECT COUNT(*) FROM {table} WHERE json_extract(payload, '$.user_id')=?", (owner,)).fetchone()[0]
                         rows.append({'database':path.name,'table':table,'count':count})
         plan = {'owner': owner, 'rows': rows, 'unattributed_rows': legacy,
+                'files':[{'path':p.relative_to(self.root).as_posix(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in self._owned_files(owner)],
                 'limits': ['Offline operation: stop every profile writer first.',
                            'Unattributed legacy files, logs, source documents, installed skills, backups and external copies are retained.',
                            'This erases active identity-attributed database records; it is not complete account or forensic erasure.']}
@@ -79,6 +110,8 @@ class OwnerErasure:
                 'remaining': self.preview(owner), 'restore_protection': True}
 
     def _erase_records(self, owner):
+        for path in self._owned_files(owner):
+            path.unlink()
         for path in self._databases():
             with connect(path) as db:
                 db.execute('PRAGMA secure_delete=ON')
@@ -91,6 +124,8 @@ class OwnerErasure:
                             db.execute('INSERT OR IGNORE INTO memory_source_overrides SELECT source_path FROM memories WHERE owner=? AND source_path IS NOT NULL', (owner,))
                         if 'memory_supersessions' in tables:
                             db.execute('DELETE FROM memory_supersessions WHERE old_id IN (SELECT id FROM memories WHERE owner=?) OR new_id IN (SELECT id FROM memories WHERE owner=?)', (owner, owner))
+                if 'task_plans' in tables and 'tasks' in tables and 'owner' in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
+                    db.execute('DELETE FROM task_plans WHERE task_id IN (SELECT id FROM tasks WHERE owner=?)',(owner,))
                 for table, column in SCOPES.items():
                     if table in tables and column in {r[1] for r in db.execute(f'PRAGMA table_info({table})')}:
                         db.execute(f'DELETE FROM {table} WHERE {column}=?', (owner,))
