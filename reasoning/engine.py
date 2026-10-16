@@ -74,6 +74,10 @@ class ReasoningEngine:
                 if self._reasoning:self._reasoning.final(response_preview=str(action.get('response','')),tool_count=len(used))
                 return str(action.get('response','')),used
 
+            plan_index=action.get('plan_step')
+            if plan and (type(plan_index) is not int or not 0<=plan_index<len(plan)):
+                raise ValueError('Every planned tool call must reference an existing plan_step')
+
             if action['type']=='delegate':
                 role=str(action.get('role','worker'))
                 instruction=str(action.get('instruction','')).strip()
@@ -81,6 +85,9 @@ class ReasoningEngine:
                 args={'objectives':[f'{role}: {instruction}']}
                 if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
                 res=self.registry.execute(name,args,blocked=blocked_tools or set())
+                if plan:
+                    plan=self.tasks.plan_result(task_id,plan_index,res.ok,getattr(res,'verified',None))
+                self.tasks.event(task_id, {'step':step, 'tool_result':{'tool':name,'ok':res.ok,'verified':getattr(res,'verified',None)}})
                 outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok
                 used.append(name)
                 if self._reasoning:self._reasoning.result(name,res.ok,output_preview=str(res.output if res.ok else res.error))
@@ -92,9 +99,6 @@ class ReasoningEngine:
                 continue
 
             name=action.get('tool');args=action.get('arguments') or {}
-            plan_index=action.get('plan_step')
-            if plan and (type(plan_index) is not int or not 0<=plan_index<len(plan)):
-                raise ValueError('Every planned tool call must reference an existing plan_step')
             if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
             res=self.registry.execute(name,args,blocked=blocked_tools or set());used.append(name)
             if plan:

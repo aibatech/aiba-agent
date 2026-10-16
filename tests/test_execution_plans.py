@@ -44,3 +44,22 @@ class ExecutionPlanTests(unittest.TestCase):
                 {'type':'tool_call','tool':'write','arguments':{},'plan_step':99}])
             with self.assertRaises(ValueError):engine.run(tasks.create('work'),'work')
             self.assertEqual(calls,[])
+
+    def test_delegation_updates_plan_and_persists_execution_evidence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine,tasks,calls=self.engine(Path(tmp),[
+                {'type':'plan','steps':['review result']},
+                {'type':'delegate','role':'reviewer','instruction':'review','plan_step':0},
+                {'type':'final','response':'Reviewed'}])
+            tid=tasks.create('review')
+            self.assertEqual(engine.run(tid,'review')[0],'Reviewed')
+            self.assertEqual(calls,['delegate_task'])
+            self.assertEqual(tasks.plan(tid)[0]['status'],'verified')
+
+    def test_delegation_cannot_bypass_plan_reference_validation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            engine,tasks,calls=self.engine(Path(tmp),[
+                {'type':'plan','steps':['review result']},
+                {'type':'delegate','role':'reviewer','instruction':'review','plan_step':-1}])
+            with self.assertRaises(ValueError):engine.run(tasks.create('review'),'review')
+            self.assertEqual(calls,[])

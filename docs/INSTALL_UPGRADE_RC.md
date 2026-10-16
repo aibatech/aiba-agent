@@ -55,3 +55,7 @@ Workspace writes/deletes now use trusted backend postconditions and retain verif
 The scoped eraser also previews hashes and removes attributable profile JSON/USER.md, reflection JSON/markdown, and proposal JSON under the standard profile directories. Custom external storage roots are outside this operation. All writers must remain stopped throughout erasure.
 
 Skill outcome summaries are available to authenticated operators through `GET /v1/skills/{name}/outcomes?owner=EXACT_ID`; `POST /v1/skills/{name}/compare` takes owner plus baseline_digest and candidate_digest. This measures observed executions and never automatically installs a new version or broadens permissions. Runtime comparison is descriptive; matched acceptance tasks are required to establish improvement. Task status responses now include persisted plan steps and their actual execution states.
+
+### Secret transfer input compatibility
+
+The owner-approved secret-copy tool accepts uppercase environment keys, optional `export`, whitespace around `=`, and single-line quoted or unquoted values. It preserves the value syntax without expansion. Duplicate source keys, malformed/multiline assignments, invalid UTF-8 and unsupported assignment syntax fail before destination changes. Use a supported single-line representation; never paste secrets into chat. This tool does not certify Windows ACLs or protection against every concurrent filesystem mutation.

@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any
 from .base import Tool,ToolResult
 import inspect,json
+from approvals.manager import ApprovalManager
 def _valid(value,schema):
     expected=schema.get('type')
     if expected=='string' and not isinstance(value,str):return False
@@ -130,8 +131,8 @@ class ToolRegistry:
         invalid=[x for x,v in args.items() if x in props and not _valid(v,props[x])]
         if missing or unknown or invalid:return ToolResult(False,error=f'Invalid arguments; missing={missing}, unknown={unknown}, invalid_types={invalid}')
         if decision.requires_approval and not self.approvals.approve_exact(name,args,str(_scrub_args_for_surface(name,args))[:500]):
-            self.audit.record('tool_denied',tool=name,arguments=_scrub_args_for_surface(name,args)); return ToolResult(False,error='User approval denied')
-        self.audit.record('tool_start',tool=name,arguments=_scrub_args_for_surface(name,args))
+            self.audit.record('tool_denied',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments=_scrub_args_for_surface(name,args)); return ToolResult(False,error='User approval denied')
+        self.audit.record('tool_start',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments=_scrub_args_for_surface(name,args))
         try:result=tool.run(**args)
         except TypeError as exc:result=ToolResult(False,error=f'Invalid tool arguments: {exc}')
         except Exception as exc:result=ToolResult(False,error=f'{type(exc).__name__}: {exc}')

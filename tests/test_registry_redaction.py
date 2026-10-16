@@ -84,13 +84,14 @@ class RegistrySecretRedactionTests(unittest.TestCase):
         self.assertNotIn(secret, text)
         self.assertIn("[REDACTED", text)
 
-    def test_benign_typed_text_preserved_in_audit(self):
+    def test_typed_text_is_withheld_even_without_secret_markers(self):
         reg, audit = self._make("b", tools={
             "desktop_type": {"enabled": True, "requires_approval": False}})
         benign = "type the reply now and continue working"
         reg.register(_str_tool("desktop_type", "text"))
         reg.execute("desktop_type", {"text": benign})
-        self.assertIn(benign, self._audit_text(audit))
+        self.assertNotIn(benign, self._audit_text(audit))
+        self.assertIn("fingerprint", self._audit_text(audit))
 
     def test_non_secret_looking_unrelated_args_not_redacted(self):
         reg, audit = self._make("s", tools={

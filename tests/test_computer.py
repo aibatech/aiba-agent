@@ -53,6 +53,7 @@ class FakeBackend:
 
     def screenshot(self, f):
         self._ok("screenshot", f)
+        Path(f).write_bytes(b"synthetic screenshot fixture")
 
     def moveTo(self, x, y, **k):
         self._ok("move", x, y, k)
@@ -232,12 +233,12 @@ class ControllerSecurityTests(unittest.TestCase):
         self.assertNotIn("hunter2supersecret", blob)
         self.assertTrue(_is_secretish("token=abc"))
 
-    def test_audit_summaries_include_action_target(self):
+    def test_audit_preserves_action_without_freeform_summary(self):
         c = self._controller()
         c.click(123, 456)
         rows = self._audit_events()
         reqs = [r for r in rows if r.get("event") == "computer_requested"]
-        self.assertTrue(any("(123,456)" in r.get("summary", "") for r in reqs if r.get("action") == "click"))
+        self.assertTrue(any(r.get("action") == "click" and r.get("summary") == "[REDACTED]" for r in reqs))
 
     def test_disabled_gate_blocks_at_controller(self):
         self.gate.emergency_stop()
@@ -265,10 +266,11 @@ class ControllerSecurityTests(unittest.TestCase):
         ws = Path(self.tmp) / "ws"
         c = self._controller()
         ok = c.screenshot(str(ws / "cap.png"))
-        self.assertTrue(ok)
-        # screenshot not routed anywhere else: audit logs only the path
+        self.assertTrue(ok.ok)
+        # The actual screenshot is saved, but its private path is not copied to audit.
         blob = json.dumps(self._audit_events())
-        self.assertIn("cap.png", blob)
+        self.assertNotIn("cap.png", blob)
+        self.assertTrue((ws / "cap.png").is_file())
 
 
 class NodeGateSecurityTests(unittest.TestCase):

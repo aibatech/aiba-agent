@@ -31,4 +31,37 @@ class SecretAdminTests(unittest.TestCase):
             except (OSError,NotImplementedError): return
             self.assertFalse(SecretAdmin().copy_env_secret(str(src),str(link),"API_KEY").ok)
 
+    def test_export_spacing_and_quoted_value_replace_existing_assignment(self):
+        with tempfile.TemporaryDirectory() as td:
+            src, dst = Path(td)/"src.env", Path(td)/"dst.env"
+            src.write_text('export API_KEY = "secret with # spaces" # comment\n')
+            dst.write_text('export API_KEY = old\nOTHER_KEY=keep\n')
+            result = SecretAdmin().copy_env_secret(str(src), str(dst), "API_KEY")
+            self.assertTrue(result.ok)
+            self.assertEqual(dst.read_text(), 'API_KEY="secret with # spaces" # comment\nOTHER_KEY=keep\n')
+            self.assertNotIn('secret with', str(result))
+
+    def test_ambiguous_or_multiline_source_leaves_destination_untouched(self):
+        cases = ['API_KEY="private\ncontinued"\n', 'API_KEY=one\nAPI_KEY=two\n',
+                 'API_KEY="private" trailing\n', 'API_KEY=private\x00value\n']
+        with tempfile.TemporaryDirectory() as td:
+            src, dst = Path(td)/"src.env", Path(td)/"dst.env"
+            for content in cases:
+                with self.subTest(content=content):
+                    src.write_text(content)
+                    dst.write_text('API_KEY=original\n')
+                    result = SecretAdmin().copy_env_secret(str(src), str(dst), "API_KEY")
+                    self.assertFalse(result.ok)
+                    self.assertEqual(dst.read_text(), 'API_KEY=original\n')
+                    self.assertNotIn('private', str(result))
+
+    def test_invalid_utf8_does_not_silently_corrupt_secret(self):
+        with tempfile.TemporaryDirectory() as td:
+            src, dst = Path(td)/"src.env", Path(td)/"dst.env"
+            src.write_bytes(b'API_KEY=private\xff\n')
+            result = SecretAdmin().copy_env_secret(str(src), str(dst), "API_KEY")
+            self.assertFalse(result.ok)
+            self.assertFalse(dst.exists())
+            self.assertNotIn('private', str(result))
+
 if __name__=="__main__":unittest.main()
