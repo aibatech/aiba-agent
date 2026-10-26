@@ -162,3 +162,14 @@ class SecurityBoundaryTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 EnhancedLoop._run_background(fake,{'prompt':'work','user_id':'alice'})
             self.assertTrue(manager.approve_exact('sensitive',args))
+
+    def test_permission_revoked_while_waiting_for_approval_prevents_dispatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            calls=[]
+            def revoke(_):
+                registry.policy.config['tools']['sensitive']['enabled']=False
+                return 'yes'
+            registry=self.registry(Path(tmp),ApprovalManager(input_fn=revoke),
+                lambda items:calls.append(items) or ToolResult(True))
+            self.assertFalse(registry.execute('sensitive',{'items':['approved']}).ok)
+            self.assertEqual(calls,[])

@@ -44,3 +44,5 @@ Prior POSIX ancestor-pinned host mutations/secret transfers and source/destinati
 - Persistent model-action events and HTTP validation no longer duplicate raw private payloads.
 
 No benchmark score increase: the complete security acceptance scope remains open.
+
+Follow-up revocation fix: recheck capability availability and newly required approval immediately before tool dispatch. Regression test revokes the tool during the approval prompt and verifies zero handler calls. Local suite now 499 tests, zero failures, 11 skips. Initial security commit: 0cb28653996b2dcac815ca5cc827e181d1963bf6; initial candidate CI https://github.com/aibatech/aiba-agent/actions/runs/40309758527 (observe status; not presumed passed). Follow-up requires its own CI.

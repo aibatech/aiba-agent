@@ -139,6 +139,11 @@ class ToolRegistry:
         if missing or unknown or invalid:return ToolResult(False,error=f'Invalid arguments; missing={missing}, unknown={unknown}, invalid_types={invalid}')
         if decision.requires_approval and not self.approvals.approve_exact(name,deepcopy(args),str(_scrub_args_for_surface(name,args))[:500]):
             self.audit.record('tool_denied',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments="[REDACTED]"); return ToolResult(False,error='User approval denied')
+        # Approval can block while an owner revokes a capability. Recheck before dispatch.
+        reason=self._availability(name)
+        if reason:return ToolResult(False,error=reason)
+        if self.policy.check_tool(name).requires_approval and not decision.requires_approval:
+            return ToolResult(False,error='Approval policy changed; retry with the current owner approval requirement')
         self.audit.record('tool_start',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments="[REDACTED]")
         try:result=tool.run(**deepcopy(args))
         except TypeError as exc:result=ToolResult(False,error=f'Invalid tool arguments: {exc}')

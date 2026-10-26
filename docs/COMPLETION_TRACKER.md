@@ -78,3 +78,5 @@ Implementation gaps to continue independently: Windows descriptor/ACL parity; co
 Next sequence: verify current security CI; inspect any failed logs; retain results in PR #34. Then implement the remaining independent security boundaries before proceeding to the memory/recovery phase. Current scores remain 6/6/7/4/5/8. NOT FULLY CERTIFIED.
 
 Local candidate verification: 498 tests, zero failures, 11 skips; capability manifest, secret scan and diff checks passed. Background approval isolation regression is included. API HTTP validation regression requires the CI API dependency set.
+
+Follow-up revocation fix: recheck capability availability and newly required approval immediately before tool dispatch. Regression test revokes the tool during the approval prompt and verifies zero handler calls. Local suite now 499 tests, zero failures, 11 skips. Initial security commit: 0cb28653996b2dcac815ca5cc827e181d1963bf6; initial candidate CI https://github.com/aibatech/aiba-agent/actions/runs/40309758527 (observe status; not presumed passed). Follow-up requires its own CI.
