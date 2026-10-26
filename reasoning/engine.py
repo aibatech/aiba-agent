@@ -59,10 +59,13 @@ class ReasoningEngine:
             self._reasoning.plan("Received request; retrieving context and available tools.", steps=self.max_steps)
         for step in range(self.max_steps):
             action=self._parse(self.provider.complete(messages,schemas,task_type=task_type,manual_model_id=manual_model_id))
-            event_action = dict(action)
-            if action.get('type') == 'tool_call':
-                event_action['arguments'] = _scrub_args_for_surface(str(action.get('tool','')), action.get('arguments') or {})
-            self.tasks.event(task_id,{'step':step,'action':event_action,'route':getattr(self.provider,'last_route',None)})
+            # Persist execution metadata, not model-generated payloads or dialogue.
+            event_action = {'type':action['type']}
+            if action['type'] == 'tool_call':
+                event_action['tool'] = str(action.get('tool',''))
+                event_action['fingerprint'] = ApprovalManager.action_fingerprint(
+                    event_action['tool'], action.get('arguments') or {})
+            self.tasks.event(task_id,{'step':step,'action':event_action})
             if action['type']=='plan':
                 plan = self.tasks.set_plan(task_id, action.get('steps'))
                 messages.append({'role':'user','content':'Plan saved. Execute each step with a zero-based plan_step on its tool call. Never treat a saved plan as completed work.'})

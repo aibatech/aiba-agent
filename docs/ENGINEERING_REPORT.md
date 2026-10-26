@@ -75,3 +75,9 @@ Secret reads are limited to 1 MiB and regular files. POSIX source reads and dest
 ### Windows CI remediation and installer log privacy
 
 Run 38875036187 caught CRLF double translation in secret-copy output on Windows. The implementation now normalizes input newlines before platform text writes; a byte-level CRLF regression runs on every OS. Headless/redirected setup also withholds the authentication URL instead of copying its bearer token into installer/CI logs; interactive local setup retains the sign-in link. Local suite: 490 tests, zero failures, 10 skips. This supersedes the failed 863c19a Windows result; replacement CI must pass before certification.
+
+## October 26 security implementation pass
+
+Baseline d638b5c was reverified live, PR #34 still open/unmerged, with Production Gate 38875615684 and MCP 38875615644 passing. Implemented incomplete principal/store fail-closed approval handling, immutable operation snapshots, background approval isolation, metadata-only model action events, argument-free registry/visible telemetry and non-echoing HTTP validation. Added tests/test_security_boundaries.py and the full 60-criterion docs/COMPLETION_TRACKER.md; dispatch and diagnostic scope inventory is docs/SECURITY_BOUNDARY_REVIEW.md.
+
+Local validation: 498 tests, zero failures, 11 optional/platform skips; capability consistency, secret scan and diff checks pass. API validation regression requires API dependencies installed by CI; scripted hostile-source tests establish deterministic permission enforcement, not live-model injection resistance. Candidate CI must be verified after push. No scores increased; 6/6/7/4/5/8 remain historical verified lower bounds. NOT FULLY CERTIFIED. Windows native filesystem/ACL parity, broader event/metric schemas and private-history retention remain open implementation work.

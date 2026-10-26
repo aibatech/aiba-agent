@@ -116,3 +116,5 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 8 | Database integrity/migration/restore | PASS | test_v13.py; test_memory_recovery_acceptance.py | Database-only scope; restore requires stopped service |
 | 9 | Performance/concurrency/soak | PASS | docs/certification/runtime-soak-68dcd8d.json; Actions 38792886989 | 3600.06 seconds, 4,223,100 requests, zero errors, p95 30 ms; RSS growth 884,736 bytes within 64 MiB budget. HTTP health workload only; live model throughput is not certified |
 | 10 | Install/upgrade/rollback/release | GAP | PRODUCTION_GATE.md | Signing identities, final artifact hashes and release rollback drill outstanding |
+
+October 26 continuation: docs/COMPLETION_TRACKER.md maps all 60 requirements; docs/SECURITY_BOUNDARY_REVIEW.md records dispatch/diagnostic coverage and remaining implementation versus certification gaps. New security regression coverage in test_security_boundaries.py does not close the entire scope of any previously GAP criterion; scores unchanged.

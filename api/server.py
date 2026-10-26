@@ -8,6 +8,7 @@ def create_app(agent):
     try:
         from fastapi import BackgroundTasks,FastAPI,Header,HTTPException,Request,WebSocket,WebSocketDisconnect
         from fastapi.middleware.cors import CORSMiddleware
+        from fastapi.exceptions import RequestValidationError
         from fastapi.responses import HTMLResponse,JSONResponse,PlainTextResponse,Response
         from pydantic import BaseModel,Field
     except ImportError as exc:raise RuntimeError('Install API dependencies: pip install -e .[api]') from exc
@@ -24,7 +25,11 @@ def create_app(agent):
     @app.exception_handler(KeyError)
     async def missing(request,exc):return JSONResponse(status_code=404,content={'detail':'Resource not found'})
     @app.exception_handler(ValueError)
-    async def invalid(request,exc):return JSONResponse(status_code=400,content={'detail':str(exc)})
+    async def invalid(request,exc):return JSONResponse(status_code=400,content={'detail':'Invalid request. Check the supplied fields and try again.'})
+    @app.exception_handler(RequestValidationError)
+    async def invalid_fields(request,exc):
+        # Pydantic errors can echo raw input, including credentials.
+        return JSONResponse(status_code=422,content={'detail':'Request fields failed validation. Check the required field types.'})
     @app.exception_handler(Exception)
     async def unexpected(request,exc):
         crash_id=agent.crashes.capture(exc,{'method':request.method,'path':request.url.path});agent.metrics.increment('http_errors_total',status='500');return JSONResponse(status_code=500,content={'detail':'Internal error','crash_id':crash_id})

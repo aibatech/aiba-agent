@@ -153,9 +153,19 @@ class AgentLoop:
             step_cap_default=int(self.settings.max_steps),
             time_limit_default=int(max(self.settings.command_timeout*4, 120)),
         )
-        self.worker=Worker(self.queue,{'agent_task':lambda payload:{'result':self.handle(payload['prompt'],propose_skill=False,task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'),user_id=payload.get('user_id'))}});self.scheduler_runner=SchedulerRunner(self.scheduler)
+        self.worker=Worker(self.queue,{'agent_task':self._run_background});self.scheduler_runner=SchedulerRunner(self.scheduler)
         if start_worker and self.settings.worker_enabled:self.worker.start();self.scheduler_runner.start();self.update_checker.start()
         self.events.subscribe('*',lambda e:self.audit.record('event',**e))
+    def _run_background(self, payload):
+        # Queued work cannot inherit local interactive grants or prompt a terminal.
+        with self.approvals.request_scope(principal=payload.get('user_id') or 'default'):
+            result=self.handle(payload['prompt'],propose_skill=False,
+                task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'),
+                user_id=payload.get('user_id'))
+            if self.approvals.pending_requests():
+                raise RuntimeError('Background task requires owner approval')
+            return {'result':result}
+
     def _on_clarify_pending(self, q):
         """A clarify question went pending awaiting async delivery. Publish it
         on the event bus so any connector can render it (e.g. Telegram inline

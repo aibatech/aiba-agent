@@ -82,7 +82,7 @@ class VisibleReasoning:
         """A tool call is about to run (sanitised: no secrets in arguments)."""
         data: dict[str, Any] = {"tool": name}
         if arguments is not None:
-            data["arguments"] = _sanitise(arguments)
+            data["arguments"] = "[arguments withheld from telemetry]"
         if tool_index is not None:
             data["tool_index"] = tool_index
         data.update(extra)

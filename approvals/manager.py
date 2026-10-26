@@ -59,8 +59,7 @@ class ApprovalManager:
 
     def approve_exact(self, action: str, arguments: dict, reason: str = "") -> bool:
         fingerprint = self.action_fingerprint(action, arguments)
-        # Existing tool-only grants remain supported for backward compatibility,
-        # but sensitive callers can require the exact fingerprint grant.
+        # Principal-bound requests must never fall back to request-local grants.
         deadline = self._deadline.get()
         unexpired = deadline is None or time.monotonic() < deadline
         store = self._store.get()
@@ -68,7 +67,7 @@ class ApprovalManager:
         if store is not None and principal:
             if unexpired and any(store.consume(token, principal, fingerprint) for token in self._grants.get()):
                 return True
-        elif unexpired:
+        elif unexpired and principal is None and store is None:
             # Context copies share the consumption set: parallel child tasks
             # cannot each spend the same request-local grant.
             with self._consume_lock:
@@ -76,7 +75,7 @@ class ApprovalManager:
                 if consumed is not None and fingerprint in self._grants.get() and fingerprint not in consumed:
                     consumed.add(fingerprint)
                     return True
-        if not self.interactive or principal:
+        if not self.interactive or principal is not None or store is not None:
             current = list(self._requested.get())
             item = {"tool": action, "fingerprint": fingerprint, "reason": reason}
             if item not in current:
@@ -89,7 +88,7 @@ class ApprovalManager:
         return [dict(item) for item in self._requested.get()]
 
     def approve(self, action: str, reason: str = "") -> bool:
-        if self._principal.get():
+        if self._principal.get() is not None or self._store.get() is not None:
             return self.approve_exact(action, {"reason": reason}, reason)
         if self.auto_approve:
             return True

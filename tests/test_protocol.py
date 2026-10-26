@@ -87,9 +87,8 @@ class VisibleReasoningTests(unittest.TestCase):
         self.vr.tool("http", {"url": "https://x", "api_key": "sk-live-secret", "cookie": "sid=1"})
         _, payload = self.bus.events[0]
         args = payload["event"]["arguments"]
-        self.assertEqual(args["api_key"], "[redacted]")
-        self.assertEqual(args["cookie"], "[redacted]")
-        self.assertEqual(args["url"], "https://x")
+        self.assertEqual(args, "[arguments withheld from telemetry]")
+        self.assertNotIn("sk-live-secret",str(payload))
 
     def test_result_withholds_raw_output(self):
         self.vr.result("run_shell", True, output_preview="y" * 500)

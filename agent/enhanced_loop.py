@@ -39,9 +39,10 @@ class AgentLoop(BaseAgentLoop):
         return self._outcome.get() or {'status': 'complete', 'result': answer}
 
     def _run_background(self, payload):
-        result = self.handle_result(payload['prompt'], propose_skill=False,
-                                    task_type=payload.get('task_type'), manual_model_id=payload.get('manual_model_id'),
-                                    user_id=payload.get('user_id'))
+        with self.approvals.request_scope(principal=payload.get('user_id') or 'default'):
+            result = self.handle_result(payload['prompt'], propose_skill=False,
+                                        task_type=payload.get('task_type'), manual_model_id=payload.get('manual_model_id'),
+                                        user_id=payload.get('user_id'))
         if result['status'] != 'complete':
             raise RuntimeError('Background task did not complete; inspect task status')
         return result

@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Any
 from .base import Tool,ToolResult
 import inspect,json
+from copy import deepcopy
 from approvals.manager import ApprovalManager
 def _valid(value,schema):
     expected=schema.get('type')
@@ -125,15 +126,21 @@ class ToolRegistry:
         if tool is None:
             return ToolResult(False,error=f'Unknown tool: {name}')
         if not isinstance(args,dict):return ToolResult(False,error='Tool arguments must be an object')
+        # Detach the operation from caller-owned mutable objects before approval.
+        try:
+            args = json.loads(json.dumps(args, allow_nan=False))
+        except (TypeError, ValueError, RecursionError):
+            return ToolResult(False, error='Tool arguments must contain finite JSON values')
+
         schema=tool.parameters; props=schema.get('properties',{}); required=schema.get('required',[])
         missing=[x for x in required if x not in args]
         unknown=[x for x in args if x not in props] if schema.get('additionalProperties') is False else []
         invalid=[x for x,v in args.items() if x in props and not _valid(v,props[x])]
         if missing or unknown or invalid:return ToolResult(False,error=f'Invalid arguments; missing={missing}, unknown={unknown}, invalid_types={invalid}')
-        if decision.requires_approval and not self.approvals.approve_exact(name,args,str(_scrub_args_for_surface(name,args))[:500]):
-            self.audit.record('tool_denied',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments=_scrub_args_for_surface(name,args)); return ToolResult(False,error='User approval denied')
-        self.audit.record('tool_start',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments=_scrub_args_for_surface(name,args))
-        try:result=tool.run(**args)
+        if decision.requires_approval and not self.approvals.approve_exact(name,deepcopy(args),str(_scrub_args_for_surface(name,args))[:500]):
+            self.audit.record('tool_denied',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments="[REDACTED]"); return ToolResult(False,error='User approval denied')
+        self.audit.record('tool_start',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments="[REDACTED]")
+        try:result=tool.run(**deepcopy(args))
         except TypeError as exc:result=ToolResult(False,error=f'Invalid tool arguments: {exc}')
         except Exception as exc:result=ToolResult(False,error=f'{type(exc).__name__}: {exc}')
         if not isinstance(result,ToolResult):result=ToolResult(True,result)

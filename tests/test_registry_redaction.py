@@ -93,13 +93,13 @@ class RegistrySecretRedactionTests(unittest.TestCase):
         self.assertNotIn(benign, self._audit_text(audit))
         self.assertIn("fingerprint", self._audit_text(audit))
 
-    def test_non_secret_looking_unrelated_args_not_redacted(self):
+    def test_unknown_argument_names_are_also_withheld(self):
         reg, audit = self._make("s", tools={
             "run_shell": {"enabled": True, "requires_approval": False}})
         reg.register(_str_tool("run_shell", "cmd"))
         body = "echo secret_value_noop"
         reg.execute("run_shell", {"cmd": body})
-        self.assertIn(body, self._audit_text(audit))
+        self.assertNotIn(body, self._audit_text(audit))
 
     def test_secret_redacted_in_approval_prompt_preview(self):
         ws = self.root / "app2_ws"; ws.mkdir(parents=True, exist_ok=True)
