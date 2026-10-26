@@ -30,7 +30,10 @@ class MemoryVault:
     """
 
     def __init__(self,db_path:Path,vault_dir:Path):
-        self.db_path=db_path; self.vault_dir=vault_dir; self.vault_dir.mkdir(parents=True,exist_ok=True); self._init(); self.sync_markdown()
+        self.db_path=db_path; self.vault_dir=vault_dir; self.vault_dir.mkdir(parents=True,exist_ok=True); self._init()
+        from privacy.memory_deletions import enforce
+        enforce(self.db_path.parent,self.db_path.name)
+        self.sync_markdown()
 
     def _init(self):
         with connect(self.db_path) as c:
@@ -129,9 +132,13 @@ class MemoryVault:
         # Historical facts must remain explicitly deletable by their owner.
         scope,args=("1=1", []) if as_user is None else ("owner = ?", [str(as_user)])
         with connect(self.db_path) as c:
+            c.execute('BEGIN IMMEDIATE')
             sql='DELETE FROM memories WHERE id=?'
             if scope:sql+=' AND '+scope
-            row = c.execute('SELECT source_path FROM memories WHERE id=?' + (' AND '+scope if scope else ''), [int(memory_id)]+args).fetchone()
+            row = c.execute('SELECT source_path,created_at,owner FROM memories WHERE id=?' + (' AND '+scope if scope else ''), [int(memory_id)]+args).fetchone()
+            if row:
+                from privacy.memory_deletions import record
+                record(self.db_path,int(memory_id),row[1],row[2])
             if row and row[0]:
                 c.execute('INSERT OR IGNORE INTO memory_source_overrides VALUES (?)', (row[0],))
             c.execute('DELETE FROM memory_facts WHERE memory_id=? AND memory_id IN (SELECT id FROM memories WHERE '+scope+')',[int(memory_id)]+args)

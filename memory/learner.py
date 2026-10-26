@@ -59,6 +59,12 @@ class AutoLearner:
         learned: list[int] = []
         for sentence in self._sentences(user_text):
             low = sentence.lower()
+            # Temporary intentions stay in conversation history, not durable memory.
+            explicit = bool(re.search(r"\b(?:remember that|remember this|keep in mind)\b", low))
+            if not explicit and re.search(r"\b(?:today|tonight|tomorrow|right now|this (?:morning|afternoon|evening|week))\b", low):
+                continue
+            if re.search(r"\b(?:password|passphrase|api[_ -]?key|access[_ -]?token|private[_ -]?key)\s*(?:is|:|=)", low):
+                continue
             match = next(((cat, importance) for pattern, cat, importance in self._CUES
                           if re.search(pattern, low)), None)
             if not match:

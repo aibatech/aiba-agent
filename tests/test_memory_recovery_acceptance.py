@@ -25,7 +25,7 @@ class MemoryRecoveryTests(unittest.TestCase):
             vault.remove(mid)
             self.assertEqual(MemoryVault(root/'memory.db',source).search('Atlas'),[])
             backup.restore(created['backup_id'],created['backup_id'])
-            self.assertIn('July',MemoryVault(root/'memory.db',source).get(mid)['content'])
+            self.assertIsNone(MemoryVault(root/'memory.db',source).get(mid))
 
     def test_changed_fact_is_not_silently_discarded_as_duplicate(self):
         with tempfile.TemporaryDirectory() as tmp:

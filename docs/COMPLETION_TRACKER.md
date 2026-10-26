@@ -80,3 +80,9 @@ Next sequence: verify current security CI; inspect any failed logs; retain resul
 Local candidate verification: 498 tests, zero failures, 11 skips; capability manifest, secret scan and diff checks passed. Background approval isolation regression is included. API HTTP validation regression requires the CI API dependency set.
 
 Follow-up revocation fix: recheck capability availability and newly required approval immediately before tool dispatch. Regression test revokes the tool during the approval prompt and verifies zero handler calls. Local suite now 499 tests, zero failures, 11 skips. Initial security commit: 0cb28653996b2dcac815ca5cc827e181d1963bf6; initial candidate CI https://github.com/aibatech/aiba-agent/actions/runs/40309758527 (observe status; not presumed passed). Follow-up requires its own CI.
+
+## October 26 memory and recovery implementation
+
+Implemented runtime/profile/skill-root maintenance leases; offline backup/restore/erasure; interrupted-restore startup blocking and recovery; independent individual-memory deletion tombstones; explicit reviewed legacy attribution; full serialized-context budgets; conservative transient/credential retention; attributable conversation-review journal erasure. Added a versioned real-model evaluation corpus/harness. The real-model result is BLOCKED (semantic package and reviewed local model absent), not a synthetic pass.
+
+Local full suite: 511 tests, zero failures, 11 optional/platform skips. Capability, secret-scan and diff checks pass. Recovery rehearsal uses disposable profiles, actual SQLite/files and a child process killed during restore; no customer data or deployment touched. Detailed contract and inventory: docs/MEMORY_PRIVACY_RECOVERY.md. Candidate CI must pass after push.

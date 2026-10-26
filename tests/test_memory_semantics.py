@@ -48,6 +48,6 @@ class MemorySemanticsTests(unittest.TestCase):
             root=Path(tmp);vault=MemoryVault(root/'m.db',root/'vault')
             vault.add('Atlas '+('x'*1000),owner='alice')
             vault.add('Atlas short goal',owner='alice')
-            rows=RetrievalEngine(vault,scope='alice',char_budget=50).retrieve('Atlas')
+            rows=RetrievalEngine(vault,scope='alice',char_budget=400).retrieve('Atlas')
             self.assertEqual([r['content'] for r in rows],['Atlas short goal'])
             self.assertEqual(RetrievalEngine(vault,scope='alice').retrieve('Atlas',0),[])

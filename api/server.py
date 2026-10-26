@@ -22,6 +22,9 @@ def create_app(agent):
     @app.on_event('startup')
     def start_connectors():
         if telegram:telegram.start()
+    from operations.maintenance import MaintenanceBusy
+    @app.exception_handler(MaintenanceBusy)
+    async def maintenance_busy(request,exc):return JSONResponse(status_code=409,content={'detail':'Stop all AIBA runtimes and use the offline profile maintenance command.'})
     @app.exception_handler(KeyError)
     async def missing(request,exc):return JSONResponse(status_code=404,content={'detail':'Resource not found'})
     @app.exception_handler(ValueError)

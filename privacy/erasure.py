@@ -64,6 +64,28 @@ class OwnerErasure:
                         if companion.is_file():files.add(companion)
         return sorted(files)
 
+    def _review_lines(self,owner):
+        task_ids=set()
+        for database in self._databases():
+            with connect(database) as db:
+                if 'owner' in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
+                    task_ids.update(r[0] for r in db.execute('SELECT id FROM tasks WHERE owner=?',(owner,)))
+        folder=self.root/'vault'/'conversation_reviews'
+        if folder.is_symlink():raise ValueError('Review directory symlinks are forbidden')
+        if not folder.exists():return []
+        folder.resolve().relative_to(self.root)
+        changes=[]
+        for path in folder.glob('*.jsonl'):
+            if path.is_symlink():raise ValueError('Review file symlinks are forbidden')
+            keep=[];count=0
+            for line in path.read_bytes().splitlines(keepends=True):
+                try:record=json.loads(line)
+                except (ValueError,UnicodeError):record=None
+                if isinstance(record,dict) and record.get('task_id') in task_ids:count+=1
+                else:keep.append(line)
+            if count:changes.append((path,b''.join(keep),count))
+        return changes
+
     def preview(self, owner):
         if not isinstance(owner, str) or not owner.strip(): raise ValueError('Exact owner identity required')
         rows = []; legacy = 0
@@ -83,7 +105,8 @@ class OwnerErasure:
                     if table in tables:
                         count = db.execute(f"SELECT COUNT(*) FROM {table} WHERE json_extract(payload, '$.user_id')=?", (owner,)).fetchone()[0]
                         rows.append({'database':path.name,'table':table,'count':count})
-        plan = {'owner': owner, 'rows': rows, 'unattributed_rows': legacy,
+        reviews=[{'path':p.relative_to(self.root).as_posix(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'records':count} for p,_,count in self._review_lines(owner)]
+        plan = {'review_records':reviews,'owner': owner, 'rows': rows, 'unattributed_rows': legacy,
                 'files':[{'path':p.relative_to(self.root).as_posix(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in self._owned_files(owner)],
                 'limits': ['Offline operation: stop every profile writer first.',
                            'Unattributed legacy files, logs, source documents, installed skills, backups and external copies are retained.',
@@ -92,6 +115,10 @@ class OwnerErasure:
         return plan
 
     def erase(self, owner, confirmation):
+        from operations.maintenance import ProfileLease
+        with ProfileLease(self.root):return self._erase(owner,confirmation)
+
+    def _erase(self, owner, confirmation):
         plan = self.preview(owner)
         if confirmation != plan['confirmation']: raise ValueError('Review and confirm the current erasure preview')
         ledger = self._ledger()
@@ -110,6 +137,14 @@ class OwnerErasure:
                 'remaining': self.preview(owner), 'restore_protection': True}
 
     def _erase_records(self, owner):
+        # Rewrite mixed-owner review journals before deleting attribution rows.
+        for path,remaining,_ in self._review_lines(owner):
+            fd,temp=tempfile.mkstemp(prefix='.erase-review-',dir=path.parent)
+            try:
+                with os.fdopen(fd,'wb') as stream:
+                    stream.write(remaining);stream.flush();os.fsync(stream.fileno())
+                os.replace(temp,path)
+            finally:Path(temp).unlink(missing_ok=True)
         for path in self._owned_files(owner):
             path.unlink()
         for path in self._databases():

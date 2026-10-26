@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from sqlite_utils import connect
+from operations.maintenance import ProfileLeases, LOCK_NAME, PENDING_RESTORE
 
 
 class BackupError(RuntimeError):pass
@@ -29,7 +30,7 @@ class BackupManager:
     def _sources(self):
         for path in sorted(self.data_dir.rglob('*')):
             rel=path.relative_to(self.data_dir)
-            if rel.parts[0]=='backups' or path.name in {'approvals.db','privacy-erasure.json'} or path.name.endswith(('-wal','-shm')):continue
+            if rel.parts[0]=='backups' or path.name in {'approvals.db','privacy-erasure.json','privacy-deletions.db',LOCK_NAME,PENDING_RESTORE} or path.name.endswith(('-wal','-shm')):continue
             if path.is_symlink():raise BackupError('Profile symlinks cannot be backed up')
             if path.is_file():yield 'data/'+rel.as_posix(),path
         if self.skills_dir:
@@ -41,6 +42,10 @@ class BackupManager:
                         if path.is_file():yield 'skills/'+path.relative_to(self.skills_dir).as_posix(),path
 
     def create(self,label=None):
+        with ProfileLeases(self.data_dir,self.skills_dir):return self._create(label)
+
+    def _create(self,label=None):
+        if (self.data_dir/PENDING_RESTORE).exists():raise BackupError("Recover the interrupted restore before creating another backup")
         stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ');bid=f'{stamp}-{uuid.uuid4().hex[:8]}'
         with tempfile.TemporaryDirectory(prefix='aiba-backup-',dir=self.root) as temp:
             stage=Path(temp);files=[]
@@ -72,7 +77,7 @@ class BackupManager:
             relative=parts[1:]
             if parts[0]=='skills' and len(relative)<2:raise BackupError('Only installed skill directories may be restored')
         else:raise BackupError('Unsupported backup format')
-        if relative[0]=='backups' or relative[-1] in {'approvals.db','privacy-erasure.json'} or relative[-1].endswith(('-wal','-shm')):raise BackupError('Forbidden restore entry')
+        if relative[0]=='backups' or relative[-1] in {'approvals.db','privacy-erasure.json','privacy-deletions.db',LOCK_NAME,PENDING_RESTORE} or relative[-1].endswith(('-wal','-shm')):raise BackupError('Forbidden restore entry')
         target=root.joinpath(*relative)
         for node in (target,*target.parents):
             if node==root.parent:break
@@ -103,9 +108,15 @@ class BackupManager:
         return {'verified':True,'backup_id':bid,'files':len(seen)}
 
     def restore(self,bid,confirm):
+        with ProfileLeases(self.data_dir,self.skills_dir):return self._restore(bid,confirm)
+
+    def _restore(self,bid,confirm):
         if confirm!=bid:raise BackupError('Restore confirmation must exactly match backup_id')
         self.verify(bid);folder,manifest=self._manifest(bid)
-        safety=self.create('automatic pre-restore safety backup')
+        pending=self.data_dir/PENDING_RESTORE
+        if pending.is_symlink():raise BackupError('Unsafe restore marker')
+        was_pending=pending.exists()
+        safety={'backup_id':None} if was_pending else self._create('automatic pre-restore safety backup')
         # Stage every replacement before changing live files. Roll back any
         # replacements if an OS error interrupts the commit. Stop all writers first.
         staged=[];committed=[]
@@ -119,6 +130,8 @@ class BackupManager:
                 existed=target.exists()
                 if existed:shutil.copy2(target,old)
                 staged.append((target,replacement,old,existed))
+            with pending.open('w',encoding='utf-8') as marker:
+                marker.write(bid);marker.flush();os.fsync(marker.fileno())
             try:
                 for entry in staged:
                     target,replacement,old,existed=entry
@@ -136,12 +149,16 @@ class BackupManager:
                 for target,replacement,old,existed in reversed(committed):
                     if existed:shutil.copy2(old,target)
                     else:target.unlink(missing_ok=True)
+                if not was_pending:pending.unlink(missing_ok=True)
                 raise
         approval_db=self.data_dir/'approvals.db'
         if approval_db.exists():
             with connect(approval_db) as db:db.execute('DELETE FROM approval_challenges')
         from privacy.erasure import OwnerErasure
         OwnerErasure(self.data_dir).enforce_after_restore()
+        from privacy.memory_deletions import enforce
+        enforce(self.data_dir)
+        pending.unlink(missing_ok=True)
         return {'restored':True,'backup_id':bid,'safety_backup_id':safety['backup_id']}
 
     def list(self):

@@ -63,3 +63,7 @@ The owner-approved secret-copy tool accepts uppercase environment keys, optional
 ### Secret transfer descriptor hardening
 
 Secret reads are limited to 1 MiB and regular files. POSIX source reads and destination read/atomic replacement now use pinned ancestor descriptors and no-follow opens; temporary files remain mode 0600. Regression tests reject replacement source symlinks, keep destination-parent swaps from redirecting secrets, and reject FIFOs without blocking. Windows retains the portable path implementation and does not inherit the POSIX race guarantee. Full suite: 488 tests, zero failures, 10 optional/platform skips; repository secret scan and diff checks pass. Scores remain unchanged pending all acceptance criteria.
+
+## Enforced maintenance and deletion-preserving restore
+
+Online snapshot creation is now refused (HTTP 409) while a runtime holds the profile/skill-root leases. Stop every runtime and use `scripts/profile_maintenance.py` for backup/verify/restore. Preserve and transfer both `privacy-erasure.json` and `privacy-deletions.db` independently of backups. Old backups do not contain later deletion decisions. An interrupted restore blocks startup until a verified offline restore succeeds. See docs/MEMORY_PRIVACY_RECOVERY.md for exact commands, legacy review, model evaluation, retention inventory, limitations and recovery procedure.

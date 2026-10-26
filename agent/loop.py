@@ -52,6 +52,15 @@ class AgentLoop:
         self._user_context.set(value or 'default')
 
     def __init__(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
+        from operations.maintenance import ProfileLeases
+        settings=settings or Settings.load()
+        self._profile_lease=ProfileLeases(settings.data_dir,settings.skills_dir,runtime=True)
+        try:self._initialize(settings,interactive,auto_approve,start_worker)
+        except BaseException:
+            self._profile_lease.close()
+            raise
+
+    def _initialize(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
         self.settings=settings or Settings.load();self.audit=AuditLog(self.settings.logs_dir/'audit.jsonl');self.events=EventBus();self._run_lock=RLock();self.metrics=Metrics();self.crashes=CrashReporter(self.settings.logs_dir)
         self.approvals=ApprovalManager(interactive,auto_approve);self.policy=SecurityPolicy(self.settings.workspace_dir,self.settings.permissions_path,self.settings.require_approval)
         backend=None
@@ -482,6 +491,9 @@ class AgentLoop:
         return build_report(self.manifest, perm, registered, flag_overrides=flags)
 
     def close(self):
+        with self._run_lock:return self._close()
+
+    def _close(self):
         self.worker.stop();self.scheduler_runner.stop();self.update_checker.stop()
         # Shut down bounded internal subagents (idempotent + safe even if the
         # manager failed to construct earlier in __init__).
@@ -489,6 +501,11 @@ class AgentLoop:
         if subagents is not None:
             try:subagents.close()
             except Exception:pass
+        for component in (self.worker,self.scheduler_runner,self.update_checker):
+            thread=getattr(component,'thread',None)
+            if thread is not None and thread.is_alive():
+                raise RuntimeError('Runtime still stopping; maintenance lease retained')
+        self._profile_lease.close()
     def run(self):
         print(f'AIBA Agent v1.5 | routing=auto | sandbox={self.settings.sandbox_mode} | /exit to quit')
         while True:

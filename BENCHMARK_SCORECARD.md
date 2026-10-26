@@ -30,7 +30,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 7 | Deletion/privacy controls | GAP | test_memory_recovery_acceptance.py | Scoped record/profile/reflection/proposal erasure plus restore suppression tested; unattributed legacy files, source documents and external copies remain explicit limits |
 | 8 | User isolation | PASS | test_memory_user_isolation.py; test_memory_ownership.py | Trusted backend must bind header identity to signed-in user |
 | 9 | Persistence after restart | PASS | test_mission_e2e.py | Real runtime restart with scripted provider |
-| 10 | Backup/restore/migration | GAP | test_v13.py; test_memory_recovery_acceptance.py | Full-profile restore and injected-failure rollback tested (test_full_profile_backup.py); external disaster drill and cross-process consistency outstanding |
+| 10 | Backup/restore/migration | GAP | test_v13.py; test_memory_recovery_acceptance.py | Full-profile rollback, cross-process runtime/skill-root exclusion, clean-profile recovery and interrupted-restore rehearsal now tested in test_memory_maintenance.py; current candidate cross-platform CI still pending. Real VPS drill tracked separately under Reliability 4 |
 
 ## Autonomous Execution
 
@@ -118,3 +118,5 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 10 | Install/upgrade/rollback/release | GAP | PRODUCTION_GATE.md | Signing identities, final artifact hashes and release rollback drill outstanding |
 
 October 26 continuation: docs/COMPLETION_TRACKER.md maps all 60 requirements; docs/SECURITY_BOUNDARY_REVIEW.md records dispatch/diagnostic coverage and remaining implementation versus certification gaps. New security regression coverage in test_security_boundaries.py does not close the entire scope of any previously GAP criterion; scores unchanged.
+
+Memory follow-up: see docs/MEMORY_PRIVACY_RECOVERY.md and docs/certification/memory-evaluation-v1.json. Real semantic quality remains explicitly blocked; scores remain unchanged pending candidate CI and acceptance reconciliation.
