@@ -139,6 +139,7 @@ class MemoryVault:
             if row:
                 from privacy.memory_deletions import record
                 record(self.db_path,int(memory_id),row[1],row[2])
+                c.execute('DELETE FROM memory_supersessions WHERE old_id=?',(int(memory_id),))
             if row and row[0]:
                 c.execute('INSERT OR IGNORE INTO memory_source_overrides VALUES (?)', (row[0],))
             c.execute('DELETE FROM memory_facts WHERE memory_id=? AND memory_id IN (SELECT id FROM memories WHERE '+scope+')',[int(memory_id)]+args)

@@ -31,5 +31,5 @@ def enforce(data_dir,database_name=None):
             if not row:continue
             if row[0] and 'memory_source_overrides' in tables:db.execute('INSERT OR IGNORE INTO memory_source_overrides VALUES (?)',(row[0],))
             if 'memory_facts' in tables:db.execute('DELETE FROM memory_facts WHERE memory_id=?',(mid,))
-            if 'memory_supersessions' in tables:db.execute('DELETE FROM memory_supersessions WHERE old_id=? OR new_id=?',(mid,mid))
+            if 'memory_supersessions' in tables:db.execute('DELETE FROM memory_supersessions WHERE old_id=?',(mid,))
             db.execute('DELETE FROM memories WHERE id=?',(mid,))

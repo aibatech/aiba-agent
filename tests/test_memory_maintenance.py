@@ -127,7 +127,7 @@ class MemoryMaintenanceTests(unittest.TestCase):
             script="""import os,sys
 from pathlib import Path
 from operations.backup import BackupManager
-root=Path(sys.argv[1]);bid=sys.argv[2];replace=os.replace
+root=Path(sys.argv[1]).resolve();bid=sys.argv[2];replace=os.replace
 def crash(source,target):
     replace(source,target)
     if Path(target)==root/'a.txt':os._exit(73)
@@ -166,3 +166,18 @@ BackupManager(root).restore(bid,bid)
             eraser.erase('alice',preview['confirmation'])
             self.assertNotIn(alice,path.read_text());self.assertIn(bob,path.read_text())
             self.assertIn('unknown legacy line',path.read_text())
+
+    def test_deleting_current_fact_does_not_reactivate_superseded_history_after_restore(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);vault=MemoryVault(root/'memory.db',root/'vault')
+            old=vault.add('Atlas deadline June',owner='alice',fact_key='deadline')
+            current=vault.add('Atlas deadline July',owner='alice',fact_key='deadline')
+            backup=BackupManager(root);bid=backup.create()['backup_id']
+            vault.remove(current,as_user='alice')
+            backup.restore(bid,bid)
+            restored=MemoryVault(root/'memory.db',root/'vault')
+            self.assertEqual(restored.search('Atlas',as_user='alice'),[])
+            self.assertEqual(len(restored.fact_history('deadline','alice')),1)
+            self.assertTrue(restored.remove(old,as_user='alice'))
+            unrelated=restored.add('New unrelated project',owner='alice')
+            self.assertIsNotNone(restored.get(unrelated,as_user='alice'))
