@@ -23,8 +23,19 @@ class ProfileLease:
             if os.fstat(fd).st_size==0:self.file.write(b'0')
             self.file.seek(0)
             if os.name=='nt':
-                import msvcrt
-                msvcrt.locking(fd,msvcrt.LK_NBRLCK if runtime else msvcrt.LK_NBLCK,1)
+                import ctypes,msvcrt
+                from ctypes import wintypes
+                class Overlapped(ctypes.Structure):
+                    _fields_=[('Internal',ctypes.c_size_t),('InternalHigh',ctypes.c_size_t),
+                              ('Offset',wintypes.DWORD),('OffsetHigh',wintypes.DWORD),('hEvent',wintypes.HANDLE)]
+                kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+                lock=kernel.LockFileEx
+                lock.argtypes=[wintypes.HANDLE,wintypes.DWORD,wintypes.DWORD,wintypes.DWORD,wintypes.DWORD,ctypes.POINTER(Overlapped)]
+                lock.restype=wintypes.BOOL
+                self._overlapped=Overlapped()
+                # LOCKFILE_FAIL_IMMEDIATELY; add EXCLUSIVE only for maintenance.
+                if not lock(msvcrt.get_osfhandle(fd),1 if runtime else 3,0,1,0,ctypes.byref(self._overlapped)):
+                    raise ctypes.WinError(ctypes.get_last_error())
             else:
                 import fcntl
                 fcntl.flock(fd,(fcntl.LOCK_SH if runtime else fcntl.LOCK_EX)|fcntl.LOCK_NB)
@@ -40,8 +51,8 @@ class ProfileLease:
         try:
             self.file.seek(0)
             if os.name=='nt':
-                import msvcrt
-                msvcrt.locking(self.file.fileno(),msvcrt.LK_UNLCK,1)
+                # Closing the handle releases its LockFileEx byte-range lock.
+                pass
             else:
                 import fcntl
                 fcntl.flock(self.file.fileno(),fcntl.LOCK_UN)

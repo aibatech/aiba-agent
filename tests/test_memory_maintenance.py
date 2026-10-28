@@ -181,3 +181,15 @@ BackupManager(root).restore(bid,bid)
             self.assertTrue(restored.remove(old,as_user='alice'))
             unrelated=restored.add('New unrelated project',owner='alice')
             self.assertIsNotNone(restored.get(unrelated,as_user='alice'))
+
+    def test_multiple_runtime_leases_remain_shared_until_last_closes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            first=ProfileLease(tmp,runtime=True);second=None
+            try:
+                second=ProfileLease(tmp,runtime=True)
+                first.close()
+                with self.assertRaises(MaintenanceBusy):ProfileLease(tmp)
+            finally:
+                first.close()
+                if second is not None:second.close()
+            with ProfileLease(tmp):pass

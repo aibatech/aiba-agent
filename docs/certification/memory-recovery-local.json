@@ -1,6 +1,6 @@
 {
   "command": "python -m unittest discover -s tests -p test_memory_maintenance.py",
-  "tests_run": 13,
+  "tests_run": 14,
   "failures": 0,
   "errors": 0,
   "skips": 0,
