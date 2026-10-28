@@ -171,6 +171,8 @@ class AgentLoop:
             result=self.handle(payload['prompt'],propose_skill=False,
                 task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'),
                 user_id=payload.get('user_id'))
+            if self.engine.execution_status != 'complete':
+                raise RuntimeError('Background task did not complete; inspect task status')
             if self.approvals.pending_requests():
                 raise RuntimeError('Background task requires owner approval')
             return {'result':result}
@@ -415,6 +417,36 @@ class AgentLoop:
                 return self._handle(text.strip(),propose_skill,task_type,manual_model_id,user_id)
             finally:
                 self._user_context.reset(token)
+    def resume_task(self, task_id, user_id):
+        """Resume pending plan steps only; attempted effects require reconciliation.
+
+        The caller must bind user_id to its authenticated principal. Existing
+        approval scope is retained; resumption never creates an approval grant.
+        """
+        with self._run_lock:
+            task=self.tasks.get(task_id)
+            if not user_id or not task or task.get('owner') != user_id:
+                raise PermissionError('Task unavailable to this owner')
+            if task['status'] not in {'interrupted','partial','failed'} or not self.tasks.plan(task_id):
+                raise ValueError('Only interrupted or incomplete planned tasks can resume')
+            token=self._user_context.set(user_id)
+            try:
+                self.engine.retrieval.scope=self._memory_scope(user_id)
+                self.events.publish('task_resumed',task_id=task_id)
+                try:
+                    answer,used=self.engine.run(task_id,task['input'],
+                        prompt_context=self.personal.prompt_context(user_id),
+                        blocked_tools=self.personal.blocked_tools(user_id))
+                    status=self.engine.execution_status
+                except Exception:
+                    answer='Task could not resume safely. Inspect attempted steps and reconcile uncertain effects before retrying.'
+                    status='failed';used=[]
+                self.tasks.finish(task_id,answer,status)
+                self.events.publish('task_finished',task_id=task_id,status=status,tools=used)
+                return {'task_id':task_id,'status':status,'result':answer}
+            finally:
+                self._user_context.reset(token)
+
     def start_conversation(self,user_id):return self.personal.start_conversation(user_id)
     def _handle(self,text,propose_skill=True,task_type=None,manual_model_id=None,user_id=None):
         from reasoning.protocol import VisibleReasoning
@@ -440,7 +472,9 @@ class AgentLoop:
         self.engine._reasoning.plan("Task accepted; preparing execution.", steps=self.engine.max_steps)
         try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id),blocked_tools=self.personal.blocked_tools(user_id));status=getattr(self.engine,'execution_status','complete');self.tasks.finish(task_id,answer,status)
         except Exception as exc:
-            crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status='failed';self.tasks.finish(task_id,answer,status)
+            from runtime.control import ExecutionStopped
+            self.engine.execution_status='cancelled' if isinstance(exc,ExecutionStopped) else 'failed'
+            crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status=self.engine.execution_status;self.tasks.finish(task_id,answer,status)
         # Best-effort session close/status: complete/failed both map to closed.
         if _sid is not None:
             try:self.sessions.append(_sid,summary=(answer[:400] or ''));self.sessions.close_session(_sid)

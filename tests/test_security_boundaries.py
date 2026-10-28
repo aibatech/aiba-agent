@@ -154,7 +154,7 @@ class SecurityBoundaryTests(unittest.TestCase):
         def attempt(*args_,**kwargs):
             self.assertFalse(manager.approve_exact('sensitive',args))
             return 'blocked'
-        fake=SimpleNamespace(approvals=manager,handle=attempt,
+        fake=SimpleNamespace(approvals=manager,handle=attempt,engine=SimpleNamespace(execution_status="partial"),
             handle_result=lambda *a,**k:{'status':'partial','result':attempt()})
         with manager.request_scope([manager.action_fingerprint('sensitive',args)]):
             with self.assertRaises(RuntimeError):

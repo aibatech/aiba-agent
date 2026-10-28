@@ -33,7 +33,7 @@ class SchedulerReliabilityTests(unittest.TestCase):
 
     def test_stale_worker_cannot_complete_new_claim(self):
         with tempfile.TemporaryDirectory() as tmp:
-            queue=JobQueue(Path(tmp)/'jobs.db');job=queue.enqueue('test',{})
+            queue=JobQueue(Path(tmp)/'jobs.db');job=queue.enqueue('test',{},retry_policy='safe')
             first=queue.claim();self.assertEqual(queue.recover(stale_seconds=60),0)
             queue.recover();second=queue.claim()
             queue.complete(job,'stale',claim_token=first['claim_token'])

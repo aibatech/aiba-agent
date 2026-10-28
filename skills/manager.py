@@ -132,7 +132,8 @@ class SkillManager:
                 if isinstance(v,str):
                     for key,value in variables.items():v=v.replace('{{'+key+'}}',str(value))
                     args[k]=v
-            res=registry.execute(tool,args,blocked=set(blocked or ()) | {'run_skill'});outputs.append({'step':index,'tool':tool,'ok':res.ok,'output':res.output,'error':res.error,'verified':getattr(res,'verified',None)})
+            from skills.improver import FORBIDDEN_SKILL_TOOLS
+            res=registry.execute(tool,args,blocked=set(blocked or ()) | FORBIDDEN_SKILL_TOOLS);outputs.append({'step':index,'tool':tool,'ok':res.ok,'output':res.output,'error':res.error,'verified':getattr(res,'verified',None)})
             if not res.ok:break
         if self.outcomes:self.outcomes.record(owner,skill,outputs,(time.monotonic()-started)*1000)
         return outputs

@@ -116,6 +116,8 @@ class ToolRegistry:
     def blocked(self, name:str, extra=None):
         return name in (extra or set()) or not self.policy.check_tool(name).allowed or not self._feature_flag_on(name)
     def execute(self,name:str,arguments:dict[str,Any]|None=None,blocked:set[str]|None=None)->ToolResult:
+        from runtime.control import checkpoint
+        checkpoint()
         args={} if arguments is None else arguments; tool=self._tools.get(name); blocked=blocked or set()
         if name in blocked:
             return ToolResult(False,error=f'{name} is disabled for this conversation')
@@ -144,6 +146,7 @@ class ToolRegistry:
         if reason:return ToolResult(False,error=reason)
         if self.policy.check_tool(name).requires_approval and not decision.requires_approval:
             return ToolResult(False,error='Approval policy changed; retry with the current owner approval requirement')
+        checkpoint()
         self.audit.record('tool_start',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments="[REDACTED]")
         try:result=tool.run(**deepcopy(args))
         except TypeError as exc:result=ToolResult(False,error=f'Invalid tool arguments: {exc}')

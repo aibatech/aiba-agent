@@ -120,3 +120,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 October 26 continuation: docs/COMPLETION_TRACKER.md maps all 60 requirements; docs/SECURITY_BOUNDARY_REVIEW.md records dispatch/diagnostic coverage and remaining implementation versus certification gaps. New security regression coverage in test_security_boundaries.py does not close the entire scope of any previously GAP criterion; scores unchanged.
 
 Memory follow-up: see docs/MEMORY_PRIVACY_RECOVERY.md and docs/certification/memory-evaluation-v1.json. Real semantic quality remains explicitly blocked; scores remain unchanged pending candidate CI and acceptance reconciliation.
+
+### October 28 execution/learning candidate
+
+Implemented conservative job retry and stale-claim review, cooperative cancellation, persisted plan dispatch fencing, owner-bound resume/reconciliation, evidence-linked advisory workflow proposals, and failed-page retrieval handling. Added integrated runtime/registry/store/worker acceptance and matched wrong-content skill regression plus rollback. See `docs/EXECUTION_LEARNING_RECOVERY.md` and `docs/COMPLETION_TRACKER.md`. Verified benchmark lower bounds remain Memory 6, Execution 6, Learning 7, Security 4, UX 5, Reliability 8 out of 10. Live web/model/action-adapter and broader learning certification remain incomplete; release not fully certified.

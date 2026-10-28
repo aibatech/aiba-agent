@@ -55,6 +55,43 @@ class TaskStore:
             if not row:raise ValueError('No active plan')
             steps=json.loads(row[0])
             if type(index) is not int or not 0<=index<len(steps):raise ValueError('Invalid plan step')
-            steps[index]['status']='verified' if ok and verified is True else ('executed' if ok else 'blocked')
+            steps[index]['status']='verified' if ok and verified is True else ('unknown' if ok and verified is False else ('executed' if ok else 'blocked'))
+            db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
+        return steps
+
+    def plan_start(self, task_id, index, fingerprint):
+        """Durably fence a step before dispatch; interrupted effects are never replayed."""
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+            if not row:raise ValueError('No active plan')
+            steps=json.loads(row[0])
+            if type(index) is not int or not 0<=index<len(steps):raise ValueError('Invalid plan step')
+            item=steps[index]
+            if item['status'] != 'pending':
+                raise ValueError('Step already attempted; reconcile its outcome before replay')
+            item.update(status='running',fingerprint=fingerprint)
+            db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
+
+    def reconcile_step(self, task_id, owner, index, fingerprint, resolution):
+        """Operator-only decision after inspecting external state; not a model tool.
+
+        'verified' attests that the intended outcome was independently observed;
+        'retry' attests replay is safe. Both are exact-attempt, owner-bound decisions.
+        """
+        if resolution not in {'verified','retry'}:raise ValueError('Invalid resolution')
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            task=db.execute('SELECT owner FROM tasks WHERE id=?',(task_id,)).fetchone()
+            if not owner or not task or task[0]!=owner:raise PermissionError('Task unavailable to this owner')
+            row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+            if not row:raise ValueError('No active plan')
+            steps=json.loads(row[0])
+            if type(index) is not int or not 0<=index<len(steps):raise ValueError('Invalid plan step')
+            item=steps[index]
+            if item.get('fingerprint')!=fingerprint or item['status'] not in {'running','blocked','unknown','executed'}:
+                raise ValueError('Exact unresolved attempt required')
+            item.update(status='verified' if resolution=='verified' else 'pending',
+                        reconciliation={'owner':owner,'fingerprint':fingerprint,'resolution':resolution,'at':now()})
             db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
         return steps

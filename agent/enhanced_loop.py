@@ -139,7 +139,8 @@ class AgentLoop(BaseAgentLoop):
             self.metrics.increment("task_failures_total", error=type(exc).__name__)
             answer = f"AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}"
             used = []
-            status = "failed"
+            from runtime.control import ExecutionStopped
+            status = "cancelled" if isinstance(exc, ExecutionStopped) else "failed"
             self.tasks.finish(task_id, answer, status)
 
         self.conversations.append(user_key, cid, "assistant", answer)

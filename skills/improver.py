@@ -7,6 +7,8 @@ from pathlib import Path
 from skills.manager import SkillManager
 from tools.registry import _valid
 
+FORBIDDEN_SKILL_TOOLS = {'run_skill', 'create_skill', 'approve_skill', 'install_skill', 'update_security_policy', 'approve_operation'}
+
 
 class SkillImprover:
     def __init__(self, manager: SkillManager, proposals_dir: Path):
@@ -51,6 +53,8 @@ class SkillImprover:
             if not isinstance(step, dict) or set(step) != {'tool', 'arguments'}:
                 raise ValueError('Each reviewed step requires only tool and arguments')
             name = step['tool']
+            if name in FORBIDDEN_SKILL_TOOLS:
+                raise ValueError('Skills cannot install, approve, change policy, or recursively execute skills')
             if not isinstance(name, str) or registry._availability(name):
                 raise ValueError(f'Unavailable tool: {name}')
             if not isinstance(step['arguments'], dict) or not _valid(step['arguments'], registry._tools[name].parameters):
@@ -70,3 +74,32 @@ class SkillImprover:
         data['status'] = 'installed'
         proposal_path.write_text(json.dumps(data, indent=2), encoding='utf-8')
         return skill
+
+    def propose_from_outcomes(self, task_id, tasks, owner, feedback=''):
+        """Require three successful, verified, owner-matched task traces.
+
+        Tool sequences are evidence for a review opportunity, never executable code.
+        """
+        task=tasks.get(task_id)
+        if not task or task.get('owner') != owner or task['status'] != 'complete':
+            raise ValueError('A completed task belonging to this owner is required')
+        def signature(row):
+            events=json.loads(row['events'])
+            results=[e['tool_result'] for e in events if 'tool_result' in e]
+            if not results or any(not r.get('ok') or r.get('verified') is not True for r in results):return None
+            return [r['tool'] for r in results]
+        observed=signature(task)
+        if not observed:raise ValueError('Verified action outcomes are required')
+        from sqlite_utils import connect
+        import sqlite3
+        with connect(tasks.path) as db:
+            db.row_factory=sqlite3.Row
+            rows=db.execute("SELECT * FROM tasks WHERE owner=? AND status='complete' ORDER BY created_at DESC LIMIT 100",(owner,)).fetchall()
+        matches=[r['id'] for r in rows if signature(r)==observed]
+        if len(matches)<3:raise ValueError('At least three matched verified task outcomes are required')
+        path=self.propose(task_id,task['input'],observed,'Repeated verified workflow; owner review required')
+        data=self._load(path)
+        data.update(owner=owner,evidence_task_ids=matches,feedback=feedback,
+                    evidence_limit='Matching tool sequences do not prove equivalent intent or safe arguments')
+        path.write_text(json.dumps(data,indent=2),encoding='utf-8')
+        return path

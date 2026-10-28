@@ -3,6 +3,7 @@ import time
 from threading import Event,Thread
 from typing import Callable,Any
 from runtime.queue import JobQueue
+from runtime.control import execution_scope, checkpoint
 class Worker:
     def __init__(self,queue:JobQueue,handlers:dict[str,Callable[[dict],Any]],poll_seconds:float=.5): self.queue=queue;self.handlers=handlers;self.poll_seconds=poll_seconds;self.stop_event=Event();self.thread=None
     def run_once(self)->bool:
@@ -16,7 +17,15 @@ class Worker:
         try:
             handler=self.handlers.get(job['kind'])
             if not handler:raise KeyError(f"No handler for {job['kind']}")
-            self.queue.complete(job['id'],handler(job['payload']),claim_token=job['claim_token'])
+            def active():
+                current=self.queue.get(job['id'])
+                return bool(current and current['status']=='running' and current['claim_token']==job['claim_token'])
+            with execution_scope(active):
+                result=handler(job['payload'])
+                checkpoint()
+                if isinstance(result,dict) and result.get('status','complete') != 'complete':
+                    raise RuntimeError('Handler did not complete; inspect task status')
+                self.queue.complete(job['id'],result,claim_token=job['claim_token'])
         except Exception as exc:self.queue.fail(job['id'],f'{type(exc).__name__}: {exc}',claim_token=job['claim_token'])
         finally:heartbeat_stop.set();heartbeat.join(timeout=1)
         return True

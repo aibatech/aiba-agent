@@ -175,10 +175,33 @@ def create_app(agent):
         if not item:raise HTTPException(404,'Not found')
         item['plan']=agent.tasks.plan(task_id)
         return item
+    class ResumeIn(BaseModel):
+        owner: str = Field(min_length=1, max_length=200)
+    @app.post('/v1/tasks/{task_id}/resume')
+    def resume_task(task_id: str, body: ResumeIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return agent.resume_task(task_id,body.owner)
+    class ReconcileIn(BaseModel):
+        owner: str = Field(min_length=1,max_length=200)
+        index: int = Field(ge=0,le=19)
+        fingerprint: str = Field(min_length=64,max_length=64)
+        resolution: str
+    @app.post('/v1/tasks/{task_id}/reconcile-step')
+    def reconcile_step(task_id: str, body: ReconcileIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return {'plan':agent.tasks.reconcile_step(task_id,body.owner,body.index,body.fingerprint,body.resolution)}
     class SkillReviewIn(BaseModel):
         steps: list[dict] = Field(min_length=1, max_length=100)
         feedback: str = Field(default='', max_length=5000)
         version: str = '0.1.0'
+    class SkillEvidenceIn(BaseModel):
+        owner: str = Field(min_length=1, max_length=200)
+        feedback: str = Field(default='', max_length=5000)
+    @app.post('/v1/tasks/{task_id}/propose-workflow')
+    def propose_workflow(task_id: str, body: SkillEvidenceIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        path=agent.improver.propose_from_outcomes(task_id, agent.tasks, body.owner, body.feedback)
+        return {'proposal_id':path.stem, 'status':'requires_review', 'executable':False}
     class SkillInstallIn(BaseModel):
         review_digest: str = Field(min_length=64, max_length=64)
     @app.post('/v1/skill-proposals/{task_id}/review')

@@ -12,17 +12,17 @@ class ExecutionRecoveryTests(unittest.TestCase):
                 calls.append(1)
                 if len(calls)==1:raise TimeoutError('temporary failure')
                 return {'verified':True}
-            worker=Worker(queue,{'test':run});job=queue.enqueue('test',{})
+            worker=Worker(queue,{'test':run});job=queue.enqueue('test',{},retry_policy='safe')
             worker.run_once();self.assertEqual(queue.get(job)['status'],'queued')
             worker.run_once();self.assertEqual(queue.get(job)['status'],'complete')
-            cancelled=queue.enqueue('test',{});self.assertTrue(queue.cancel(cancelled))
+            cancelled=queue.enqueue('test',{},retry_policy='safe');self.assertTrue(queue.cancel(cancelled))
             self.assertFalse(worker.run_once())
-            running=queue.enqueue('test',{});queue.claim();queue.cancel(running);queue.complete(running,'late result')
+            running=queue.enqueue('test',{},retry_policy='safe');queue.claim();queue.cancel(running);queue.complete(running,'late result')
             self.assertEqual(queue.get(running)['status'],'cancelled')
 
     def test_restart_recovery_respects_attempt_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
-            path=Path(tmp)/'jobs.db';queue=JobQueue(path);job=queue.enqueue('test',{},max_attempts=1)
+            path=Path(tmp)/'jobs.db';queue=JobQueue(path);job=queue.enqueue('test',{},max_attempts=1,retry_policy='safe')
             queue.claim();restarted=JobQueue(path);restarted.recover()
             self.assertEqual(restarted.get(job)['status'],'failed')
             self.assertIsNone(restarted.claim())

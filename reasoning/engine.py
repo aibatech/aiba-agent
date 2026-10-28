@@ -45,6 +45,7 @@ class ReasoningEngine:
         return a
 
     def run(self,task_id,user_input,task_type=None,manual_model_id=None,prompt_context=None,blocked_tools=None):
+        from runtime.control import checkpoint
         self.execution_status = "complete"
         outcomes = {}
         plan = self.tasks.plan(task_id) if hasattr(self.tasks, "plan") else []
@@ -58,7 +59,9 @@ class ReasoningEngine:
         if self._reasoning:
             self._reasoning.plan("Received request; retrieving context and available tools.", steps=self.max_steps)
         for step in range(self.max_steps):
+            checkpoint()
             action=self._parse(self.provider.complete(messages,schemas,task_type=task_type,manual_model_id=manual_model_id))
+            checkpoint()
             # Persist execution metadata, not model-generated payloads or dialogue.
             event_action = {'type':action['type']}
             if action['type'] == 'tool_call':
@@ -71,7 +74,7 @@ class ReasoningEngine:
                 messages.append({'role':'user','content':'Plan saved. Execute each step with a zero-based plan_step on its tool call. Never treat a saved plan as completed work.'})
                 continue
             if action['type']=='final':
-                if any(not ok for ok in outcomes.values()) or any(item['status'] in {'pending','blocked'} for item in plan):
+                if any(not ok for ok in outcomes.values()) or any(item['status'] in {'pending','blocked','running','unknown'} for item in plan):
                     self.execution_status = 'partial'
                     return 'I could not verify completion: one or more tool actions failed or were blocked. Review the task progress before retrying.', used
                 if self._reasoning:self._reasoning.final(response_preview=str(action.get('response','')),tool_count=len(used))
@@ -87,11 +90,12 @@ class ReasoningEngine:
                 name='delegate_task'
                 args={'objectives':[f'{role}: {instruction}']}
                 if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
+                if plan:self.tasks.plan_start(task_id,plan_index,ApprovalManager.action_fingerprint(name,args))
                 res=self.registry.execute(name,args,blocked=blocked_tools or set())
                 if plan:
                     plan=self.tasks.plan_result(task_id,plan_index,res.ok,getattr(res,'verified',None))
                 self.tasks.event(task_id, {'step':step, 'tool_result':{'tool':name,'ok':res.ok,'verified':getattr(res,'verified',None)}})
-                outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok
+                outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok and getattr(res,'verified',None) is not False
                 used.append(name)
                 if self._reasoning:self._reasoning.result(name,res.ok,output_preview=str(res.output if res.ok else res.error))
                 messages += [
@@ -103,10 +107,11 @@ class ReasoningEngine:
 
             name=action.get('tool');args=action.get('arguments') or {}
             if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
+            if plan:self.tasks.plan_start(task_id,plan_index,ApprovalManager.action_fingerprint(name,args))
             res=self.registry.execute(name,args,blocked=blocked_tools or set());used.append(name)
             if plan:
                 plan=self.tasks.plan_result(task_id,plan_index,res.ok,getattr(res,'verified',None))
-            outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok
+            outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok and getattr(res,'verified',None) is not False
             self.tasks.event(task_id, {'step':step, 'tool_result':{'tool':name,'ok':res.ok,'verified':getattr(res,'verified',None)}})
             if self._reasoning:self._reasoning.result(name,res.ok,output_preview=str(res.output if res.ok else res.error))
             feedback={'ok':res.ok,'output':res.output,'error':res.error}
@@ -115,6 +120,7 @@ class ReasoningEngine:
             # as prose; the button callback becomes the user's next turn.
             if name == 'clarify' and res.ok and isinstance(res.output,dict) and res.output.get('state') == 'pending':
                 if self._reasoning:self._reasoning.final(response_preview='[awaiting clarification]',tool_count=len(used))
+                self.execution_status='waiting'
                 return '',used
             next_hint=' Continue working toward the requested outcome; verify the result before finishing.'
             if not res.ok:
