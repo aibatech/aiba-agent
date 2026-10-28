@@ -155,7 +155,8 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
             loop=AgentLoop(settings=make_settings(Path(tmp)),interactive=False,start_worker=False)
             try:
                 mid=loop.vault.add('old',owner='default')
-                cases=[('update_memory',{'memory_id':mid,'content':'new'},loop.vault,'update',None),
+                cases=[('remember',{'content':'new'},loop.vault,'add',None),
+                       ('update_memory',{'memory_id':mid,'content':'new'},loop.vault,'update',None),
                        ('enqueue_task',{'prompt':'later'},loop.queue,'enqueue','missing-job'),
                        ('schedule_task',{'name':'daily','prompt':'later','interval_seconds':60},loop.scheduler,'add_interval','missing-schedule')]
                 for tool,args,target,method,value in cases:

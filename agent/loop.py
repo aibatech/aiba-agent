@@ -498,6 +498,8 @@ class AgentLoop:
 
     def _verify_memory_write(self, args, result):
         memory_id=args.get('memory_id') or (result.output or {}).get('memory_id')
+        if not isinstance(memory_id,int) or isinstance(memory_id,bool) or memory_id < 1:
+            return False
         row=self.vault.get(memory_id,as_user=self._memory_scope())
         return bool(row and all(row.get(key)==value for key,value in args.items()
                                if key in {'content','category','importance'} and value is not None))
