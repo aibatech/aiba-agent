@@ -441,6 +441,8 @@ class AgentLoop:
             token=self._user_context.set(user_id)
             try:
                 self.engine.retrieval.scope=self._memory_scope(user_id)
+                from reasoning.protocol import VisibleReasoning
+                self.engine._reasoning=VisibleReasoning(self.events.publish,task_id)
                 self.events.publish('task_resumed',task_id=task_id)
                 try:
                     answer,used=self.engine.run(task_id,task['input'],

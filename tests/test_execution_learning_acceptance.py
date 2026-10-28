@@ -62,6 +62,7 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
                 actions=iter([{'type':'tool_call','tool':'list_files','arguments':{},'plan_step':1}, {'type':'final','response':'Done'}])
                 with patch.object(loop.engine.provider,'complete',side_effect=lambda *a,**k:next(actions)),patch.object(loop.registry,'execute',wraps=loop.registry.execute) as dispatch:
                     self.assertEqual(loop.resume_task(tid,'alice')['status'],'complete')
+                    self.assertEqual(loop.engine._reasoning.task_id,tid)
                     self.assertEqual([c.args[0] for c in dispatch.call_args_list],['list_files'])
             finally:loop.close()
 
