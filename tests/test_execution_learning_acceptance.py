@@ -12,6 +12,7 @@ from skills.improver import SkillImprover
 from skills.manager import SkillManager
 from test_phase9_loop import make_settings
 from tools.web import WebTools
+from sqlite_utils import connect
 
 
 class ExecutionLearningAcceptanceTests(unittest.TestCase):
@@ -43,7 +44,7 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
                     loop.worker.run_once()
                 self.assertEqual(loop.queue.get(job)['status'],'cancelled')
                 dispatch.assert_not_called()
-                with __import__('sqlite_utils').connect(loop.tasks.path) as db:
+                with connect(loop.tasks.path) as db:
                     self.assertEqual(db.execute('SELECT status FROM tasks ORDER BY created_at DESC LIMIT 1').fetchone()[0],'cancelled')
             finally:loop.close()
 
@@ -106,6 +107,8 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             tasks=TaskStore(Path(tmp)/'tasks.db');tid=tasks.create('work',owner='alice')
             tasks.set_plan(tid,['effect']);tasks.plan_start(tid,0,'a'*64)
+            with self.assertRaises(ValueError):tasks.reconcile_step(tid,'alice',0,'a'*64,'retry')
+            tasks.finish(tid,'interrupted','interrupted')
             with self.assertRaises(PermissionError):tasks.reconcile_step(tid,'bob',0,'a'*64,'retry')
             with self.assertRaises(ValueError):tasks.reconcile_step(tid,'alice',0,'b'*64,'retry')
             tasks.reconcile_step(tid,'alice',0,'a'*64,'retry')
@@ -145,4 +148,45 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
                 loop.skills.rollback(skill.name,'1.0.0')
                 self.assertEqual(loop.skills.get(skill.name).steps,base)
                 with self.assertRaises(ValueError):loop.improver.review('candidate',[{'tool':'run_skill','arguments':{'name':skill.name}}],loop.registry)
+            finally:loop.close()
+
+    def test_domain_verifiers_reject_successful_dispatch_without_persisted_effect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop=AgentLoop(settings=make_settings(Path(tmp)),interactive=False,start_worker=False)
+            try:
+                mid=loop.vault.add('old',owner='default')
+                cases=[('update_memory',{'memory_id':mid,'content':'new'},loop.vault,'update',None),
+                       ('enqueue_task',{'prompt':'later'},loop.queue,'enqueue','missing-job'),
+                       ('schedule_task',{'name':'daily','prompt':'later','interval_seconds':60},loop.scheduler,'add_interval','missing-schedule')]
+                for tool,args,target,method,value in cases:
+                    fp=loop.approvals.action_fingerprint(tool,args)
+                    with loop.approvals.request_scope([fp]),patch.object(target,method,return_value=value):
+                        result=loop.registry.execute(tool,args)
+                    self.assertFalse(result.ok,tool);self.assertFalse(result.verified,tool)
+                self.assertEqual(loop.vault.get(mid)['content'],'old')
+                args={'memory_id':mid,'content':'new'}
+                with loop.approvals.request_scope([loop.approvals.action_fingerprint('update_memory',args)]):
+                    result=loop.registry.execute('update_memory',args)
+                self.assertTrue(result.ok);self.assertTrue(result.verified)
+            finally:loop.close()
+
+    def test_runtime_outcomes_enrich_existing_advisory_without_overwriting_review(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop=AgentLoop(settings=make_settings(Path(tmp)),interactive=False,start_worker=False)
+            try:
+                ids=[]
+                for goal in ['Atlas','Budget','Notebook']:
+                    args={'path':'goal.txt','content':goal}
+                    actions=iter([{'type':'tool_call','tool':'write_file','arguments':args},{'type':'final','response':'Saved'}])
+                    with patch.object(loop.engine.provider,'complete',side_effect=lambda *a,**k:next(actions)),loop.approvals.request_scope([loop.approvals.action_fingerprint('write_file',args)]):
+                        result=loop.handle_result('Save '+goal,user_id='alice')
+                    self.assertEqual(result['status'],'complete');ids.append(result['task_id'])
+                path=loop.improver.propose_from_outcomes(ids[-1],loop.tasks,'alice','Keep exact content')
+                evidence=json.loads(path.read_text())
+                self.assertEqual(set(evidence['evidence_task_ids']),set(ids))
+                self.assertEqual(evidence['steps'],[])
+                steps=[{'tool':'write_file','arguments':{'path':'goal.txt','content':'{{goal}}'}}]
+                review=loop.improver.review(ids[-1],steps,loop.registry,'Owner supplied arguments')
+                with self.assertRaises(ValueError):loop.improver.propose_from_outcomes(ids[-1],loop.tasks,'alice')
+                self.assertEqual(loop.improver._digest(loop.improver._load(path)),review['review_digest'])
             finally:loop.close()

@@ -82,8 +82,9 @@ class TaskStore:
         if resolution not in {'verified','retry'}:raise ValueError('Invalid resolution')
         with connect(self.path) as db:
             db.execute('BEGIN IMMEDIATE')
-            task=db.execute('SELECT owner FROM tasks WHERE id=?',(task_id,)).fetchone()
+            task=db.execute('SELECT owner,status FROM tasks WHERE id=?',(task_id,)).fetchone()
             if not owner or not task or task[0]!=owner:raise PermissionError('Task unavailable to this owner')
+            if task[1]=='running':raise ValueError('Stop the active task before reconciling effects')
             row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
             if not row:raise ValueError('No active plan')
             steps=json.loads(row[0])
@@ -95,3 +96,8 @@ class TaskStore:
                         reconciliation={'owner':owner,'fingerprint':fingerprint,'resolution':resolution,'at':now()})
             db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
         return steps
+
+    def begin_resume(self, task_id, owner):
+        with connect(self.path) as db:
+            return db.execute("UPDATE tasks SET status='running',updated_at=? WHERE id=? AND owner=? AND status IN ('interrupted','partial','failed')",
+                              (now(),task_id,owner)).rowcount == 1

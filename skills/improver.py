@@ -97,8 +97,14 @@ class SkillImprover:
             rows=db.execute("SELECT * FROM tasks WHERE owner=? AND status='complete' ORDER BY created_at DESC LIMIT 100",(owner,)).fetchall()
         matches=[r['id'] for r in rows if signature(r)==observed]
         if len(matches)<3:raise ValueError('At least three matched verified task outcomes are required')
-        path=self.propose(task_id,task['input'],observed,'Repeated verified workflow; owner review required')
-        data=self._load(path)
+        path=self._path(task_id)
+        if path.exists():
+            data=self._load(path)
+            if data.get('status')!='requires_review' or data.get('executable') or data.get('steps'):
+                raise ValueError('Evidence enrichment cannot overwrite an owner-reviewed proposal')
+        else:
+            path=self.propose(task_id,task['input'],observed,'Repeated verified workflow; owner review required')
+            data=self._load(path)
         data.update(owner=owner,evidence_task_ids=matches,feedback=feedback,
                     evidence_limit='Matching tool sequences do not prove equivalent intent or safe arguments')
         path.write_text(json.dumps(data,indent=2),encoding='utf-8')

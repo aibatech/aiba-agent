@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from pathlib import Path
 from contextvars import ContextVar
 from config.settings import Settings
@@ -253,13 +254,17 @@ class AgentLoop:
         # confined to its own rows for reads and mutations alike — it can never
         # read, search, export, update or delete 'shared'/another user's memory.
         self.registry.register(Tool('remember','Store durable memory. For an explicit correction, reuse its stable fact_key to supersede the old fact; do not group unrelated goals.',lambda content,category='general',importance=.5,fact_key=None:ToolResult(True,{'memory_id':self.vault.add(content,category,importance,owner=self._memory_writer_owner(),fact_key=fact_key)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'},'fact_key':{'type':'string'}},'required':['content'],'additionalProperties':False}))
+        self.registry._tools['remember'].verifier = self._verify_memory_write
         self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit),as_user=self._memory_scope())),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         # --- Memory maintenance + session search (Phase 9) ---
         # Memory edits/mutations mirror write_file/delete_file approval posture.
         self.registry.register(Tool('update_memory','Edit an existing memory row by id.',lambda memory_id,content=None,category=None,importance=None:ToolResult(True,self.vault.update(int(memory_id),content,category,None if importance is None else float(importance),as_user=self._memory_scope())),{'type':'object','properties':{'memory_id':{'type':'integer'},'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['memory_id'],'additionalProperties':False}))
         self.registry.register(Tool('delete_memory','Delete a memory row by id (destructive).',lambda memory_id:ToolResult(self.vault.remove(int(memory_id),as_user=self._memory_scope())),{'type':'object','properties':{'memory_id':{'type':'integer'}},'required':['memory_id'],'additionalProperties':False}))
+        self.registry._tools['update_memory'].verifier = self._verify_memory_write
+        self.registry._tools['delete_memory'].verifier = lambda args,res: self.vault.get(args['memory_id'],as_user=self._memory_scope()) is None
         self.registry.register(Tool('list_memories','List stored memories, optionally filtered by category.',lambda limit=50,category=None:ToolResult(True,self.vault.list(int(limit),category,as_user=self._memory_scope())),{'type':'object','properties':{'limit':{'type':'integer'},'category':{'type':'string'}},'additionalProperties':False}))
         self.registry.register(Tool('export_memories','Export memories (optionally one category) to a markdown file in the workspace.',lambda filename='memories_export.md',category=None:ToolResult(True,self._export_memories(str(filename),category,self._memory_scope())),{'type':'object','properties':{'filename':{'type':'string'},'category':{'type':'string'}},'additionalProperties':False}))
+        self.registry._tools['export_memories'].verifier = lambda args,res: isinstance(res.output,dict) and res.output.get('verified') is True
         self.registry.register(Tool('session_search','Search past AIBA task/session history (this user only); never returns internal deliberation.',lambda query,limit=10:ToolResult(True,self.sessions.search((self._current_user or 'default'),query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         self.registry.register(Tool('session_history','List recent AIBA sessions for this user.',lambda limit=20:ToolResult(True,self.sessions.list_by_user((self._current_user or 'default'),int(limit))),{'type':'object','properties':{'limit':{'type':'integer'}},'additionalProperties':False}))
         self.registry.register(Tool('browser_fetch','Fetch rendered webpage text.',browser_fetch,{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
@@ -293,7 +298,9 @@ class AgentLoop:
         self.registry.register(Tool('run_skill','Run a reviewed reusable skill.',self._run_skill,{'type':'object','properties':{'name':{'type':'string'},'variables':{'type':'object'}},'required':['name'],'additionalProperties':False}))
         self.registry.register(ClarifyToolFactory.make(self.clarify))
         self.registry.register(Tool('enqueue_task','Queue work to run asynchronously as soon as a worker is available. Use for explicit background/asynchronous work, not future or recurring schedules.',lambda prompt:ToolResult(True,{'job_id':self.queue.enqueue('agent_task',{'prompt':prompt,'user_id':self._current_user})}),{'type':'object','properties':{'prompt':{'type':'string'}},'required':['prompt'],'additionalProperties':False}))
+        self.registry._tools['enqueue_task'].verifier = self._verify_enqueued_task
         self.registry.register(Tool('schedule_task','Create a persistent recurring AIBA task at a fixed interval. Use when the user asks for every/each/repeated/ongoing scheduled work. interval_seconds is the recurrence interval (minimum 60 seconds); the first run occurs after one interval. Do not use for ordinary immediate requests.',lambda name,prompt,interval_seconds:ToolResult(True,{'schedule_id':self.scheduler.add_interval(name,'agent_task',{'prompt':prompt,'user_id':self._current_user},int(interval_seconds))}),{'type':'object','properties':{'name':{'type':'string'},'prompt':{'type':'string'},'interval_seconds':{'type':'integer'}},'required':['name','prompt','interval_seconds'],'additionalProperties':False}))
+        self.registry._tools['schedule_task'].verifier = self._verify_schedule
         # Internal subagents (Phase 3): the ONLY model-advertised entry point.
         # It spawns bounded, permission-narrowed, non-recursive background
         # workers in parallel, waits (bounded), and returns concise structured
@@ -429,6 +436,8 @@ class AgentLoop:
                 raise PermissionError('Task unavailable to this owner')
             if task['status'] not in {'interrupted','partial','failed'} or not self.tasks.plan(task_id):
                 raise ValueError('Only interrupted or incomplete planned tasks can resume')
+            if not self.tasks.begin_resume(task_id,user_id):
+                raise ValueError('Task is already active or no longer resumable')
             token=self._user_context.set(user_id)
             try:
                 self.engine.retrieval.scope=self._memory_scope(user_id)
@@ -487,6 +496,26 @@ class AgentLoop:
         ok = bool(outputs) and all(step['ok'] for step in outputs)
         return ToolResult(ok, outputs, None if ok else 'Skill stopped because a step failed or was denied')
 
+    def _verify_memory_write(self, args, result):
+        memory_id=args.get('memory_id') or (result.output or {}).get('memory_id')
+        row=self.vault.get(memory_id,as_user=self._memory_scope())
+        return bool(row and all(row.get(key)==value for key,value in args.items()
+                               if key in {'content','category','importance'} and value is not None))
+
+    def _verify_enqueued_task(self, args, result):
+        job=self.queue.get(result.output['job_id'])
+        return bool(job and job['kind']=='agent_task' and
+                    json.loads(job['payload'])=={'prompt':args['prompt'],'user_id':self._current_user})
+
+    def _verify_schedule(self, args, result):
+        from sqlite_utils import connect
+        with connect(self.scheduler.path) as db:
+            row=db.execute('SELECT name,kind,payload,interval_seconds,enabled FROM schedules WHERE id=?',
+                           (result.output['schedule_id'],)).fetchone()
+        return bool(row and row[0]==args['name'] and row[1]=='agent_task' and
+                    json.loads(row[2])=={'prompt':args['prompt'],'user_id':self._current_user} and
+                    row[3]==args['interval_seconds'] and row[4]==1)
+
     def _export_memories(self, filename, category=None, as_user=None):
         """Export memories (optionally one category) to a markdown doc in the
         workspace (sandbox-confined). as_user restricts the export to the acting
@@ -500,7 +529,11 @@ class AgentLoop:
         md='\n'.join(lines)+'\n'
         try:
             result=self.sandbox.write_file(str(filename),md)
-            return {'file':str(filename),'count':len(rows)} if getattr(result,'ok',True) else {'error':getattr(result,'error','write failed')}
+            if not getattr(result,'ok',False):return {'error':'Memory export write failed'}
+            from reasoning.verification import verify_file_write
+            if not verify_file_write(self.sandbox.resolve,{'path':str(filename),'content':md},result):
+                return {'error':'Memory export content could not be verified'}
+            return {'file':str(filename),'count':len(rows),'verified':True}
         except Exception as exc:
             return {'error':f'{type(exc).__name__}: {exc}'}
     def capability_report(self, runtime_flags=None):

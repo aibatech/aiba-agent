@@ -176,10 +176,10 @@ class CrossUserMemoryIsolationTests(unittest.TestCase):
 
     def test_queued_and_scheduled_work_records_authenticated_user(self):
         self._act_as('telegram:222')
-        with patch.object(self.loop.queue, 'enqueue', return_value='job') as enqueue:
+        with patch.object(self.loop.queue, 'enqueue', wraps=self.loop.queue.enqueue) as enqueue:
             self._run('enqueue_task', {'prompt': 'inspect my memory'})
             self.assertEqual(enqueue.call_args.args[1]['user_id'], 'telegram:222')
-        with patch.object(self.loop.scheduler, 'add_interval', return_value='schedule') as schedule:
+        with patch.object(self.loop.scheduler, 'add_interval', wraps=self.loop.scheduler.add_interval) as schedule:
             self._run('schedule_task', {'name': 'own notes', 'prompt': 'inspect my memory', 'interval_seconds': 60})
             self.assertEqual(schedule.call_args.args[2]['user_id'], 'telegram:222')
 
