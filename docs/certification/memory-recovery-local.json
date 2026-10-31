@@ -1,0 +1,11 @@
+{
+  "command": "python -m unittest discover -s tests -p test_memory_maintenance.py",
+  "tests_run": 14,
+  "failures": 0,
+  "errors": 0,
+  "skips": 0,
+  "passed": true,
+  "platform": "Linux-6.18.55-x86_64-with-glibc2.39",
+  "python": "3.12.14",
+  "scope": "Disposable local recovery, maintenance and privacy regression; not live model or VPS certification"
+}

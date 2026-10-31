@@ -5,6 +5,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from approvals.manager import ApprovalManager
+from approvals.store import ApprovalStore
 from api.product_bridge import _principal, create_product_app
 from api.version import runtime_version
 
@@ -74,7 +75,10 @@ class ProductBridgeApiTests(unittest.TestCase):
         except ImportError:
             self.skipTest("FastAPI test dependencies are not installed")
         self.agent = _FakeAgent()
-        self.client = TestClient(create_product_app(self.agent, bridge_token="test-token"))
+        self.tmp = TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.store = ApprovalStore(Path(self.tmp.name) / "approvals.db")
+        self.client = TestClient(create_product_app(self.agent, bridge_token="test-token", approval_store=self.store))
         self.headers = {
             "Authorization": "Bearer test-token",
             "X-AIBA-User-ID": "abc123",
@@ -113,11 +117,20 @@ class ProductBridgeApiTests(unittest.TestCase):
             "/v1/product/execute",
             headers=self.headers,
             json={"instruction": "Click Continue", "input_mode": "text",
-                  "approved_tools": ["browser_click"]},
+                  "approved_tools": [first.json()["approval_required"][0]["approval_token"]]},
         )
         self.assertEqual(second.status_code, 200)
         self.assertEqual(second.json()["status"], "complete")
         self.assertEqual(second.json()["approval_required"], [])
+
+    def test_grant_cannot_cross_users_or_replay(self):
+        first=self.client.post('/v1/product/execute',headers=self.headers,json={'instruction':'Click Continue'})
+        token=first.json()['approval_required'][0]['approval_token']
+        body={'instruction':'Click Continue','approved_tools':[token]}
+        other={**self.headers,'X-AIBA-User-ID':'other'}
+        self.assertEqual(self.client.post('/v1/product/execute',headers=other,json=body).json()['status'],'approval_required')
+        self.assertEqual(self.client.post('/v1/product/execute',headers=self.headers,json=body).json()['status'],'complete')
+        self.assertEqual(self.client.post('/v1/product/execute',headers=self.headers,json=body).json()['status'],'approval_required')
 
     def test_bridge_requires_auth_and_user_identity(self):
         response = self.client.post("/v1/product/execute", json={"instruction": "Research this"})
@@ -128,6 +141,14 @@ class ProductBridgeApiTests(unittest.TestCase):
             json={"instruction": "Research this"},
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_validation_does_not_echo_private_input(self):
+        private='private-owner-value-without-secret-markers'
+        response=self.client.post('/v1/product/execute',headers=self.headers,
+                                  json={'instruction':{'private':private}})
+        self.assertEqual(response.status_code,422)
+        self.assertNotIn(private,response.text)
+        self.assertEqual(self.agent.calls,[])
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from pathlib import Path
 from contextvars import ContextVar
 from config.settings import Settings
@@ -52,6 +53,15 @@ class AgentLoop:
         self._user_context.set(value or 'default')
 
     def __init__(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
+        from operations.maintenance import ProfileLeases
+        settings=settings or Settings.load()
+        self._profile_lease=ProfileLeases(settings.data_dir,settings.skills_dir,runtime=True)
+        try:self._initialize(settings,interactive,auto_approve,start_worker)
+        except BaseException:
+            self._profile_lease.close()
+            raise
+
+    def _initialize(self,settings=None,interactive=True,auto_approve=False,start_worker=True):
         self.settings=settings or Settings.load();self.audit=AuditLog(self.settings.logs_dir/'audit.jsonl');self.events=EventBus();self._run_lock=RLock();self.metrics=Metrics();self.crashes=CrashReporter(self.settings.logs_dir)
         self.approvals=ApprovalManager(interactive,auto_approve);self.policy=SecurityPolicy(self.settings.workspace_dir,self.settings.permissions_path,self.settings.require_approval)
         backend=None
@@ -77,7 +87,7 @@ class AgentLoop:
         self._owner_users = frozenset(self._owner_users) | {'default'}
         self.personal=PersonalExperience(self.settings.root_dir,self.settings.data_dir)
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
-        self.skills=SkillManager(self.settings.skills_dir);self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
+        self.skills=SkillManager(self.settings.skills_dir,self.settings.data_dir/"skill_outcomes.db");self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
         self.computer_node, self.computer = make_computer(self.settings, self.audit)  # gate + controller
         self.vision=VisionAnalyzer(self.settings.vision_model)
         self.clarify=Clarify(on_pending=self._on_clarify_pending)
@@ -133,7 +143,7 @@ class AgentLoop:
             'AIBA_MCP_ENABLED': bool(self.settings.mcp_enabled),
         }
         self.registry=ToolRegistry(self.audit,self.approvals,self.policy,feature_flags=self.runtime_flags,manifest=self.manifest);self._register_tools()
-        legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir)
+        legacy=ModelRouter(ModelRouter.build(self.settings.provider,self.settings.model),ModelRouter.build(self.settings.fallback_provider,self.settings.fallback_model));self.providers=ProviderStore(self.settings.providers_db_path);self.setup=SetupManager(self.settings.root_dir,self.settings.data_dir);self.doctor=Doctor(self.settings,self.providers);self.updates=UpdateManager(self.settings.root_dir,self.settings.data_dir);self.update_checker=UpdateChecker(self.updates);self.migrations=MigrationManager(self.settings.data_dir);self.migrations.apply();self.backups=BackupManager(self.settings.data_dir,self.settings.skills_dir)
         self._seed_legacy_provider();self.router=IntelligentRouter(self.providers,legacy)
         self.engine=ReasoningEngine(self.router,self.registry,RetrievalEngine(self.vault),self.tasks,self.settings.max_steps);self.dream=DreamEngine(self.settings.vault_dir/'reflections',self.vault)
         # Opt-in bounded internal subagents (Phase 3). Disabled until
@@ -153,9 +163,21 @@ class AgentLoop:
             step_cap_default=int(self.settings.max_steps),
             time_limit_default=int(max(self.settings.command_timeout*4, 120)),
         )
-        self.worker=Worker(self.queue,{'agent_task':lambda payload:{'result':self.handle(payload['prompt'],propose_skill=False,task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'),user_id=payload.get('user_id'))}});self.scheduler_runner=SchedulerRunner(self.scheduler)
+        self.worker=Worker(self.queue,{'agent_task':self._run_background});self.scheduler_runner=SchedulerRunner(self.scheduler)
         if start_worker and self.settings.worker_enabled:self.worker.start();self.scheduler_runner.start();self.update_checker.start()
         self.events.subscribe('*',lambda e:self.audit.record('event',**e))
+    def _run_background(self, payload):
+        # Queued work cannot inherit local interactive grants or prompt a terminal.
+        with self.approvals.request_scope(principal=payload.get('user_id') or 'default'):
+            result=self.handle(payload['prompt'],propose_skill=False,
+                task_type=payload.get('task_type'),manual_model_id=payload.get('manual_model_id'),
+                user_id=payload.get('user_id'))
+            if self.engine.execution_status != 'complete':
+                raise RuntimeError('Background task did not complete; inspect task status')
+            if self.approvals.pending_requests():
+                raise RuntimeError('Background task requires owner approval')
+            return {'result':result}
+
     def _on_clarify_pending(self, q):
         """A clarify question went pending awaiting async delivery. Publish it
         on the event bus so any connector can render it (e.g. Telegram inline
@@ -200,8 +222,9 @@ class AgentLoop:
     def _register_tools(self):
         self.registry.register(Tool('list_files','List workspace files.',self.sandbox.list_files,{'type':'object','properties':{'path':{'type':'string'}},'additionalProperties':False}))
         self.registry.register(Tool('read_file','Read workspace text.',self.sandbox.read_file,{'type':'object','properties':{'path':{'type':'string'}},'required':['path'],'additionalProperties':False}))
-        self.registry.register(Tool('write_file','Write workspace text.',self.sandbox.write_file,{'type':'object','properties':{'path':{'type':'string'},'content':{'type':'string'}},'required':['path','content'],'additionalProperties':False}))
-        self.registry.register(Tool('delete_file','Delete workspace file.',self.sandbox.delete_file,{'type':'object','properties':{'path':{'type':'string'}},'required':['path'],'additionalProperties':False}))
+        from reasoning.verification import verify_file_write, verify_file_delete
+        self.registry.register(Tool('write_file','Write workspace text.',self.sandbox.write_file,{'type':'object','properties':{'path':{'type':'string'},'content':{'type':'string'}},'required':['path','content'],'additionalProperties':False}, verifier=lambda args,result:verify_file_write(self.sandbox.resolve,args,result)))
+        self.registry.register(Tool('delete_file','Delete workspace file.',self.sandbox.delete_file,{'type':'object','properties':{'path':{'type':'string'}},'required':['path'],'additionalProperties':False}, verifier=lambda args,result:verify_file_delete(self.sandbox.resolve,args,result)))
         self.registry.register(Tool('patch_file','Apply a find-and-replace edit to a workspace text file, atomically, and return the diff.',self.sandbox.patch_file,{'type':'object','properties':{'path':{'type':'string'},'old':{'type':'string'},'new':{'type':'string'},'replace_all':{'type':'boolean'}},'required':['path','old','new'],'additionalProperties':False}))
         self.registry.register(Tool('archive','Create a zip or tarball of a workspace path, written inside the workspace.',self.sandbox.archive,{'type':'object','properties':{'path':{'type':'string'},'format':{'type':'string'},'name':{'type':'string'}},'required':['path'],'additionalProperties':False}))
         self.registry.register(Tool('extract_archive','Extract a zip/tar archive into a workspace destination, blocking zip-slip.',self.sandbox.extract_archive,{'type':'object','properties':{'path':{'type':'string'},'dest':{'type':'string'}},'required':['path'],'additionalProperties':False}))
@@ -230,14 +253,18 @@ class AgentLoop:
         # (full view incl 'shared'/legacy); a distinct non-operator identity is
         # confined to its own rows for reads and mutations alike — it can never
         # read, search, export, update or delete 'shared'/another user's memory.
-        self.registry.register(Tool('remember','Store durable memory.',lambda content,category='general',importance=.5:ToolResult(True,{'memory_id':self.vault.add(content,category,importance,owner=self._memory_writer_owner())}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['content'],'additionalProperties':False}))
+        self.registry.register(Tool('remember','Store durable memory. For an explicit correction, reuse its stable fact_key to supersede the old fact; do not group unrelated goals.',lambda content,category='general',importance=.5,fact_key=None:ToolResult(True,{'memory_id':self.vault.add(content,category,importance,owner=self._memory_writer_owner(),fact_key=fact_key)}),{'type':'object','properties':{'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'},'fact_key':{'type':'string'}},'required':['content'],'additionalProperties':False}))
+        self.registry._tools['remember'].verifier = self._verify_memory_write
         self.registry.register(Tool('search_memory','Search memory.',lambda query,limit=5:ToolResult(True,self.vault.search(query,int(limit),as_user=self._memory_scope())),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         # --- Memory maintenance + session search (Phase 9) ---
         # Memory edits/mutations mirror write_file/delete_file approval posture.
         self.registry.register(Tool('update_memory','Edit an existing memory row by id.',lambda memory_id,content=None,category=None,importance=None:ToolResult(True,self.vault.update(int(memory_id),content,category,None if importance is None else float(importance),as_user=self._memory_scope())),{'type':'object','properties':{'memory_id':{'type':'integer'},'content':{'type':'string'},'category':{'type':'string'},'importance':{'type':'number'}},'required':['memory_id'],'additionalProperties':False}))
         self.registry.register(Tool('delete_memory','Delete a memory row by id (destructive).',lambda memory_id:ToolResult(self.vault.remove(int(memory_id),as_user=self._memory_scope())),{'type':'object','properties':{'memory_id':{'type':'integer'}},'required':['memory_id'],'additionalProperties':False}))
+        self.registry._tools['update_memory'].verifier = self._verify_memory_write
+        self.registry._tools['delete_memory'].verifier = lambda args,res: self.vault.get(args['memory_id'],as_user=self._memory_scope()) is None
         self.registry.register(Tool('list_memories','List stored memories, optionally filtered by category.',lambda limit=50,category=None:ToolResult(True,self.vault.list(int(limit),category,as_user=self._memory_scope())),{'type':'object','properties':{'limit':{'type':'integer'},'category':{'type':'string'}},'additionalProperties':False}))
         self.registry.register(Tool('export_memories','Export memories (optionally one category) to a markdown file in the workspace.',lambda filename='memories_export.md',category=None:ToolResult(True,self._export_memories(str(filename),category,self._memory_scope())),{'type':'object','properties':{'filename':{'type':'string'},'category':{'type':'string'}},'additionalProperties':False}))
+        self.registry._tools['export_memories'].verifier = lambda args,res: isinstance(res.output,dict) and res.output.get('verified') is True
         self.registry.register(Tool('session_search','Search past AIBA task/session history (this user only); never returns internal deliberation.',lambda query,limit=10:ToolResult(True,self.sessions.search((self._current_user or 'default'),query,int(limit))),{'type':'object','properties':{'query':{'type':'string'},'limit':{'type':'integer'}},'required':['query'],'additionalProperties':False}))
         self.registry.register(Tool('session_history','List recent AIBA sessions for this user.',lambda limit=20:ToolResult(True,self.sessions.list_by_user((self._current_user or 'default'),int(limit))),{'type':'object','properties':{'limit':{'type':'integer'}},'additionalProperties':False}))
         self.registry.register(Tool('browser_fetch','Fetch rendered webpage text.',browser_fetch,{'type':'object','properties':{'url':{'type':'string'}},'required':['url'],'additionalProperties':False}))
@@ -268,10 +295,12 @@ class AgentLoop:
         self.registry.register(Tool('vision_analyze','Analyze a workspace image.',lambda image_path,instruction='Describe actionable interface elements.':self.vision.analyze(str(self.sandbox.resolve(image_path)),instruction),{'type':'object','properties':{'image_path':{'type':'string'},'instruction':{'type':'string'}},'required':['image_path'],'additionalProperties':False}))
         self.registry.register(Tool('list_skills','List reusable skills.',lambda:ToolResult(True,self.skills.list()),{'type':'object','properties':{},'additionalProperties':False}))
         self.registry.register(Tool('skill_instructions','Read a reviewed portable skill instruction contract.',lambda name:ToolResult(True,self.skills.instructions(name)),{'type':'object','properties':{'name':{'type':'string'}},'required':['name'],'additionalProperties':False}))
-        self.registry.register(Tool('run_skill','Run a reviewed reusable skill.',lambda name,variables=None:ToolResult(True,self.skills.execute(name,self.registry,variables or {})),{'type':'object','properties':{'name':{'type':'string'},'variables':{'type':'object'}},'required':['name'],'additionalProperties':False}))
+        self.registry.register(Tool('run_skill','Run a reviewed reusable skill.',self._run_skill,{'type':'object','properties':{'name':{'type':'string'},'variables':{'type':'object'}},'required':['name'],'additionalProperties':False}))
         self.registry.register(ClarifyToolFactory.make(self.clarify))
         self.registry.register(Tool('enqueue_task','Queue work to run asynchronously as soon as a worker is available. Use for explicit background/asynchronous work, not future or recurring schedules.',lambda prompt:ToolResult(True,{'job_id':self.queue.enqueue('agent_task',{'prompt':prompt,'user_id':self._current_user})}),{'type':'object','properties':{'prompt':{'type':'string'}},'required':['prompt'],'additionalProperties':False}))
+        self.registry._tools['enqueue_task'].verifier = self._verify_enqueued_task
         self.registry.register(Tool('schedule_task','Create a persistent recurring AIBA task at a fixed interval. Use when the user asks for every/each/repeated/ongoing scheduled work. interval_seconds is the recurrence interval (minimum 60 seconds); the first run occurs after one interval. Do not use for ordinary immediate requests.',lambda name,prompt,interval_seconds:ToolResult(True,{'schedule_id':self.scheduler.add_interval(name,'agent_task',{'prompt':prompt,'user_id':self._current_user},int(interval_seconds))}),{'type':'object','properties':{'name':{'type':'string'},'prompt':{'type':'string'},'interval_seconds':{'type':'integer'}},'required':['name','prompt','interval_seconds'],'additionalProperties':False}))
+        self.registry._tools['schedule_task'].verifier = self._verify_schedule
         # Internal subagents (Phase 3): the ONLY model-advertised entry point.
         # It spawns bounded, permission-narrowed, non-recursive background
         # workers in parallel, waits (bounded), and returns concise structured
@@ -395,10 +424,44 @@ class AgentLoop:
                 return self._handle(text.strip(),propose_skill,task_type,manual_model_id,user_id)
             finally:
                 self._user_context.reset(token)
+    def resume_task(self, task_id, user_id):
+        """Resume pending plan steps only; attempted effects require reconciliation.
+
+        The caller must bind user_id to its authenticated principal. Existing
+        approval scope is retained; resumption never creates an approval grant.
+        """
+        with self._run_lock:
+            task=self.tasks.get(task_id)
+            if not user_id or not task or task.get('owner') != user_id:
+                raise PermissionError('Task unavailable to this owner')
+            if task['status'] not in {'interrupted','partial','failed'} or not self.tasks.plan(task_id):
+                raise ValueError('Only interrupted or incomplete planned tasks can resume')
+            if not self.tasks.begin_resume(task_id,user_id):
+                raise ValueError('Task is already active or no longer resumable')
+            token=self._user_context.set(user_id)
+            try:
+                self.engine.retrieval.scope=self._memory_scope(user_id)
+                from reasoning.protocol import VisibleReasoning
+                self.engine._reasoning=VisibleReasoning(self.events.publish,task_id)
+                self.events.publish('task_resumed',task_id=task_id)
+                try:
+                    answer,used=self.engine.run(task_id,task['input'],
+                        prompt_context=self.personal.prompt_context(user_id),
+                        blocked_tools=self.personal.blocked_tools(user_id))
+                    status=self.engine.execution_status
+                except Exception:
+                    answer='Task could not resume safely. Inspect attempted steps and reconcile uncertain effects before retrying.'
+                    status='failed';used=[]
+                self.tasks.finish(task_id,answer,status)
+                self.events.publish('task_finished',task_id=task_id,status=status,tools=used)
+                return {'task_id':task_id,'status':status,'result':answer}
+            finally:
+                self._user_context.reset(token)
+
     def start_conversation(self,user_id):return self.personal.start_conversation(user_id)
     def _handle(self,text,propose_skill=True,task_type=None,manual_model_id=None,user_id=None):
         from reasoning.protocol import VisibleReasoning
-        task_id=self.tasks.create(text);self.events.publish('task_started',task_id=task_id,task=text)
+        task_id=self.tasks.create(text, owner=user_id or "default");self.events.publish('task_started',task_id=task_id)
         # Session history (Phase 9): best-effort per-turn log row. Never stores
         # deliberation; a concise sanitised title/summary only. Failures to
         # persist must never break the handled task.
@@ -417,16 +480,46 @@ class AgentLoop:
         try:_sid=self.sessions.open_session(user_key,title=(text[:120] or ''),kind='turn')
         except Exception:_sid=None
         self.engine._reasoning=VisibleReasoning(self.events.publish,task_id)
-        self.engine._reasoning.plan(f"Task accepted: {text[:80]}", steps=self.engine.max_steps)
-        try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id),blocked_tools=self.personal.blocked_tools(user_id));self.tasks.finish(task_id,answer);status='complete'
+        self.engine._reasoning.plan("Task accepted; preparing execution.", steps=self.engine.max_steps)
+        try:answer,used=self.engine.run(task_id,text,task_type,manual_model_id,self.personal.prompt_context(user_id),blocked_tools=self.personal.blocked_tools(user_id));status=getattr(self.engine,'execution_status','complete');self.tasks.finish(task_id,answer,status)
         except Exception as exc:
-            crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status='failed';self.tasks.finish(task_id,answer,status)
+            from runtime.control import ExecutionStopped
+            self.engine.execution_status='cancelled' if isinstance(exc,ExecutionStopped) else 'failed'
+            crash_id=self.crashes.capture(exc,{'task_id':task_id});self.metrics.increment('task_failures_total',error=type(exc).__name__);answer=f'AIBA task failed [{crash_id}]: {type(exc).__name__}: {exc}';used=[];status=self.engine.execution_status;self.tasks.finish(task_id,answer,status)
         # Best-effort session close/status: complete/failed both map to closed.
         if _sid is not None:
             try:self.sessions.append(_sid,summary=(answer[:400] or ''));self.sessions.close_session(_sid)
             except Exception:pass
-        ref=self.dream.reflect(task_id,text,answer,used);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used else None
+        ref=self.dream.reflect(task_id,text,answer,used,owner=user_key,status=status);proposal=self.improver.propose(task_id,text,used,answer) if propose_skill and used and status=='complete' else None
         self.metrics.increment('tasks_total',status=status);self.events.publish('task_finished',task_id=task_id,status=status,tools=used,reflection=str(ref),skill_proposal=str(proposal) if proposal else None);return answer
+    def _run_skill(self, name, variables=None):
+        outputs = self.skills.execute(name, self.registry, variables or {},
+                                      blocked=self.personal.blocked_tools(self._current_user),owner=self._current_user)
+        ok = bool(outputs) and all(step['ok'] for step in outputs)
+        return ToolResult(ok, outputs, None if ok else 'Skill stopped because a step failed or was denied')
+
+    def _verify_memory_write(self, args, result):
+        memory_id=args.get('memory_id') or (result.output or {}).get('memory_id')
+        if not isinstance(memory_id,int) or isinstance(memory_id,bool) or memory_id < 1:
+            return False
+        row=self.vault.get(memory_id,as_user=self._memory_scope())
+        return bool(row and all(row.get(key)==value for key,value in args.items()
+                               if key in {'content','category','importance'} and value is not None))
+
+    def _verify_enqueued_task(self, args, result):
+        job=self.queue.get(result.output['job_id'])
+        return bool(job and job['kind']=='agent_task' and
+                    json.loads(job['payload'])=={'prompt':args['prompt'],'user_id':self._current_user})
+
+    def _verify_schedule(self, args, result):
+        from sqlite_utils import connect
+        with connect(self.scheduler.path) as db:
+            row=db.execute('SELECT name,kind,payload,interval_seconds,enabled FROM schedules WHERE id=?',
+                           (result.output['schedule_id'],)).fetchone()
+        return bool(row and row[0]==args['name'] and row[1]=='agent_task' and
+                    json.loads(row[2])=={'prompt':args['prompt'],'user_id':self._current_user} and
+                    row[3]==args['interval_seconds'] and row[4]==1)
+
     def _export_memories(self, filename, category=None, as_user=None):
         """Export memories (optionally one category) to a markdown doc in the
         workspace (sandbox-confined). as_user restricts the export to the acting
@@ -440,7 +533,11 @@ class AgentLoop:
         md='\n'.join(lines)+'\n'
         try:
             result=self.sandbox.write_file(str(filename),md)
-            return {'file':str(filename),'count':len(rows)} if getattr(result,'ok',True) else {'error':getattr(result,'error','write failed')}
+            if not getattr(result,'ok',False):return {'error':'Memory export write failed'}
+            from reasoning.verification import verify_file_write
+            if not verify_file_write(self.sandbox.resolve,{'path':str(filename),'content':md},result):
+                return {'error':'Memory export content could not be verified'}
+            return {'file':str(filename),'count':len(rows),'verified':True}
         except Exception as exc:
             return {'error':f'{type(exc).__name__}: {exc}'}
     def capability_report(self, runtime_flags=None):
@@ -465,6 +562,9 @@ class AgentLoop:
         return build_report(self.manifest, perm, registered, flag_overrides=flags)
 
     def close(self):
+        with self._run_lock:return self._close()
+
+    def _close(self):
         self.worker.stop();self.scheduler_runner.stop();self.update_checker.stop()
         # Shut down bounded internal subagents (idempotent + safe even if the
         # manager failed to construct earlier in __init__).
@@ -472,6 +572,11 @@ class AgentLoop:
         if subagents is not None:
             try:subagents.close()
             except Exception:pass
+        for component in (self.worker,self.scheduler_runner,self.update_checker):
+            thread=getattr(component,'thread',None)
+            if thread is not None and thread.is_alive():
+                raise RuntimeError('Runtime still stopping; maintenance lease retained')
+        self._profile_lease.close()
     def run(self):
         print(f'AIBA Agent v1.5 | routing=auto | sandbox={self.settings.sandbox_mode} | /exit to quit')
         while True:

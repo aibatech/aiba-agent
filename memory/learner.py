@@ -50,10 +50,8 @@ class AutoLearner:
             existing = self._normalize(str(row.get("content", "")))
             if existing == target:
                 return True
-            # Strong near-duplicate guard for repeated standing facts.
-            a, b = set(target.split()), set(existing.split())
-            if a and b and len(a & b) / max(1, min(len(a), len(b))) >= 0.85:
-                return True
+            # Similar wording can carry opposite facts or changed quantities.
+            # Only normalized equality is safe to discard automatically.
         return False
 
     def learn(self, user_text: str, owner: str, as_user=None,
@@ -61,6 +59,12 @@ class AutoLearner:
         learned: list[int] = []
         for sentence in self._sentences(user_text):
             low = sentence.lower()
+            # Temporary intentions stay in conversation history, not durable memory.
+            explicit = bool(re.search(r"\b(?:remember that|remember this|keep in mind)\b", low))
+            if not explicit and re.search(r"\b(?:today|tonight|tomorrow|right now|this (?:morning|afternoon|evening|week))\b", low):
+                continue
+            if re.search(r"\b(?:password|passphrase|api[_ -]?key|access[_ -]?token|private[_ -]?key)\s*(?:is|:|=)", low):
+                continue
             match = next(((cat, importance) for pattern, cat, importance in self._CUES
                           if re.search(pattern, low)), None)
             if not match:

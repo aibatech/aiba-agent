@@ -2,6 +2,8 @@ from __future__ import annotations
 from typing import Any
 from .base import Tool,ToolResult
 import inspect,json
+from copy import deepcopy
+from approvals.manager import ApprovalManager
 def _valid(value,schema):
     expected=schema.get('type')
     if expected=='string' and not isinstance(value,str):return False
@@ -15,7 +17,7 @@ def _valid(value,schema):
     if isinstance(value,dict) and expected=='object':
         props=schema.get('properties',{});required=schema.get('required',[])
         if any(k not in value for k in required):return False
-        if schema.get('additionalProperties') is False and any(k not in value for k in props):return False
+        if schema.get('additionalProperties') is False and any(k not in props for k in value):return False
         if any(k in props and not _valid(v,props[k]) for k,v in value.items()):return False
     return True
 
@@ -45,7 +47,7 @@ def _is_secretish_string(value: Any) -> bool:
     low = value.lower().lstrip()
     if not low:
         return False
-    return any(m in low for m in _SECRET_VALUE_MARKERS)
+    return any(m.lower() in low for m in _SECRET_VALUE_MARKERS)
 
 def _scrub_args_for_surface(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     """Return a copy of `arguments` safe for the audit trail / approval prompt.
@@ -59,12 +61,17 @@ def _scrub_args_for_surface(name: str, arguments: dict[str, Any]) -> dict[str, A
         raw = value if isinstance(value, str) else str(value)
         return f"[REDACTED len={len(raw)}]"
     scrubbed: dict[str, Any] = {}
+    opaque_payload_tools = {"host_write_file", "run_python", "run_shell", "secret_copy_env"}
     for key, val in arguments.items():
         kl = key.lower()
-        if any(h in kl for h in _ALWAYS_SECRET_KEYS):
+        if (name in opaque_payload_tools and kl in {"content", "code", "command"}) or any(h in kl for h in _ALWAYS_SECRET_KEYS):
             scrubbed[key] = marker(val)
         elif name in _TYPED_TEXT_ARG_TOOLS and key == "text" and _is_secretish_string(val):
             scrubbed[key] = marker(val)
+        elif isinstance(val, dict):
+            scrubbed[key] = _scrub_args_for_surface(name, val)
+        elif isinstance(val, list):
+            scrubbed[key] = [_scrub_args_for_surface(name, item) if isinstance(item, dict) else item for item in val]
         else:
             scrubbed[key] = val
     return scrubbed
@@ -109,7 +116,9 @@ class ToolRegistry:
     def blocked(self, name:str, extra=None):
         return name in (extra or set()) or not self.policy.check_tool(name).allowed or not self._feature_flag_on(name)
     def execute(self,name:str,arguments:dict[str,Any]|None=None,blocked:set[str]|None=None)->ToolResult:
-        args=arguments or {}; tool=self._tools.get(name); blocked=blocked or set()
+        from runtime.control import checkpoint
+        checkpoint()
+        args={} if arguments is None else arguments; tool=self._tools.get(name); blocked=blocked or set()
         if name in blocked:
             return ToolResult(False,error=f'{name} is disabled for this conversation')
         reason=self._availability(name)
@@ -118,17 +127,37 @@ class ToolRegistry:
         decision=self.policy.check_tool(name)
         if tool is None:
             return ToolResult(False,error=f'Unknown tool: {name}')
-        if decision.requires_approval and not self.approvals.approve(name,str(_scrub_args_for_surface(name,args))[:500]):
-            self.audit.record('tool_denied',tool=name,arguments=_scrub_args_for_surface(name,args)); return ToolResult(False,error='User approval denied')
         if not isinstance(args,dict):return ToolResult(False,error='Tool arguments must be an object')
+        # Detach the operation from caller-owned mutable objects before approval.
+        try:
+            args = json.loads(json.dumps(args, allow_nan=False))
+        except (TypeError, ValueError, RecursionError):
+            return ToolResult(False, error='Tool arguments must contain finite JSON values')
+
         schema=tool.parameters; props=schema.get('properties',{}); required=schema.get('required',[])
         missing=[x for x in required if x not in args]
         unknown=[x for x in args if x not in props] if schema.get('additionalProperties') is False else []
         invalid=[x for x,v in args.items() if x in props and not _valid(v,props[x])]
         if missing or unknown or invalid:return ToolResult(False,error=f'Invalid arguments; missing={missing}, unknown={unknown}, invalid_types={invalid}')
-        self.audit.record('tool_start',tool=name,arguments=_scrub_args_for_surface(name,args))
-        try:result=tool.run(**args)
+        if decision.requires_approval and not self.approvals.approve_exact(name,deepcopy(args),str(_scrub_args_for_surface(name,args))[:500]):
+            self.audit.record('tool_denied',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments="[REDACTED]"); return ToolResult(False,error='User approval denied')
+        # Approval can block while an owner revokes a capability. Recheck before dispatch.
+        reason=self._availability(name)
+        if reason:return ToolResult(False,error=reason)
+        if self.policy.check_tool(name).requires_approval and not decision.requires_approval:
+            return ToolResult(False,error='Approval policy changed; retry with the current owner approval requirement')
+        checkpoint()
+        self.audit.record('tool_start',tool=name,fingerprint=ApprovalManager.action_fingerprint(name,args),arguments="[REDACTED]")
+        try:result=tool.run(**deepcopy(args))
         except TypeError as exc:result=ToolResult(False,error=f'Invalid tool arguments: {exc}')
         except Exception as exc:result=ToolResult(False,error=f'{type(exc).__name__}: {exc}')
         if not isinstance(result,ToolResult):result=ToolResult(True,result)
-        self.audit.record('tool_end',tool=name,ok=result.ok,error=result.error); return result
+        if result.ok and tool.verifier is not None:
+            try:
+                result.verified = tool.verifier(args, result) is True
+            except Exception:
+                result.verified = False
+            if not result.verified:
+                result.ok = False
+                result.error = 'The action ran, but its postcondition could not be verified. Inspect state before retrying.'
+        self.audit.record('tool_end',tool=name,verified=result.verified,ok=result.ok,error='Tool execution failed; inspect the owner-visible task result' if result.error else None); return result

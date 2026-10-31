@@ -32,3 +32,12 @@ def test_search_does_not_follow_symlinks():
         result=HostFiles().search(str(root),"secret")
         assert result.ok
         assert result.output["matches"] == []
+
+
+def load_tests(loader, tests, pattern):
+    """Include function-style acceptance cases in the standard CI runner."""
+    import unittest
+    for name, case in sorted(globals().items()):
+        if name.startswith("test_") and callable(case):
+            tests.addTest(unittest.FunctionTestCase(case))
+    return tests

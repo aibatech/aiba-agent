@@ -2,6 +2,8 @@ import hmac
 import os
 import re
 from typing import Literal
+from pathlib import Path
+from approvals.store import ApprovalStore
 
 from api.version import runtime_version
 
@@ -16,7 +18,7 @@ def _principal(raw: str | None) -> str:
     return f"product:{value}"
 
 
-def create_product_app(agent, bridge_token: str | None = None):
+def create_product_app(agent, bridge_token: str | None = None, approval_store=None):
     """Internal server-to-server execution API for AskAIBA web/mobile.
 
     The API stack stays an optional dependency: importing AIBA core (including
@@ -28,6 +30,8 @@ def create_product_app(agent, bridge_token: str | None = None):
     try:
         from fastapi import FastAPI, Header, HTTPException
         from pydantic import BaseModel, Field
+        from fastapi.exceptions import RequestValidationError
+        from fastapi.responses import JSONResponse
     except ImportError as exc:  # pragma: no cover - exercised by install diagnostics
         raise RuntimeError("Install API dependencies: pip install -e '.[api]'") from exc
 
@@ -45,9 +49,19 @@ def create_product_app(agent, bridge_token: str | None = None):
     if not token:
         raise RuntimeError("AIBA_PRODUCT_BRIDGE_TOKEN is required for the product bridge")
 
+    if approval_store is None:
+        data_dir = getattr(getattr(agent, "settings", None), "data_dir", None)
+        if data_dir is None:
+            raise RuntimeError("A persistent approval store is required")
+        approval_store = ApprovalStore(Path(data_dir) / "approvals.db")
+
     version = runtime_version(getattr(getattr(agent, "settings", None), "root_dir", None))
     app = FastAPI(title="AIBA Product Execution Bridge", version=version,
                   docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_fields(request, exc):
+        return JSONResponse(status_code=422,content={'detail':'Request fields failed validation. Check the required field types.'})
 
     def authorize(value: str | None) -> None:
         if not value or not value.startswith("Bearer ") or not hmac.compare_digest(value[7:], token):
@@ -79,8 +93,9 @@ def create_product_app(agent, bridge_token: str | None = None):
         conversation_id = body.conversation_id
         if conversation_id and not _CONVERSATION_RE.fullmatch(conversation_id):
             raise HTTPException(400, "Invalid conversation_id")
-        with agent.approvals.request_scope(body.approved_tools):
-            result = agent.handle(
+        with agent.approvals.request_scope(body.approved_tools, principal=principal, store=approval_store, ttl_seconds=300):
+            outcome_handler = getattr(agent, "handle_result", None)
+            result = (outcome_handler or agent.handle)(
                 body.instruction,
                 propose_skill=False,
                 task_type=body.task_type,
@@ -90,9 +105,14 @@ def create_product_app(agent, bridge_token: str | None = None):
                 conversation_id=conversation_id,
             )
             pending = agent.approvals.pending_requests()
+            for item in pending:
+                item["approval_token"] = approval_store.issue(principal, item["fingerprint"])
+                item["expires_in_seconds"] = 300
+        outcome = result if outcome_handler else {"status": "complete", "result": result}
         return {
-            "status": "approval_required" if pending else "complete",
-            "result": result,
+            "status": "approval_required" if pending else outcome["status"],
+            "result": outcome["result"],
+            "task_id": outcome.get("task_id"),
             "approval_required": pending,
             "input_mode": body.input_mode,
             "user_scope": principal,

@@ -8,6 +8,7 @@ def create_app(agent):
     try:
         from fastapi import BackgroundTasks,FastAPI,Header,HTTPException,Request,WebSocket,WebSocketDisconnect
         from fastapi.middleware.cors import CORSMiddleware
+        from fastapi.exceptions import RequestValidationError
         from fastapi.responses import HTMLResponse,JSONResponse,PlainTextResponse,Response
         from pydantic import BaseModel,Field
     except ImportError as exc:raise RuntimeError('Install API dependencies: pip install -e .[api]') from exc
@@ -21,10 +22,17 @@ def create_app(agent):
     @app.on_event('startup')
     def start_connectors():
         if telegram:telegram.start()
+    from operations.maintenance import MaintenanceBusy
+    @app.exception_handler(MaintenanceBusy)
+    async def maintenance_busy(request,exc):return JSONResponse(status_code=409,content={'detail':'Stop all AIBA runtimes and use the offline profile maintenance command.'})
     @app.exception_handler(KeyError)
     async def missing(request,exc):return JSONResponse(status_code=404,content={'detail':'Resource not found'})
     @app.exception_handler(ValueError)
-    async def invalid(request,exc):return JSONResponse(status_code=400,content={'detail':str(exc)})
+    async def invalid(request,exc):return JSONResponse(status_code=400,content={'detail':'Invalid request. Check the supplied fields and try again.'})
+    @app.exception_handler(RequestValidationError)
+    async def invalid_fields(request,exc):
+        # Pydantic errors can echo raw input, including credentials.
+        return JSONResponse(status_code=422,content={'detail':'Request fields failed validation. Check the required field types.'})
     @app.exception_handler(Exception)
     async def unexpected(request,exc):
         crash_id=agent.crashes.capture(exc,{'method':request.method,'path':request.url.path});agent.metrics.increment('http_errors_total',status='500');return JSONResponse(status_code=500,content={'detail':'Internal error','crash_id':crash_id})
@@ -59,7 +67,7 @@ def create_app(agent):
         if request.url.path not in {'/health'}:
             key=request.client.host if request.client else 'unknown';now=time.monotonic();q=hits[key]
             while q and q[0]<now-60:q.popleft()
-            if len(q)>=agent.settings.rate_limit_per_minute:raise HTTPException(429,'Rate limit exceeded')
+            if len(q)>=agent.settings.rate_limit_per_minute:return JSONResponse(status_code=429,content={'detail':'Too many requests. Please try again in a minute.'},headers={'Retry-After':'60'})
             q.append(now)
         response=await call_next(request);agent.metrics.increment('http_requests_total',method=request.method,status=str(response.status_code),path=request.url.path);agent.metrics.set('last_http_latency_ms',round((time.monotonic()-started)*1000,3));response.headers['X-Content-Type-Options']='nosniff';response.headers['X-Frame-Options']='DENY';response.headers['Referrer-Policy']='no-referrer';return response
     @app.on_event('shutdown')
@@ -150,7 +158,12 @@ def create_app(agent):
     def task(body:TaskIn,authorization:str|None=Header(default=None)):
         authorize(authorization)
         if body.background:return {'job_id':agent.queue.enqueue('agent_task',{'prompt':body.prompt,'task_type':body.task_type,'manual_model_id':body.model_id}),'status':'queued'}
-        return {'status':'complete','result':agent.handle(body.prompt,task_type=body.task_type,manual_model_id=body.model_id),'route':agent.engine.provider.last_route}
+        outcome=agent.handle_result(body.prompt,task_type=body.task_type,manual_model_id=body.model_id) if hasattr(agent,'handle_result') else {'status':'complete','result':agent.handle(body.prompt,task_type=body.task_type,manual_model_id=body.model_id)}
+        return {**outcome,'route':agent.engine.provider.last_route}
+    @app.post('/v1/jobs/{job_id}/cancel')
+    def cancel_job(job_id:str,authorization:str|None=Header(default=None)):
+        authorize(authorization)
+        return {'cancelled':agent.queue.cancel(job_id),'note':'Queued work is prevented; already-running external actions cannot be undone.'}
     @app.get('/v1/jobs/{job_id}')
     def job(job_id:str,authorization:str|None=Header(default=None)):
         authorize(authorization);item=agent.queue.get(job_id)
@@ -160,9 +173,62 @@ def create_app(agent):
     def task_status(task_id:str,authorization:str|None=Header(default=None)):
         authorize(authorization);item=agent.tasks.get(task_id)
         if not item:raise HTTPException(404,'Not found')
+        item['plan']=agent.tasks.plan(task_id)
         return item
+    class ResumeIn(BaseModel):
+        owner: str = Field(min_length=1, max_length=200)
+    @app.post('/v1/tasks/{task_id}/resume')
+    def resume_task(task_id: str, body: ResumeIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return agent.resume_task(task_id,body.owner)
+    class ReconcileIn(BaseModel):
+        owner: str = Field(min_length=1,max_length=200)
+        index: int = Field(ge=0,le=19)
+        fingerprint: str = Field(min_length=64,max_length=64)
+        resolution: str
+    @app.post('/v1/tasks/{task_id}/reconcile-step')
+    def reconcile_step(task_id: str, body: ReconcileIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return {'plan':agent.tasks.reconcile_step(task_id,body.owner,body.index,body.fingerprint,body.resolution)}
+    class SkillReviewIn(BaseModel):
+        steps: list[dict] = Field(min_length=1, max_length=100)
+        feedback: str = Field(default='', max_length=5000)
+        version: str = '0.1.0'
+    class SkillEvidenceIn(BaseModel):
+        owner: str = Field(min_length=1, max_length=200)
+        feedback: str = Field(default='', max_length=5000)
+    @app.post('/v1/tasks/{task_id}/propose-workflow')
+    def propose_workflow(task_id: str, body: SkillEvidenceIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        path=agent.improver.propose_from_outcomes(task_id, agent.tasks, body.owner, body.feedback)
+        return {'proposal_id':path.stem, 'status':'requires_review', 'executable':False}
+    class SkillInstallIn(BaseModel):
+        review_digest: str = Field(min_length=64, max_length=64)
+    @app.post('/v1/skill-proposals/{task_id}/review')
+    def review_skill(task_id: str, body: SkillReviewIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return agent.improver.review(task_id, body.steps, agent.registry, body.feedback, body.version)
+    @app.post('/v1/skill-proposals/{task_id}/install')
+    def install_skill(task_id: str, body: SkillInstallIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        skill = agent.improver.approve(agent.improver._path(task_id), body.review_digest)
+        return {'name': skill.name, 'version': skill.version, 'status': 'installed'}
     @app.get('/v1/skills')
     def skills(authorization:str|None=Header(default=None)):authorize(authorization);return agent.skills.list()
+    @app.get('/v1/skills/{name}/outcomes')
+    def skill_outcomes(name: str, owner: str, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        if agent.skills.outcomes is None:raise HTTPException(503,'Skill outcome store unavailable')
+        return {'owner':owner,'name':name,'versions':agent.skills.outcomes.summary(owner,name)}
+    class SkillCompareIn(BaseModel):
+        owner: str = Field(min_length=1)
+        baseline_digest: str = Field(min_length=64,max_length=64)
+        candidate_digest: str = Field(min_length=64,max_length=64)
+    @app.post('/v1/skills/{name}/compare')
+    def skill_comparison(name: str, body: SkillCompareIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        if agent.skills.outcomes is None:raise HTTPException(503,'Skill outcome store unavailable')
+        return agent.skills.outcomes.compare(body.owner,name,body.baseline_digest,body.candidate_digest)
     @app.get('/v1/providers/presets')
     def provider_presets(authorization:str|None=Header(default=None)):authorize(authorization);return agent.providers.presets()
     @app.get('/v1/providers')

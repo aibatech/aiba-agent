@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,re,shutil
+import json,re,shutil,time
 from skills.guard import SkillsGuard
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,15 +8,33 @@ from typing import Any
 class Skill:
     name:str;description:str;version:str;steps:list[dict[str,Any]];path:Path;instructions:str=''
 class SkillManager:
-    def __init__(self,root:Path): self.root=root;root.mkdir(parents=True,exist_ok=True);self.guard=SkillsGuard()
+    def __init__(self,root:Path,outcomes_path:Path|None=None):
+        self.root=root;root.mkdir(parents=True,exist_ok=True);self.guard=SkillsGuard()
+        from skills.outcomes import SkillOutcomes
+        self.outcomes=SkillOutcomes(outcomes_path) if outcomes_path else None
     def _safe(self,name:str)->str:
         value=re.sub(r'[^a-z0-9_-]+','-',name.lower()).strip('-')
         if not value:raise ValueError('Invalid skill name')
         return value
+    def _folder(self, name: str) -> Path:
+        folder = self.root / self._safe(name)
+        if folder.is_symlink():
+            raise ValueError('Skill symlinks are forbidden')
+        folder.resolve().relative_to(self.root.resolve())
+        if folder.exists() and any(p.is_symlink() for p in folder.rglob('*')):
+            raise ValueError('Skill contents must not contain symlinks')
+        return folder
+
+    @staticmethod
+    def _version(version: str) -> str:
+        if not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?', version):
+            raise ValueError('Invalid skill version')
+        return version
+
     def create(self,name:str,description:str,steps:list[dict],version:str='0.1.0')->Skill:
         if not re.fullmatch(r'\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?',version):raise ValueError('Skill version must use semantic versioning')
         if not isinstance(steps,list) or any(not isinstance(x,dict) or not isinstance(x.get('tool'),str) or not isinstance(x.get('arguments',{}),dict) for x in steps):raise ValueError('Each skill step requires a tool and object arguments')
-        slug=self._safe(name); folder=(self.root/slug).resolve(); folder.relative_to(self.root.resolve());folder.mkdir(parents=True,exist_ok=True)
+        slug=self._safe(name); folder=self._folder(slug);folder.mkdir(parents=True,exist_ok=True)
         target=folder/'skill.json'
         # Versioning: if a different version already exists, snapshot the prior
         # one first so it can be reviewed / rolled back later.
@@ -26,7 +44,7 @@ class SkillManager:
                 if prev.get('version') and prev.get('version')!=version:
                     # versions are semver-validated (only [0-9A-Za-z.+-]);
                     # raw form is filesystem-safe and human-readable
-                    rev=folder/'revisions'/f"{prev['version']}.json"
+                    rev=folder/'revisions'/f"{self._version(prev['version'])}.json"
                     rev.parent.mkdir(parents=True,exist_ok=True)
                     rev.write_text(json.dumps(prev,indent=2),encoding='utf-8')
             except Exception:pass
@@ -34,7 +52,7 @@ class SkillManager:
         target.write_text(json.dumps(data,indent=2),encoding='utf-8')
         return Skill(slug,description,version,steps,folder,'')
     def get(self,name:str)->Skill:
-        folder=self.root/self._safe(name);path=folder/'skill.json'
+        folder=self._folder(name);path=folder/'skill.json'
         if path.is_file():
             data=json.loads(path.read_text(encoding='utf-8'));return Skill(data['name'],data.get('description',''),data.get('version','0.1.0'),data.get('steps',[]),path.parent,data.get('instructions',''))
         markdown=folder/'SKILL.md'
@@ -47,7 +65,7 @@ class SkillManager:
             except Exception:continue
         return result
     def revisions(self,name:str)->list[dict]:
-        folder=self.root/self._safe(name);rev_dir=folder/'revisions'
+        folder=self._folder(name);rev_dir=folder/'revisions'
         if not rev_dir.is_dir():return []
         out=[]
         for p in sorted(rev_dir.glob('*.json'),key=lambda x:x.name):
@@ -57,7 +75,7 @@ class SkillManager:
             except Exception:continue
         return out
     def rollback(self,name:str,version:str)->Skill:
-        slug=self._safe(name);folder=self.root/slug;rev=folder/'revisions'/f"{version}.json"
+        slug=self._safe(name);folder=self._folder(slug);version=self._version(version);rev=folder/'revisions'/f"{version}.json"
         if not rev.is_file():raise KeyError(f"No saved revision {version} for skill {slug}")
         data=json.loads(rev.read_text(encoding='utf-8'))
         # current (broken) revision is preserved before restoring the target
@@ -97,14 +115,16 @@ class SkillManager:
     def import_markdown(self,path:Path,reviewed:bool=False):
         meta,body=self._validate_agentskill(path);name=self._safe(meta['name']);report=self.guard.scan(path.parent)
         if report['review_required'] and not reviewed:raise ValueError('Skill package has review findings; inspect review_package() and explicitly import as reviewed')
-        target=self.root/name
+        target=self._folder(name)
+        if any(p.is_symlink() for p in path.parent.rglob('*')):raise ValueError('Skill package symlinks are forbidden')
+        if target.resolve()==path.parent.resolve():raise ValueError('Cannot import a skill onto itself')
         if target.exists():shutil.rmtree(target)
         shutil.copytree(path.parent,target,symlinks=False,ignore=shutil.ignore_patterns('.git','__pycache__','*.pyc'))
         return self.get(name)
     def instructions(self,name):
         skill=self.get(name);return {'name':skill.name,'description':skill.description,'version':skill.version,'instructions':skill.instructions,'executable':bool(skill.steps)}
-    def execute(self,name:str,registry,variables:dict[str,Any]|None=None)->list[dict]:
-        skill=self.get(name); variables=variables or {}; outputs=[]
+    def execute(self,name:str,registry,variables:dict[str,Any]|None=None,blocked:set[str]|None=None,owner:str="default")->list[dict]:
+        skill=self.get(name); variables=variables or {}; outputs=[];started=time.monotonic()
         if not skill.steps:raise ValueError('Instruction-only portable skills must be reviewed by the model and cannot execute tools directly')
         for index,step in enumerate(skill.steps):
             tool=step['tool'];args=json.loads(json.dumps(step.get('arguments',{})))
@@ -112,6 +132,8 @@ class SkillManager:
                 if isinstance(v,str):
                     for key,value in variables.items():v=v.replace('{{'+key+'}}',str(value))
                     args[k]=v
-            res=registry.execute(tool,args);outputs.append({'step':index,'tool':tool,'ok':res.ok,'output':res.output,'error':res.error})
+            from skills.improver import FORBIDDEN_SKILL_TOOLS
+            res=registry.execute(tool,args,blocked=set(blocked or ()) | FORBIDDEN_SKILL_TOOLS);outputs.append({'step':index,'tool':tool,'ok':res.ok,'output':res.output,'error':res.error,'verified':getattr(res,'verified',None)})
             if not res.ok:break
+        if self.outcomes:self.outcomes.record(owner,skill,outputs,(time.monotonic()-started)*1000)
         return outputs

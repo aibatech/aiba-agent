@@ -87,7 +87,9 @@ class CrossUserMemoryIsolationTests(unittest.TestCase):
         self.loop._current_user = user or 'default'
 
     def _run(self, name, args):
-        res = self.loop.registry.execute(name, args)
+        grant = self.loop.approvals.action_fingerprint(name, args)
+        with self.loop.approvals.request_scope([grant]):
+            res = self.loop.registry.execute(name, args)
         self.assertTrue(res.ok, f"{name} failed: {res.error}")
         out = res.output
         if isinstance(out, dict):
@@ -154,12 +156,12 @@ class CrossUserMemoryIsolationTests(unittest.TestCase):
 
     def test_worker_requires_actual_action_approval_and_schema(self):
         resolved = self.loop._subagent_resolve_tools(['write_file'])['write_file']
-        with patch.object(self.loop.approvals, 'approve', return_value=False) as approve:
+        with patch.object(self.loop.approvals, 'approve_exact', return_value=False) as approve:
             result = resolved['handler'](path='denied.txt', content='test')
         self.assertFalse(result.ok)
         approve.assert_called_once()
         self.assertFalse((self.settings.workspace_dir / 'denied.txt').exists())
-        with patch.object(self.loop.approvals, 'approve', return_value=True):
+        with patch.object(self.loop.approvals, 'approve_exact', return_value=True):
             invalid = resolved['handler'](path='invalid.txt', content=42)
         self.assertFalse(invalid.ok)
         self.assertFalse((self.settings.workspace_dir / 'invalid.txt').exists())
@@ -174,10 +176,10 @@ class CrossUserMemoryIsolationTests(unittest.TestCase):
 
     def test_queued_and_scheduled_work_records_authenticated_user(self):
         self._act_as('telegram:222')
-        with patch.object(self.loop.queue, 'enqueue', return_value='job') as enqueue:
+        with patch.object(self.loop.queue, 'enqueue', wraps=self.loop.queue.enqueue) as enqueue:
             self._run('enqueue_task', {'prompt': 'inspect my memory'})
             self.assertEqual(enqueue.call_args.args[1]['user_id'], 'telegram:222')
-        with patch.object(self.loop.scheduler, 'add_interval', return_value='schedule') as schedule:
+        with patch.object(self.loop.scheduler, 'add_interval', wraps=self.loop.scheduler.add_interval) as schedule:
             self._run('schedule_task', {'name': 'own notes', 'prompt': 'inspect my memory', 'interval_seconds': 60})
             self.assertEqual(schedule.call_args.args[2]['user_id'], 'telegram:222')
 
