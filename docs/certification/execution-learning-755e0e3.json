@@ -1,0 +1,24 @@
+{
+  "implementation_commit": "755e0e34958600041ae633946932ea3381981d62",
+  "source_tree": "d71ea858e8028ef0018c83bc9e76eff408994060",
+  "command": "python -m unittest discover -s tests",
+  "tests": 524,
+  "failures": 0,
+  "errors": 0,
+  "skips": 11,
+  "duration_seconds": 19.233,
+  "python": "3.12.14",
+  "platform": "Linux-6.18.57-x86_64-with-glibc2.39",
+  "production_gate": "https://github.com/aibatech/aiba-agent/actions/runs/41194842493",
+  "mcp": "https://github.com/aibatech/aiba-agent/actions/runs/41194842521",
+  "ci_status": "Consult linked runs; local results are not cross-platform certification",
+  "scores": {
+    "memory": 6,
+    "execution": 6,
+    "learning": 7,
+    "security": 4,
+    "ux": 5,
+    "reliability": 8
+  },
+  "fully_certified": false
+}
