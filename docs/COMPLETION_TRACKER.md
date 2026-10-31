@@ -106,3 +106,8 @@ Memory prerequisite commit 92e4a8a passed all 12 Production Gate jobs (407804566
 Follow-up validation: 523 local tests pass, zero failures, 11 optional/platform skips; 10 integrated execution/learning acceptance tests pass without skips. Evidence enrichment now works on the actual runtime's existing advisory proposals, retaining source IDs from three verified tasks and rejecting changes after review. Resume atomically transitions the task to running; reconciliation refuses active tasks. This is a further implementation candidate, not a score increase.
 
 CI remediation: e1d97b8 Production Gate 40781947148 detected a possibly absent memory ID in the new read-back verifier (Pyright reportArgumentType). Added a fail-closed positive-integer ID check and missing-ID regression; no suppression or gate relaxation. Next candidate must pass its own CI.
+
+
+## October 31 Windows outcome-verification remediation
+
+Live branch remains a3d1f87a54b35806b5c6241ae4f1c212074b607a; PR #34 remains the development target. Production Gate 40782342557 passed Linux/macOS, security, capability/type checking and container, but all three Windows versions failed two memory-export postcondition tests. MCP 40782342547 passed. Root cause: Sandbox.write_file used text-mode newline translation while verification requires exact UTF-8 bytes. The writer now writes the requested UTF-8 bytes unchanged; verification is not normalized or weakened. Added a registry-level mixed LF/CRLF/CR and Unicode regression. Replacement candidate requires its own cross-platform CI. Scores remain unchanged.

@@ -192,3 +192,17 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
                 with self.assertRaises(ValueError):loop.improver.propose_from_outcomes(ids[-1],loop.tasks,'alice')
                 self.assertEqual(loop.improver._digest(loop.improver._load(path)),review['review_digest'])
             finally:loop.close()
+
+    def test_workspace_writer_preserves_exact_utf8_bytes_and_line_endings(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop=AgentLoop(settings=make_settings(Path(tmp)),interactive=False,start_worker=False)
+            try:
+                content='First\nSecond\r\nThird\rUnicode: café — 你好\n'
+                args={'path':'exact.txt','content':content}
+                with loop.approvals.request_scope([loop.approvals.action_fingerprint('write_file',args)]):
+                    result=loop.registry.execute('write_file',args)
+                self.assertTrue(result.ok,result.error)
+                self.assertTrue(result.verified)
+                self.assertEqual((loop.settings.workspace_dir/'exact.txt').read_bytes(),content.encode('utf-8'))
+                self.assertEqual(result.output['bytes'],len(content.encode('utf-8')))
+            finally:loop.close()
