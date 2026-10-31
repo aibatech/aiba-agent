@@ -35,12 +35,8 @@ Fetch = Callable[[str, dict], tuple[int, str]]
 
 
 def _default_fetch(url: str, headers: dict) -> tuple[int, str]:
-    req = urllib.request.Request(
-        url,
-        headers={**headers, "User-Agent": "Mozilla/5.0 (compatible; AIBA-Agent/1.6; +https://aibatech.com)", "Accept-Language": "en-US,en;q=0.8"},
-    )
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        return int(resp.status), resp.read().decode("utf-8", errors="replace")
+    from security.public_http import fetch_public
+    return fetch_public(url, headers, timeout=_TIMEOUT)
 
 
 def _strip_html(raw: str) -> str:

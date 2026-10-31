@@ -72,3 +72,5 @@ Execution recovery upgrade: jobs acquire a `retry_policy` column; existing and n
 
 
 Workspace text writes now preserve the exact requested UTF-8 bytes on Windows, macOS and Linux, including supplied line endings. Existing files are not rewritten during upgrade. Memory exports use this writer and verify their actual bytes; callers requiring CRLF should supply CRLF explicitly. No database migration is needed for this correction.
+
+Public web transport hardening: `web_search`/`web_extract` no longer inherit HTTP proxy environment variables; their connections are pinned to validated public destination addresses and HTTPS verifies the original hostname. Proxy-only deployments require a separately validated transport. Metrics no longer expose request paths or arbitrary labels/names; update dashboards using those labels. See `PUBLIC_HTTP_AND_DIAGNOSTICS.md` for exact limits and migration scope.

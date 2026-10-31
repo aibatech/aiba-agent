@@ -142,6 +142,14 @@ class ProductBridgeApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_validation_does_not_echo_private_input(self):
+        private='private-owner-value-without-secret-markers'
+        response=self.client.post('/v1/product/execute',headers=self.headers,
+                                  json={'instruction':{'private':private}})
+        self.assertEqual(response.status_code,422)
+        self.assertNotIn(private,response.text)
+        self.assertEqual(self.agent.calls,[])
+
 
 if __name__ == "__main__":
     unittest.main()

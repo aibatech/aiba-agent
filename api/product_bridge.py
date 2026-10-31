@@ -30,6 +30,8 @@ def create_product_app(agent, bridge_token: str | None = None, approval_store=No
     try:
         from fastapi import FastAPI, Header, HTTPException
         from pydantic import BaseModel, Field
+        from fastapi.exceptions import RequestValidationError
+        from fastapi.responses import JSONResponse
     except ImportError as exc:  # pragma: no cover - exercised by install diagnostics
         raise RuntimeError("Install API dependencies: pip install -e '.[api]'") from exc
 
@@ -56,6 +58,10 @@ def create_product_app(agent, bridge_token: str | None = None, approval_store=No
     version = runtime_version(getattr(getattr(agent, "settings", None), "root_dir", None))
     app = FastAPI(title="AIBA Product Execution Bridge", version=version,
                   docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_fields(request, exc):
+        return JSONResponse(status_code=422,content={'detail':'Request fields failed validation. Check the required field types.'})
 
     def authorize(value: str | None) -> None:
         if not value or not value.startswith("Bearer ") or not hmac.compare_digest(value[7:], token):

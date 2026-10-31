@@ -1,0 +1,26 @@
+name: Live public web retrieval
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'security/public_http.py'
+      - 'tools/web.py'
+      - 'scripts/certify_web.py'
+      - '.github/workflows/live-web.yml'
+permissions:
+  contents: read
+jobs:
+  retrieval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python scripts/certify_web.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: live-web-evidence
+          path: certification/live-web.json

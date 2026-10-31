@@ -50,3 +50,18 @@ class DiagnosticPrivacyTests(unittest.TestCase):
         self.assertNotIn('synthetic-private-token',output.getvalue())
         self.assertNotIn('#token=',output.getvalue())
         self.assertIn('withheld',output.getvalue())
+
+    def test_metrics_closed_schema_prevents_private_labels_and_cardinality_growth(self):
+        from operations.observability import Metrics
+        metrics=Metrics()
+        private='owner-private-text-with-no-secret-markers'
+        for i in range(100):
+            metrics.increment(private+str(i),path='/'+private+str(i),unexpected=private,status=private,error=private,method=private)
+            metrics.set(private+str(i),private)
+        metrics.increment('http_requests_total',method='POST',status='200',path='/owners/'+private)
+        metrics.set('last_http_latency_ms',12.5)
+        for surface in [json.dumps(metrics.snapshot()),metrics.prometheus()]:
+            self.assertNotIn(private,surface)
+            self.assertIn('http_requests_total',surface)
+        self.assertEqual(len(metrics.counters),2)
+        self.assertEqual(metrics.gauges,{'last_http_latency_ms':12.5})

@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,threading,time,traceback,uuid
+import json,threading,time,traceback,uuid,math
 from collections import Counter
 from datetime import datetime,timezone
 from pathlib import Path
@@ -7,9 +7,25 @@ from pathlib import Path
 class Metrics:
     def __init__(self):self.started=time.monotonic();self._lock=threading.Lock();self.counters=Counter();self.gauges={}
     def increment(self,name,value=1,**labels):
-        key=(name,tuple(sorted((str(k),str(v)) for k,v in labels.items())))
+        # Closed diagnostic schema: paths, arbitrary labels, metric names and
+        # plugin exception class names can contain private data or explode cardinality.
+        names={'tasks_total','task_failures_total','http_errors_total','http_requests_total'}
+        if not isinstance(name,str) or name not in names:name='other_total'
+        safe={}
+        if 'status' in labels:
+            status=str(labels['status'])
+            safe['status']=status if status in {'ok','complete','partial','failed','cancelled','waiting','interrupted'} or (status.isascii() and status.isdigit() and len(status)==3 and 100<=int(status)<=599) else 'other'
+        if 'method' in labels:
+            method=labels['method']
+            safe['method']=method if isinstance(method,str) and method in {'GET','POST','PUT','DELETE','PATCH','HEAD','OPTIONS'} else 'OTHER'
+        if 'error' in labels:
+            error=labels['error']
+            safe['error']=error if isinstance(error,str) and error in {'ValueError','RuntimeError','TimeoutError','ConnectionError','PermissionError','ExecutionStopped','OSError','KeyError'} else 'OtherError'
+        if not isinstance(value,(int,float)) or not math.isfinite(value):return
+        key=(name,tuple(sorted(safe.items())))
         with self._lock:self.counters[key]+=value
     def set(self,name,value):
+        if name != 'last_http_latency_ms' or not isinstance(value,(int,float)) or not math.isfinite(value):return
         with self._lock:self.gauges[name]=value
     def snapshot(self):
         with self._lock:return {'uptime_seconds':round(time.monotonic()-self.started,3),'counters':{'|'.join([k[0],*(f'{a}={b}' for a,b in k[1])]):v for k,v in self.counters.items()},'gauges':dict(self.gauges)}
