@@ -8,7 +8,7 @@ Target for every benchmark: **10/10**. Release status: **NOT FULLY CERTIFIED**.
 
 | Benchmark | Target | Verified score | Evidence | Remaining gaps |
 |---|---|---|---|---|
-| Memory | 10/10 | 6/10 | Requirement register below | 4 requirements |
+| Memory | 10/10 | 9/10 | Requirement register below; semantic-memory-v1-real.json | 1 requirement |
 | Autonomous Execution | 10/10 | 6/10 | Requirement register below | 4 requirements |
 | Self-Improvement | 10/10 | 7/10 | Requirement register below | 3 requirements |
 | Privacy & Security | 10/10 | 4/10 | Requirement register below | 6 requirements |
@@ -23,14 +23,14 @@ Test filenames refer to `tests/` unless a different path is shown.
 |---|---|---|---|---|
 | 1 | Persistent conversations | PASS | test_conversation_learning.py; test_mission_e2e.py | Restart and scoped history |
 | 2 | Durable goals/preferences/projects | PASS | test_conversation_learning.py; test_mission_e2e.py | Conservative learner; not all dialogue is durable |
-| 3 | Semantic retrieval | GAP | memory/retrieval.py | Opt-in local embedding and hybrid retrieval implemented (test_memory_semantics.py); real model quality gate outstanding |
-| 4 | Context selection/prioritization | GAP | memory/vault.py | Hybrid relevance, importance and character budget tested; real contextual relevance corpus missing |
+| 3 | Semantic retrieval | PASS | scripts/evaluate_memory.py; docs/certification/semantic-memory-v1-real.json; CI 41808473216 | Real pinned all-MiniLM-L6-v2 on versioned seven-query corpus: recall@3=1.0, MRR@3=1.0; thresholds 0.8/0.7 fixed before evaluation. Certifies this model/corpus, not arbitrary models or general intelligence |
+| 4 | Context selection/prioritization | PASS | test_memory_maintenance.py; test_memory_semantics.py; real-model CI 41808473216 | Bounded serialized context, relevance/importance/recency and superseded facts tested; zero budget violations, stale hits or owner leaks on real-model v1 corpus |
 | 5 | Updates/corrections | PASS | test_memory_edit.py; test_memory_recovery_acceptance.py | Corrections survive source resync and restart |
 | 6 | Duplicate/conflicting memories | PASS | test_memory_semantics.py; test_memory_recovery_acceptance.py | Owner-scoped dedupe and explicit fact-key supersession, persistent auditable history and deletion |
 | 7 | Deletion/privacy controls | GAP | test_memory_recovery_acceptance.py | Scoped record/profile/reflection/proposal erasure plus restore suppression tested; unattributed legacy files, source documents and external copies remain explicit limits |
 | 8 | User isolation | PASS | test_memory_user_isolation.py; test_memory_ownership.py | Trusted backend must bind header identity to signed-in user |
 | 9 | Persistence after restart | PASS | test_mission_e2e.py | Real runtime restart with scripted provider |
-| 10 | Backup/restore/migration | GAP | test_v13.py; test_memory_recovery_acceptance.py | Full-profile rollback, cross-process runtime/skill-root exclusion, clean-profile recovery and interrupted-restore rehearsal now tested in test_memory_maintenance.py; current candidate cross-platform CI still pending. Real VPS drill tracked separately under Reliability 4 |
+| 10 | Backup/restore/migration | PASS | test_v13.py; test_full_profile_backup.py; test_memory_maintenance.py; CI 41195850136 | Maintenance coordination, clean-profile recovery, tombstones, migration, corruption and interrupted restore/rollback tests pass across supported OS matrix. Live VPS remains Reliability 4 |
 
 ## Autonomous Execution
 
@@ -40,7 +40,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 |---|---|---|---|---|
 | 1 | Multi-step planning | GAP | test_mission_e2e.py | Persistent bounded plans and partial-completion gating tested in test_execution_plans.py; live planner quality remains unverified |
 | 2 | Tool discovery/execution | PASS | test_capability_integration.py; test_mission_e2e.py | Policy and feature flags enforced |
-| 3 | Web research | GAP | test_web.py | Mock coverage; live retrieval certification outstanding |
+| 3 | Web research | GAP | test_web.py; test_public_http.py; live CI 41195846751 | Actual public-page extraction passed with pinned HTTP transport; search-provider/research quality certification remains open |
 | 4 | File/workspace operations | PASS | test_sandbox.py; test_mission_e2e.py | Actual write and read-back |
 | 5 | Command/code execution | PASS | test_terminal_backends.py; test_sandbox.py | Supported local test paths; remote host certification separate |
 | 6 | Background/scheduled work | PASS | test_scheduling_intent.py; test_v02.py; test_scheduler_reliability.py | Concurrent ticks and crash after enqueue deduplicated; stale worker completion fenced |

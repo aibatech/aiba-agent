@@ -12,7 +12,10 @@ FILES=('config.json','config_sentence_transformers.json','sentence_bert_config.j
 
 
 def prepare(destination):
-    from huggingface_hub import hf_hub_download
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError as exc:
+        raise RuntimeError("Install the semantic extra before preparing an evaluation model: pip install -e .[semantic]") from exc
     root=Path(destination)
     if root.exists():raise ValueError('Use a new, empty model destination')
     root.mkdir(parents=True)
