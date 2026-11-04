@@ -238,7 +238,7 @@ class ControllerSecurityTests(unittest.TestCase):
         c.click(123, 456)
         rows = self._audit_events()
         reqs = [r for r in rows if r.get("event") == "computer_requested"]
-        self.assertTrue(any(r.get("action") == "click" and r.get("summary") == "[REDACTED]" for r in reqs))
+        self.assertTrue(any(r.get("action_sha256") == __import__("hashlib").sha256(b"click").hexdigest() and r.get("payload") == "[REDACTED]" for r in reqs))
 
     def test_disabled_gate_blocks_at_controller(self):
         self.gate.emergency_stop()

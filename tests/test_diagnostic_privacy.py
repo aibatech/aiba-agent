@@ -35,7 +35,7 @@ class DiagnosticPrivacyTests(unittest.TestCase):
                          output=secret,error=secret,object=PrivateObject())
             text=audit.path.read_text()
             self.assertNotIn(secret,text)
-            self.assertEqual(json.loads(text)['tool'],'read_file')
+            self.assertEqual(json.loads(text)['tool_sha256'],__import__('hashlib').sha256(b'read_file').hexdigest())
 
     def test_headless_setup_does_not_print_authentication_link(self):
         import io
@@ -65,3 +65,22 @@ class DiagnosticPrivacyTests(unittest.TestCase):
             self.assertIn('http_requests_total',surface)
         self.assertEqual(len(metrics.counters),2)
         self.assertEqual(metrics.gauges,{'last_http_latency_ms':12.5})
+
+    def test_audit_closed_schema_rejects_unknown_names_values_and_envelope_override(self):
+        from security.audit import AuditLog
+        from runtime.events import EventBus
+        corpus=['private customer note', '秘密 confidential', 'private\nmultiline']
+        with tempfile.TemporaryDirectory() as tmp:
+            audit=AuditLog(Path(tmp)/'audit.jsonl');bus=EventBus()
+            bus.subscribe('*',lambda envelope:audit.record('event',**envelope))
+            for private in corpus:
+                audit.record(private,tool=private,server_id=private,notes=private,
+                             **{private:private,'timestamp':private,'ok':private,'steps':private})
+                bus.publish('reasoning.plan',event={'summary':private},task_id=private)
+            rows=[json.loads(line) for line in audit.path.read_text().splitlines()]
+            self.assertEqual(len(rows),len(corpus)*2)
+            self.assertEqual([r['event'] for r in rows],['other','event']*len(corpus))
+            for private in corpus:self.assertNotIn(private,audit.path.read_text())
+            audit.record('tool_end',ok=False,verified=False,steps=3)
+            row=json.loads(audit.path.read_text().splitlines()[-1])
+            self.assertFalse(row['ok']);self.assertFalse(row['verified']);self.assertEqual(row['steps'],3)
