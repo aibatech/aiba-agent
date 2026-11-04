@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,re,sqlite3
+import json,re,sqlite3,math
 from datetime import datetime,timezone
 from pathlib import Path
 from sqlite_utils import connect
@@ -30,7 +30,10 @@ class MemoryVault:
     """
 
     def __init__(self,db_path:Path,vault_dir:Path):
-        self.db_path=db_path; self.vault_dir=vault_dir; self.vault_dir.mkdir(parents=True,exist_ok=True); self._init(); self.sync_markdown()
+        self.db_path=db_path; self.vault_dir=vault_dir; self.vault_dir.mkdir(parents=True,exist_ok=True); self._init()
+        from privacy.memory_deletions import enforce
+        enforce(self.db_path.parent,self.db_path.name)
+        self.sync_markdown()
 
     def _init(self):
         with connect(self.db_path) as c:
@@ -45,19 +48,46 @@ class MemoryVault:
                 # backfilled to 'shared' by this single atomic statement.
                 c.execute(f"ALTER TABLE memories ADD COLUMN owner TEXT NOT NULL DEFAULT '{SHARED}'")
 
+            c.execute('CREATE TABLE IF NOT EXISTS memory_source_overrides(source_path TEXT PRIMARY KEY)')
+            c.execute('CREATE TABLE IF NOT EXISTS memory_facts(owner TEXT NOT NULL,fact_key TEXT NOT NULL,memory_id INTEGER NOT NULL,PRIMARY KEY(owner,fact_key))')
+            c.execute('CREATE TABLE IF NOT EXISTS memory_supersessions(old_id INTEGER PRIMARY KEY,new_id INTEGER NOT NULL)')
+
     def _scope(self, as_user):
         """Return (sql_fragment, args) to restrict a query to one user's OWN
         rows. Unscoped (as_user=None) returns ('', []) -> whole table (primary
         view). A concrete as_user adds WHERE owner = <user> so 'shared' and
         other users' rows are never returned."""
         if as_user is None:
-            return '', []
-        return 'owner = ?', [str(as_user)]
+            return 'id NOT IN (SELECT old_id FROM memory_supersessions)', []
+        return 'owner = ? AND id NOT IN (SELECT old_id FROM memory_supersessions)', [str(as_user)]
 
-    def add(self,content:str,category='general',importance=0.5,metadata=None,source_path=None,owner=None):
-        now=datetime.now(timezone.utc).isoformat(); meta=json.dumps(metadata or {}); owner=str(owner or SHARED)
+    def add(self,content:str,category='general',importance=0.5,metadata=None,source_path=None,owner=None,fact_key=None):
+        if not isinstance(content,str) or not content.strip():raise ValueError('Memory content cannot be empty')
+        if not math.isfinite(float(importance)) or not 0<=float(importance)<=1:raise ValueError('Importance must be between zero and one')
+        now=datetime.now(timezone.utc).isoformat(); owner=str(owner or SHARED)
+        key=str(fact_key).strip().casefold() if fact_key is not None else None
+        if key is not None and (not key or len(key)>200):raise ValueError('Invalid fact key')
+        meta=dict(metadata or {})
+        if key:meta['fact_key']=key
         with connect(self.db_path) as c:
-            cur=c.execute('INSERT INTO memories(content,category,importance,source_path,owner,created_at,metadata) VALUES(?,?,?,?,?,?,?)',(content,category,float(importance),source_path,owner,now,meta)); return cur.lastrowid
+            c.execute('BEGIN IMMEDIATE')
+            previous=c.execute('SELECT memory_id FROM memory_facts WHERE owner=? AND fact_key=?',(owner,key)).fetchone() if key else None
+            duplicate=c.execute("SELECT id FROM memories WHERE content=? AND category=? AND owner=? AND source_path IS ? AND json_extract(metadata, '$.fact_key') IS ? AND id NOT IN (SELECT old_id FROM memory_supersessions)",(content,category,owner,source_path,key)).fetchone()
+            if duplicate:mid=duplicate[0]
+            else:
+                cur=c.execute('INSERT INTO memories(content,category,importance,source_path,owner,created_at,metadata) VALUES(?,?,?,?,?,?,?)',(content,category,float(importance),source_path,owner,now,json.dumps(meta)))
+                mid=cur.lastrowid
+            if key:
+                if previous and previous[0]!=mid:
+                    c.execute('INSERT OR REPLACE INTO memory_supersessions VALUES (?,?)',(previous[0],mid))
+                c.execute('INSERT OR REPLACE INTO memory_facts VALUES (?,?,?)',(owner,key,mid))
+            return mid
+
+    def fact_history(self,fact_key:str,owner:str):
+        with connect(self.db_path) as c:
+            c.row_factory=sqlite3.Row
+            rows=c.execute('SELECT * FROM memories WHERE owner=? ORDER BY id',(owner,)).fetchall()
+            return [dict(row) for row in rows if json.loads(row['metadata']).get('fact_key')==fact_key.strip().casefold()]
 
     def search(self,query:str,limit=5,as_user=None):
         terms=[re.sub(r'[^A-Za-z0-9_-]','',x) for x in query.split()]; terms=[x for x in terms if x]
@@ -92,14 +122,27 @@ class MemoryVault:
         sql='UPDATE memories SET '+', '.join(sets)+' WHERE id=?'
         if scope:sql+=' AND '+scope
         with connect(self.db_path) as c:
+            row = c.execute('SELECT source_path FROM memories WHERE id=?' + (' AND '+scope if scope else ''), [int(memory_id)]+args).fetchone()
+            if row and row[0]:
+                c.execute('INSERT OR IGNORE INTO memory_source_overrides VALUES (?)', (row[0],))
             c.execute(sql,vals+[int(memory_id)]+args)
         # The UPDATE may have matched nothing (e.g. a scoped caller targeting a
         # 'shared' or foreign row); no cross-owner mutation can occur.
     def remove(self,memory_id:int,as_user=None)->bool:
-        scope,args=self._scope(as_user)
+        # Historical facts must remain explicitly deletable by their owner.
+        scope,args=("1=1", []) if as_user is None else ("owner = ?", [str(as_user)])
         with connect(self.db_path) as c:
+            c.execute('BEGIN IMMEDIATE')
             sql='DELETE FROM memories WHERE id=?'
             if scope:sql+=' AND '+scope
+            row = c.execute('SELECT source_path,created_at,owner FROM memories WHERE id=?' + (' AND '+scope if scope else ''), [int(memory_id)]+args).fetchone()
+            if row:
+                from privacy.memory_deletions import record
+                record(self.db_path,int(memory_id),row[1],row[2])
+                c.execute('DELETE FROM memory_supersessions WHERE old_id=?',(int(memory_id),))
+            if row and row[0]:
+                c.execute('INSERT OR IGNORE INTO memory_source_overrides VALUES (?)', (row[0],))
+            c.execute('DELETE FROM memory_facts WHERE memory_id=? AND memory_id IN (SELECT id FROM memories WHERE '+scope+')',[int(memory_id)]+args)
             cur=c.execute(sql,[int(memory_id)]+args);return cur.rowcount>0  # FTS in sync via memories_ad trigger
     def list(self,limit:int=100,category:str|None=None,as_user=None):
         sql='SELECT * FROM memories';args=[]
@@ -116,7 +159,11 @@ class MemoryVault:
         return [{'id':r['id'],'content':r['content'],'category':r['category'],'importance':r['importance'],'created_at':r['created_at'],'source_path':r.get('source_path')} for r in rows]
     def sync_markdown(self,owner=None):
         for p in self.vault_dir.rglob('*.md'):
-            rel=str(p.relative_to(self.vault_dir)); content=p.read_text(encoding='utf-8',errors='replace'); category=rel.split('/')[0] if '/' in rel else 'general'
+            if p.is_symlink():continue
+            rel=str(p.relative_to(self.vault_dir))
+            with connect(self.db_path) as c:
+                if c.execute('SELECT 1 FROM memory_source_overrides WHERE source_path=?',(rel,)).fetchone():continue
+            content=p.read_text(encoding='utf-8',errors='replace'); category=rel.split('/')[0] if '/' in rel else 'general'
             with connect(self.db_path) as c:
                 row=c.execute('SELECT id,content FROM memories WHERE source_path=?',(rel,)).fetchone()
                 if row and row[1]!=content:c.execute('UPDATE memories SET content=?,category=? WHERE id=?',(content,category,row[0]))

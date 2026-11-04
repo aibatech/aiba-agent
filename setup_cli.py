@@ -1,5 +1,5 @@
 from __future__ import annotations
-import argparse,webbrowser
+import argparse,webbrowser,sys
 from pathlib import Path
 from onboarding import SetupManager
 
@@ -9,7 +9,10 @@ def main():
     url='http://127.0.0.1:8765/#token='+result['api_token']
     print('AIBA security configuration is ready.')
     print('Start AIBA with: python main.py --serve')
-    print('Setup URL: '+url)
+    if sys.stdout.isatty():
+        print('Setup URL: '+url)
+    else:
+        print('Setup token withheld from redirected output. Run setup_cli.py in a local terminal to view the sign-in link.')
     if not args.no_browser:
         try:webbrowser.open(url)
         except Exception:pass

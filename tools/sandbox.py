@@ -31,7 +31,7 @@ class Sandbox:
         if not p.is_file():return ToolResult(False,error='File not found')
         return ToolResult(True,p.read_text(encoding='utf-8',errors='replace'))
     def write_file(self,path:str,content:str)->ToolResult:
-        p=self._safe(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_text(content,encoding='utf-8')
+        p=self._safe(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_bytes(content.encode('utf-8'))
         return ToolResult(True,{'path':str(p.relative_to(self.workspace)),'bytes':len(content.encode())})
     def delete_file(self,path:str)->ToolResult:
         p=self._safe(path)

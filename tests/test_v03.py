@@ -8,13 +8,13 @@ from security.auth import AuthStore
 from tools.base import ToolResult
 
 class FakeRegistry:
-    def execute(self,name,args):return ToolResult(True,{'name':name,'args':args})
+    def execute(self,name,args,blocked=None):return ToolResult(False,error='blocked') if name in (blocked or set()) else ToolResult(True,{'name':name,'args':args})
 
 class V03Tests(unittest.TestCase):
     def test_queue_worker_and_recovery(self):
         with tempfile.TemporaryDirectory() as d:
             q=JobQueue(Path(d)/'jobs.db');i=q.enqueue('echo',{'x':2});w=Worker(q,{'echo':lambda p:p['x']*2});self.assertTrue(w.run_once());self.assertEqual(q.get(i)['status'],'complete')
-            j=q.enqueue('echo',{'x':3});claimed=q.claim();self.assertEqual(claimed['id'],j);self.assertEqual(q.recover(),1);self.assertEqual(q.get(j)['status'],'queued')
+            j=q.enqueue('echo',{'x':3},retry_policy='safe');claimed=q.claim();self.assertEqual(claimed['id'],j);self.assertEqual(q.recover(),1);self.assertEqual(q.get(j)['status'],'queued')
     def test_scheduler_enforces_minimum(self):
         with tempfile.TemporaryDirectory() as d:
             q=JobQueue(Path(d)/'jobs.db');s=Scheduler(Path(d)/'schedules.db',q)

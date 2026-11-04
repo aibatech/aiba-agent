@@ -1,0 +1,14 @@
+{
+  "corpus_version": "aiba-memory-v1",
+  "corpus_sha256": "7f4c539d33e17a4ce46c617c82074ec035ba7b2a6d2837fa05ea0339d71c3ee2",
+  "thresholds": {
+    "recall_at_3": 0.8,
+    "mrr_at_3": 0.7,
+    "owner_leaks": 0,
+    "stale_hits": 0,
+    "budget_violations": 0
+  },
+  "passed": false,
+  "status": "blocked",
+  "blocker": "Missing reviewed local SentenceTransformer model directory: supply --model PATH and install .[semantic]"
+}

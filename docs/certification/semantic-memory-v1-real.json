@@ -1,0 +1,140 @@
+{
+  "corpus_version": "aiba-memory-v1",
+  "corpus_sha256": "7f4c539d33e17a4ce46c617c82074ec035ba7b2a6d2837fa05ea0339d71c3ee2",
+  "thresholds": {
+    "recall_at_3": 0.8,
+    "mrr_at_3": 0.7,
+    "owner_leaks": 0,
+    "stale_hits": 0,
+    "budget_violations": 0
+  },
+  "passed": true,
+  "model_id": "/tmp/aiba-evaluation-model:50e8343fc190e2d36a0d27eb5e4067337d456554a47f43a0a2b9cca2476f5981",
+  "model_files": [
+    [
+      "1_Pooling/config.json",
+      "4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23"
+    ],
+    [
+      "README.md",
+      "dcd602d2fd35c203a247304a06fec6654a12f7941b739f9221a064fe8dc3b7f0"
+    ],
+    [
+      "config.json",
+      "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41"
+    ],
+    [
+      "config_sentence_transformers.json",
+      "061ca9d39661d6c6d6de5ba27f79a1cd5770ea247f8d46412a68a498dc5ac9f3"
+    ],
+    [
+      "model.safetensors",
+      "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db"
+    ],
+    [
+      "modules.json",
+      "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf"
+    ],
+    [
+      "sentence_bert_config.json",
+      "fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7"
+    ],
+    [
+      "special_tokens_map.json",
+      "303df45a03609e4ead04bc3dc1536d0ab19b5358db685b6f3da123d05ec200e3"
+    ],
+    [
+      "tokenizer.json",
+      "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037"
+    ],
+    [
+      "tokenizer_config.json",
+      "acb92769e8195aabd29b7b2137a9e6d6e25c476a4f15aa4355c233426c61576b"
+    ],
+    [
+      "vocab.txt",
+      "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+    ]
+  ],
+  "sentence_transformers_version": "5.7.0",
+  "metrics": {
+    "recall_at_3": 1.0,
+    "mrr_at_3": 1.0,
+    "owner_leaks": 0,
+    "stale_hits": 0,
+    "budget_violations": 0
+  },
+  "cases": [
+    {
+      "owner": "alice",
+      "query": "What powers my car?",
+      "recall_at_3": 1.0,
+      "rr_at_3": 1.0,
+      "retrieved_ids": [
+        1,
+        5
+      ]
+    },
+    {
+      "owner": "alice",
+      "query": "What meals fit my dietary restrictions?",
+      "recall_at_3": 1.0,
+      "rr_at_3": 1.0,
+      "retrieved_ids": [
+        2,
+        1
+      ]
+    },
+    {
+      "owner": "alice",
+      "query": "When must the Atlas project launch?",
+      "recall_at_3": 1.0,
+      "rr_at_3": 1.0,
+      "retrieved_ids": [
+        4,
+        10
+      ]
+    },
+    {
+      "owner": "alice",
+      "query": "What business do I hope to start?",
+      "recall_at_3": 1.0,
+      "rr_at_3": 1.0,
+      "retrieved_ids": [
+        5,
+        11,
+        12
+      ]
+    },
+    {
+      "owner": "alice",
+      "query": "How should you format your answers to me?",
+      "recall_at_3": 1.0,
+      "rr_at_3": 1.0,
+      "retrieved_ids": [
+        6,
+        5
+      ]
+    },
+    {
+      "owner": "bob",
+      "query": "What fuel does my car need?",
+      "recall_at_3": 1.0,
+      "rr_at_3": 1.0,
+      "retrieved_ids": [
+        8
+      ]
+    },
+    {
+      "owner": "bob",
+      "query": "When is my Atlas launch scheduled?",
+      "recall_at_3": 1.0,
+      "rr_at_3": 1.0,
+      "retrieved_ids": [
+        9,
+        8
+      ]
+    }
+  ],
+  "status": "passed"
+}

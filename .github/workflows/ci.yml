@@ -48,7 +48,7 @@ jobs:
         run: |
           python -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install -e ".[all]"
+          .venv/bin/python -m pip install -e ".[all,dev]"
           .venv/bin/python -m pip install "pyright==1.1.411"
       - name: Validate capability manifest & permissions
         run: .venv/bin/python scripts/validate_capabilities.py

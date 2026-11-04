@@ -35,12 +35,8 @@ Fetch = Callable[[str, dict], tuple[int, str]]
 
 
 def _default_fetch(url: str, headers: dict) -> tuple[int, str]:
-    req = urllib.request.Request(
-        url,
-        headers={**headers, "User-Agent": "Mozilla/5.0 (compatible; AIBA-Agent/1.6; +https://aibatech.com)", "Accept-Language": "en-US,en;q=0.8"},
-    )
-    with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
-        return int(resp.status), resp.read().decode("utf-8", errors="replace")
+    from security.public_http import fetch_public
+    return fetch_public(url, headers, timeout=_TIMEOUT)
 
 
 def _strip_html(raw: str) -> str:
@@ -259,8 +255,9 @@ class WebTools:
                 source.update({"status": 0, "text": "", "error": f"{type(exc).__name__}: {exc}"})
             sources.append(source)
 
+        usable = bool(sources) and all(200 <= source['status'] < 300 and source.get('text','').strip() for source in sources)
         return ToolResult(
-            True,
+            usable,
             {
                 "query": query,
                 "mode": "research",
@@ -274,6 +271,8 @@ class WebTools:
                 },
                 "grounding": "Use source_id (S1, S2, ...) to attribute factual claims; distinguish source evidence from inference.",
             },
+            error=None if usable else 'Research has missing or unusable source evidence',
+            verified=usable,
         )
 
     def web_extract(self, urls: list[str], limit_per_page: int | None = None) -> ToolResult:
@@ -309,7 +308,8 @@ class WebTools:
                 pages.append({"source_id": f"S{index}", "url": url, "status": exc.code, "text": "", "error": f"HTTP {exc.code}"})
             except Exception as exc:
                 pages.append({"source_id": f"S{index}", "url": url, "status": 0, "text": "", "error": f"{type(exc).__name__}: {exc}"})
-        return ToolResult(True, {"pages": pages})
+        ok = bool(pages) and all(200 <= page['status'] < 300 and page.get('text','').strip() for page in pages)
+        return ToolResult(ok, {"pages": pages}, None if ok else "One or more pages could not be retrieved with usable content", verified=ok)
 
 
 def build_web_tools(cls=WebTools, **kwargs) -> list:

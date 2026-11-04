@@ -82,7 +82,7 @@ class VisibleReasoning:
         """A tool call is about to run (sanitised: no secrets in arguments)."""
         data: dict[str, Any] = {"tool": name}
         if arguments is not None:
-            data["arguments"] = _sanitise(arguments)
+            data["arguments"] = "[arguments withheld from telemetry]"
         if tool_index is not None:
             data["tool_index"] = tool_index
         data.update(extra)
@@ -92,7 +92,7 @@ class VisibleReasoning:
         """A tool returned (never the full raw output; a short, safe preview)."""
         data = {"tool": tool, "ok": ok}
         if output_preview is not None:
-            data["output_preview"] = _clip(output_preview, 200)
+            data["output_preview"] = "[output withheld from telemetry]"
         data.update(extra)
         self._emit(K_RESULT, **data)
 
@@ -100,7 +100,7 @@ class VisibleReasoning:
         """The task finished with a final answer."""
         data: dict[str, Any] = {}
         if response_preview is not None:
-            data["response_preview"] = _clip(response_preview, 200)
+            data["response_preview"] = "[response withheld from telemetry]"
         if tool_count is not None:
             data["tool_count"] = tool_count
         data.update(extra)
@@ -108,7 +108,7 @@ class VisibleReasoning:
 
     def error(self, detail: str, **extra: Any) -> None:
         """The task failed (public, sanitised reason only)."""
-        data = {"detail": _clip(detail, 200)}
+        data = {"detail": "Task failed; inspect the owner-visible task result"}
         data.update(extra)
         self._emit(K_ERROR, **data)
 
@@ -128,6 +128,8 @@ def _sanitise(arguments: dict) -> dict:
             out[k] = v[:200] + "..."
         elif isinstance(v, dict):
             out[k] = _sanitise(v)
+        elif isinstance(v, (list, tuple)):
+            out[k] = [_sanitise({"item": item})["item"] for item in v]
         else:
             out[k] = v
     return out

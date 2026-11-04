@@ -87,15 +87,14 @@ class VisibleReasoningTests(unittest.TestCase):
         self.vr.tool("http", {"url": "https://x", "api_key": "sk-live-secret", "cookie": "sid=1"})
         _, payload = self.bus.events[0]
         args = payload["event"]["arguments"]
-        self.assertEqual(args["api_key"], "[redacted]")
-        self.assertEqual(args["cookie"], "[redacted]")
-        self.assertEqual(args["url"], "https://x")
+        self.assertEqual(args, "[arguments withheld from telemetry]")
+        self.assertNotIn("sk-live-secret",str(payload))
 
-    def test_result_clips_long_output(self):
+    def test_result_withholds_raw_output(self):
         self.vr.result("run_shell", True, output_preview="y" * 500)
         _, payload = self.bus.events[0]
         preview = payload["event"]["output_preview"]
-        self.assertTrue(preview.endswith("..."))
+        self.assertEqual(preview, "[output withheld from telemetry]")
         self.assertLess(len(preview), 220)
 
     def test_all_event_kinds_accepted(self):
@@ -123,6 +122,14 @@ class VisibleReasoningTests(unittest.TestCase):
         s = _sanitise(d)
         self.assertEqual(s["a"]["token"], "[redacted]")
         self.assertEqual(s["a"]["keep"], "ok")
+
+    def test_nested_lists_and_raw_results_do_not_leak(self):
+        secret = "random-owner-confidential-value"
+        self.vr.tool("http", {"headers": [{"authorization": secret}]})
+        self.vr.result("http", False, output_preview=secret)
+        self.vr.error(secret)
+        self.vr.final(secret)
+        self.assertNotIn(secret, str(self.bus.events))
 
     def test_clip(self):
         self.assertEqual(_clip("abc", 5), "abc")
