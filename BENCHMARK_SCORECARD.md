@@ -77,10 +77,10 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 3 | Exact operation approval | PASS | test_exact_owner_approvals.py; test_skill_lifecycle.py | All policy-gated tools now use argument fingerprints |
 | 4 | One-use expiring grants | PASS | test_approval_replay.py; test_product_bridge.py | Durable product challenges; concurrent/restart/user/replay tests |
 | 5 | Secret handling | GAP | test_secret_admin.py | Bounded strict single-line parser, quoted/export assignments, invalid-input atomicity, POSIX pinned descriptors and adversarial swap tests; full dotenv grammar and Windows ACL certification outstanding |
-| 6 | Sensitive redaction | GAP | test_registry_redaction.py | Crash messages/source lines/request paths and known audit payload fields withheld (test_diagnostic_privacy.py); unknown free-form fields and external diagnostic surfaces remain unverified |
+| 6 | Sensitive redaction | GAP | test_registry_redaction.py | Crash messages/source lines/request paths withheld; audit explicit metadata schema rejects arbitrary fields (test_diagnostic_privacy.py). Reasoning telemetry and external diagnostic surfaces remain unverified |
 | 7 | Host filesystem/command safeguards | GAP | test_host_files.py; test_skill_lifecycle.py | Path checks exist; adversarial TOCTOU race certification outstanding |
 | 8 | Prompt injection defense | GAP | reasoning/engine.py | Untrusted-data instruction and policy gates; no adversarial model corpus certification |
-| 9 | Confidential audit trail | GAP | test_registry_redaction.py | Known audit payload minimization and operation fingerprints tested; all diagnostic surfaces not certified |
+| 9 | Confidential audit trail | GAP | test_registry_redaction.py | Explicit audit metadata schema, hashed identifiers, operation fingerprints and EventBus envelope recording tested; host log protection, retention and other diagnostic surfaces not fully certified |
 | 10 | Recovery/owner deletion | GAP | test_memory_recovery_acceptance.py | Approval invalidation on restore; full-data erasure and recovery still incomplete |
 
 ## Human-Centered UX
