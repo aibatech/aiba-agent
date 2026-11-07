@@ -1,5 +1,5 @@
 from __future__ import annotations
-import json,threading,time,traceback,uuid,math
+import json,threading,time,traceback,uuid,math,hashlib
 from collections import Counter
 from datetime import datetime,timezone
 from pathlib import Path
@@ -43,7 +43,8 @@ class CrashReporter:
     def capture(self,exc,context=None):
         crash_id=str(uuid.uuid4())
         # Exception text, source lines, locals and request paths can contain secrets.
-        frames=[{'file':Path(frame.filename).name,'line':frame.lineno,'function':frame.name}
+        frames=[{'file_sha256':hashlib.sha256(frame.filename.encode('utf-8',errors='backslashreplace')).hexdigest(),
+                 'line':frame.lineno,'function_sha256':hashlib.sha256(frame.name.encode('utf-8',errors='backslashreplace')).hexdigest()}
                 for frame in traceback.extract_tb(exc.__traceback__)[-30:]]
         safe_context={}
         if isinstance(context,dict):
@@ -53,7 +54,7 @@ class CrashReporter:
                 except ValueError:pass
             if isinstance(context.get('method'),str) and context['method'] in {'GET','POST','PUT','DELETE','PATCH','HEAD','OPTIONS'}:
                 safe_context['method']=context['method']
-        row={'id':crash_id,'timestamp':datetime.now(timezone.utc).isoformat(),'type':type(exc).__name__,
+        row={'id':crash_id,'timestamp':datetime.now(timezone.utc).isoformat(),'type':type(exc).__name__ if type(exc) in {ValueError,RuntimeError,TimeoutError,ConnectionError,PermissionError,OSError,KeyError,TypeError,AssertionError} else 'OtherError',
              'message':'Exception details withheld from diagnostics','context':safe_context,'frames':frames}
         with self._lock,self.path.open('a',encoding='utf-8') as f:f.write(json.dumps(row,default=str)+'\n')
         return crash_id

@@ -84,3 +84,29 @@ class DiagnosticPrivacyTests(unittest.TestCase):
             audit.record('tool_end',ok=False,verified=False,steps=3)
             row=json.loads(audit.path.read_text().splitlines()[-1])
             self.assertFalse(row['ok']);self.assertFalse(row['verified']);self.assertEqual(row['steps'],3)
+
+    def test_reasoning_extensions_cannot_override_safe_fields(self):
+        from reasoning.protocol import VisibleReasoning
+        events=[];visible=VisibleReasoning(lambda *a,**kw:events.append(kw),'trusted-task-id')
+        private='owner-private-unmarked-text'
+        visible.plan(private,steps=private,kind=private,unknown={private:private})
+        visible.tool('read_file',{},tool_index=private,tool=private,unknown=private)
+        visible.result('read_file',False,private,detail=private,unknown=private)
+        visible.final(private,tool_count=private,kind=private,unknown=private)
+        visible.error(private,kind=private,unknown=private)
+        self.assertNotIn(private,json.dumps(events))
+        self.assertEqual({e['event']['kind'] for e in events},{'plan','tool','result','final','error'})
+        self.assertEqual(events[4]['event']['ok'],False)
+
+    def test_crash_dynamic_source_names_and_exception_types_do_not_leak(self):
+        private='private_dynamic_identifier_819'
+        with tempfile.TemporaryDirectory() as tmp:
+            reporter=CrashReporter(Path(tmp));namespace={'Failure':type(private,(Exception,),{})}
+            code=compile('def '+private+'():\n    raise Failure("private message")\n'+private+'()','/private/'+private+'.py','exec')
+            try:exec(code,namespace)
+            except Exception as exc:reporter.capture(exc)
+            record=json.loads(reporter.path.read_text())
+            self.assertNotIn(private,reporter.path.read_text())
+            self.assertEqual(record['type'],'OtherError')
+            self.assertTrue(record['frames'])
+            self.assertTrue(all(len(frame['file_sha256'])==64 for frame in record['frames']))

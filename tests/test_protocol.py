@@ -75,7 +75,7 @@ class VisibleReasoningTests(unittest.TestCase):
         self.assertEqual(payload["task_id"], "task-1")
         self.assertIn("timestamp", payload)
         self.assertEqual(payload["event"]["kind"], K_PLAN)
-        self.assertEqual(payload["event"]["summary"], "do things")
+        self.assertEqual(payload["event"]["summary"], "Preparing the task with available context and tools.")
 
     def test_fans_out_to_specific_and_wildcard(self):
         self.vr.tool("read_file")
