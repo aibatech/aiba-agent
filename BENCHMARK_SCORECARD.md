@@ -47,7 +47,7 @@ Test filenames refer to `tests/` unless a different path is shown.
 | 7 | Progress/status | PASS | test_protocol.py; test_execution_recovery_acceptance.py | Events and persistent task/job state |
 | 8 | Retry/timeout/cancellation/recovery | GAP | test_execution_recovery_acceptance.py | Queue retries/cancel/recovery tested; in-flight external cancellation and safe replay remain |
 | 9 | Sensitive authorization | PASS | test_exact_owner_approvals.py; test_approval_replay.py | Exact operation approval through registry |
-| 10 | Verified completion claims | GAP | test_mission_e2e.py | Workspace mutation postconditions and nested-skill failure propagation tested; other action adapters still need domain-specific outcome verifiers |
+| 10 | Verified completion claims | GAP | test_mission_e2e.py | Workspace, host-file, memory and job-registration postconditions plus nested-skill failure propagation tested; other action adapters still need domain-specific outcome verifiers |
 
 ## Self-Improvement
 

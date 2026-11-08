@@ -206,3 +206,31 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
                 self.assertEqual((loop.settings.workspace_dir/'exact.txt').read_bytes(),content.encode('utf-8'))
                 self.assertEqual(result.output['bytes'],len(content.encode('utf-8')))
             finally:loop.close()
+
+    def test_host_adapters_verify_actual_effect_and_reject_noop_success(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            loop=AgentLoop(settings=make_settings(Path(tmp)),interactive=False,start_worker=False)
+            try:
+                for name in ('host_write_file','host_delete_file'):
+                    loop.registry.policy.config['tools'][name]={'enabled':True,'requires_approval':True}
+                target=Path(tmp)/'outside-workspace.txt';content='mixed\r\nlines\nUnicode: 你好'
+                write={'path':str(target),'content':content};delete={'path':str(target)}
+                def execute(name,args):
+                    with loop.approvals.request_scope([loop.approvals.action_fingerprint(name,args)]):
+                        return loop.registry.execute(name,args)
+                result=execute('host_write_file',write)
+                self.assertTrue(result.ok,result.error);self.assertTrue(result.verified)
+                self.assertEqual(target.read_bytes(),content.encode('utf-8'))
+                write_tool=loop.registry._tools['host_write_file'];delete_tool=loop.registry._tools['host_delete_file']
+                original=write_tool.handler
+                write_tool.handler=lambda **_:ToolResult(True)
+                result=execute('host_write_file',{'path':str(target),'content':'different'})
+                self.assertFalse(result.ok);self.assertFalse(result.verified)
+                write_tool.handler=original
+                original=delete_tool.handler;delete_tool.handler=lambda **_:ToolResult(True)
+                result=execute('host_delete_file',delete)
+                self.assertFalse(result.ok);self.assertTrue(target.exists())
+                delete_tool.handler=original
+                result=execute('host_delete_file',delete)
+                self.assertTrue(result.ok,result.error);self.assertTrue(result.verified);self.assertFalse(target.exists())
+            finally:loop.close()

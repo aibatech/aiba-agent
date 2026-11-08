@@ -142,8 +142,8 @@ class HostFiles:
                     temporary = ".aiba-write-" + uuid.uuid4().hex
                     fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
                     try:
-                        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                            stream.write(content); stream.flush(); os.fsync(stream.fileno())
+                        with os.fdopen(fd, "wb") as stream:
+                            stream.write(content.encode("utf-8")); stream.flush(); os.fsync(stream.fileno())
                         os.replace(temporary, p.name, src_dir_fd=parent, dst_dir_fd=parent)
                     finally:
                         try: os.unlink(temporary, dir_fd=parent)
@@ -152,14 +152,42 @@ class HostFiles:
                 p.parent.mkdir(parents=True, exist_ok=True)
                 fd, temporary = tempfile.mkstemp(prefix=".aiba-write-", dir=p.parent)
                 try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                        stream.write(content); stream.flush(); os.fsync(stream.fileno())
+                    with os.fdopen(fd, "wb") as stream:
+                        stream.write(content.encode("utf-8")); stream.flush(); os.fsync(stream.fileno())
                     os.replace(temporary, p)
                 finally:
                     Path(temporary).unlink(missing_ok=True)
         except OSError as exc:
             return ToolResult(False, error=f"Host file write denied by OS: {type(exc).__name__}")
         return ToolResult(True, {"path": str(p), "bytes": len(content.encode("utf-8"))})
+
+    def verify_write(self, arguments, result) -> bool:
+        p = _safe_host_path(arguments['path'])
+        expected = arguments['content'].encode('utf-8')
+        def matches(fd):
+            with os.fdopen(fd, 'rb') as stream:
+                info = os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    return False
+                return stream.read(len(expected) + 1) == expected
+        if _DESCRIPTOR_PATHS:
+            with _parent_descriptor(p) as parent:
+                return matches(os.open(p.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent))
+        return matches(os.open(p, os.O_RDONLY | getattr(os, 'O_BINARY', 0)))
+
+    def verify_delete(self, arguments, result) -> bool:
+        raw = Path(os.path.expandvars(os.path.expanduser(arguments['path'])))
+        if raw.is_symlink():return False
+        p = _safe_host_path(arguments['path'])
+        try:
+            if _DESCRIPTOR_PATHS:
+                with _parent_descriptor(p) as parent:
+                    os.stat(p.name, dir_fd=parent, follow_symlinks=False)
+            else:
+                p.lstat()
+        except FileNotFoundError:
+            return True
+        return False
 
     def delete(self, path: str) -> ToolResult:
         p = _safe_host_path(path)
