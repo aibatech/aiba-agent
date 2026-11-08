@@ -269,3 +269,46 @@ class ArchiveTests(SandboxFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+class WorkspaceFileRaceTests(SandboxFixture):
+    def test_atomic_write_detaches_outside_hardlink(self):
+        with tempfile.TemporaryDirectory() as outside:
+            target=Path(outside)/'private.txt';target.write_bytes(b'outside original')
+            os.link(target,self.ws/'linked.txt')
+            self.assertFalse(self.sb.read_file('linked.txt').ok)
+            self.assertFalse(self.sb.patch_file('linked.txt','original','changed').ok)
+            result=self.sb.write_file('linked.txt','new\r\nworkspace\ntext')
+            self.assertTrue(result.ok,result.error)
+            self.assertEqual(target.read_bytes(),b'outside original')
+            self.assertEqual((self.ws/'linked.txt').read_bytes(),b'new\r\nworkspace\ntext')
+            self.assertEqual((self.ws/'linked.txt').stat().st_nlink,1)
+
+    def test_replace_failure_preserves_original_and_removes_temporary(self):
+        from unittest.mock import patch
+        target=self.ws/'original.txt';target.write_bytes(b'original')
+        with patch('tools.sandbox.os.replace',side_effect=PermissionError('synthetic denial')):
+            self.assertFalse(self.sb.write_file('original.txt','replacement').ok)
+        self.assertEqual(target.read_bytes(),b'original')
+        self.assertEqual([p.name for p in self.ws.iterdir()],['original.txt'])
+
+    @unittest.skipUnless(os.name=='posix','POSIX descriptor race guarantee')
+    def test_parent_swap_after_policy_check_never_redirects_file_operations(self):
+        from unittest.mock import patch
+        for operation in ('read','write','delete','patch'):
+            with self.subTest(operation=operation),tempfile.TemporaryDirectory() as outside:
+                target=Path(outside)/'target.txt';target.write_bytes(b'outside original')
+                folder=self.ws/operation;folder.mkdir();(folder/'target.txt').write_text('inside original')
+                original_safe=self.sb._safe
+                def swap(path):
+                    resolved=original_safe(path)
+                    folder.rename(folder.with_name(operation+'-moved'))
+                    folder.symlink_to(outside,target_is_directory=True)
+                    return resolved
+                with patch.object(self.sb,'_safe',side_effect=swap):
+                    path=operation+'/target.txt'
+                    if operation=='read':result=self.sb.read_file(path)
+                    elif operation=='write':result=self.sb.write_file(path,'changed')
+                    elif operation=='delete':result=self.sb.delete_file(path)
+                    else:result=self.sb.patch_file(path,'original','changed')
+                self.assertFalse(result.ok)
+                self.assertEqual(target.read_bytes(),b'outside original')

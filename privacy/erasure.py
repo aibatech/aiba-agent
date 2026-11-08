@@ -33,7 +33,41 @@ class OwnerErasure:
     def _ledger(self):
         path = self.root / LEDGER
         if path.is_symlink(): raise ValueError('Erasure ledger symlinks are forbidden')
-        return json.loads(path.read_text()) if path.exists() else {'owners': []}
+        ledger = json.loads(path.read_text()) if path.exists() else {'owners': []}
+        if not isinstance(ledger, dict) or not isinstance(ledger.get('owners'), list):
+            raise ValueError('Invalid erasure ledger; operator recovery required')
+        for owner in ledger['owners']:
+            self._validate_owner(owner)
+        return ledger
+
+    @staticmethod
+    def _validate_owner(owner):
+        if not isinstance(owner, str) or not owner.strip() or owner == 'shared':
+            raise ValueError('Exact non-shared owner identity required')
+
+    @staticmethod
+    def _snapshot(db, table, where, parameters):
+        # SQL identifiers/predicates are internal constants; identities are parameters.
+        cursor = db.execute(f'SELECT * FROM {table} WHERE {where}', parameters)
+        columns = [item[0] for item in cursor.description]
+        def encode(value):
+            if isinstance(value, bytes):return {'bytes_hex': value.hex()}
+            return value
+        records = sorted(json.dumps([encode(v) for v in row], ensure_ascii=True,
+                                    separators=(',', ':')) for row in cursor)
+        digest = hashlib.sha256(json.dumps([columns, records], separators=(',', ':')).encode()).hexdigest()
+        return {'table': table, 'count': len(records), 'sha256': digest}
+
+
+    @staticmethod
+    def _belongs(record, owner, task_ids):
+        # Explicit provenance takes precedence over inferred task attribution.
+        # Conflicting/malformed identity fields are retained for operator review.
+        identities = [record[key] for key in ('owner', 'user_id') if key in record]
+        if identities:
+            return all(isinstance(identity, str) and identity == owner for identity in identities)
+        task_id = record.get('task_id')
+        return isinstance(task_id, str) and task_id in task_ids
 
     def _owned_files(self, owner):
         task_ids = set()
@@ -55,7 +89,7 @@ class OwnerErasure:
                 except (ValueError,UnicodeError):
                     continue  # Unattributed legacy files are reported as retained.
                 if not isinstance(record,dict):continue
-                if record.get('owner')==owner or record.get('user_id')==owner or record.get('task_id') in task_ids:
+                if self._belongs(record, owner, task_ids):
                     files.add(path)
                     companions = [path.with_suffix('.md')] if folder.name=='reflections' else []
                     if folder.name=='profiles':companions.append(path.with_name(path.stem+'-USER.md'))
@@ -81,13 +115,17 @@ class OwnerErasure:
             for line in path.read_bytes().splitlines(keepends=True):
                 try:record=json.loads(line)
                 except (ValueError,UnicodeError):record=None
-                if isinstance(record,dict) and record.get('task_id') in task_ids:count+=1
+                if isinstance(record,dict) and self._belongs(record, owner, task_ids):count+=1
                 else:keep.append(line)
             if count:changes.append((path,b''.join(keep),count))
         return changes
 
     def preview(self, owner):
-        if not isinstance(owner, str) or not owner.strip(): raise ValueError('Exact owner identity required')
+        from operations.maintenance import ProfileLease
+        with ProfileLease(self.root):return self._preview(owner)
+
+    def _preview(self, owner):
+        self._validate_owner(owner)
         rows = []; legacy = 0
         for path in self._databases():
             with connect(path) as db:
@@ -98,15 +136,22 @@ class OwnerErasure:
                     if column not in columns:
                         legacy += db.execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]
                         continue
-                    count = db.execute(f'SELECT COUNT(*) FROM {table} WHERE {column}=?', (owner,)).fetchone()[0]
-                    rows.append({'database': path.name, 'table': table, 'count': count})
-                    legacy += db.execute(f'SELECT COUNT(*) FROM {table} WHERE {column} IS NULL').fetchone()[0]
+                    rows.append({'database': path.name, **self._snapshot(db, table, f'{column}=?', (owner,))})
+                    legacy += db.execute(f'SELECT COUNT(*) FROM {table} WHERE {column} IS NULL OR {column}=\'\' OR {column}=\'shared\'').fetchone()[0]
                 for table in ('jobs', 'schedules'):
                     if table in tables:
-                        count = db.execute(f"SELECT COUNT(*) FROM {table} WHERE json_extract(payload, '$.user_id')=?", (owner,)).fetchone()[0]
-                        rows.append({'database':path.name,'table':table,'count':count})
+                        predicate = "json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END, '$.user_id')=?"
+                        rows.append({'database':path.name, **self._snapshot(db, table, predicate, (owner,))})
+                        legacy += db.execute(f"SELECT COUNT(*) FROM {table} WHERE json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{{}}' END, '$.user_id') IS NULL").fetchone()[0]
+                if 'tasks' in tables and 'task_plans' in tables and 'owner' in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
+                    rows.append({'database':path.name, **self._snapshot(db, 'task_plans', 'task_id IN (SELECT id FROM tasks WHERE owner=?)', (owner,))})
+                if 'memories' in tables and 'owner' in {r[1] for r in db.execute('PRAGMA table_info(memories)')}:
+                    if 'memory_embeddings' in tables:
+                        rows.append({'database':path.name, **self._snapshot(db, 'memory_embeddings', 'memory_id IN (SELECT id FROM memories WHERE owner=?)', (owner,))})
+                    if 'memory_supersessions' in tables:
+                        rows.append({'database':path.name, **self._snapshot(db, 'memory_supersessions', 'old_id IN (SELECT id FROM memories WHERE owner=?) OR new_id IN (SELECT id FROM memories WHERE owner=?)', (owner,owner))})
         reviews=[{'path':p.relative_to(self.root).as_posix(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'records':count} for p,_,count in self._review_lines(owner)]
-        plan = {'review_records':reviews,'owner': owner, 'rows': rows, 'unattributed_rows': legacy,
+        plan = {'profile':str(self.root),'review_records':reviews,'owner': owner, 'rows': rows, 'unattributed_rows': legacy,
                 'files':[{'path':p.relative_to(self.root).as_posix(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in self._owned_files(owner)],
                 'limits': ['Offline operation: stop every profile writer first.',
                            'Unattributed legacy files, logs, source documents, installed skills, backups and external copies are retained.',
@@ -119,7 +164,7 @@ class OwnerErasure:
         with ProfileLease(self.root):return self._erase(owner,confirmation)
 
     def _erase(self, owner, confirmation):
-        plan = self.preview(owner)
+        plan = self._preview(owner)
         if confirmation != plan['confirmation']: raise ValueError('Review and confirm the current erasure preview')
         ledger = self._ledger()
         if owner not in ledger['owners']:
@@ -134,7 +179,7 @@ class OwnerErasure:
         # Ledger first: interrupted erasures can safely be resumed.
         self._erase_records(owner)
         return {'active_records_erased': True, 'complete_account_erasure': False,
-                'remaining': self.preview(owner), 'restore_protection': True}
+                'remaining': self._preview(owner), 'restore_protection': True}
 
     def _erase_records(self, owner):
         # Rewrite mixed-owner review journals before deleting attribution rows.
@@ -155,6 +200,8 @@ class OwnerErasure:
                 if 'memories' in tables:
                     columns = {r[1] for r in db.execute('PRAGMA table_info(memories)')}
                     if 'owner' in columns:
+                        if 'memory_embeddings' in tables:
+                            db.execute('DELETE FROM memory_embeddings WHERE memory_id IN (SELECT id FROM memories WHERE owner=?)', (owner,))
                         if 'memory_source_overrides' in tables:
                             db.execute('INSERT OR IGNORE INTO memory_source_overrides SELECT source_path FROM memories WHERE owner=? AND source_path IS NOT NULL', (owner,))
                         if 'memory_supersessions' in tables:
@@ -166,7 +213,7 @@ class OwnerErasure:
                         db.execute(f'DELETE FROM {table} WHERE {column}=?', (owner,))
                 for table in ('jobs', 'schedules'):
                     if table in tables:
-                        db.execute(f"DELETE FROM {table} WHERE json_extract(payload, '$.user_id')=?", (owner,))
+                        db.execute(f"DELETE FROM {table} WHERE json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{{}}' END, '$.user_id')=?", (owner,))
 
     def enforce_after_restore(self):
         for owner in self._ledger()['owners']:

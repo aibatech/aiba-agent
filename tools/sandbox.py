@@ -1,8 +1,9 @@
 from __future__ import annotations
-import os,shlex,shutil,subprocess,sys
+import os,shlex,shutil,subprocess,sys,stat,tempfile,uuid
 from execution.backends import DockerBackend,SSHBackend,RemoteDockerComposeBackend
 from pathlib import Path
 from .base import ToolResult
+from .host_files import _parent_descriptor, _DESCRIPTOR_PATHS
 class Sandbox:
     def __init__(self,workspace:Path,timeout:int,policy,mode='local',docker_image='python:3.12-slim',memory='512m',cpus='1.0',network=False,
                  max_archive_members:int=10_000, max_archive_bytes_per_file:int=256*1024*1024,
@@ -26,17 +27,63 @@ class Sandbox:
         p=self._safe(path)
         if not p.exists():return ToolResult(False,error='Path does not exist')
         return ToolResult(True,[str(x.relative_to(self.workspace)) for x in sorted(p.rglob('*')) if x.is_file()])
+    def _read_text(self, p: Path, errors='strict'):
+        def read(fd):
+            with os.fdopen(fd, 'r', encoding='utf-8', errors=errors) as stream:
+                info=os.fstat(stream.fileno())
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    raise PermissionError('Workspace reads require a regular, singly linked file')
+                return stream.read()
+        if _DESCRIPTOR_PATHS:
+            with _parent_descriptor(p) as parent:
+                return read(os.open(p.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent))
+        return read(os.open(p, os.O_RDONLY | getattr(os, 'O_BINARY', 0)))
+
+    def _write_bytes(self, p: Path, data: bytes):
+        # Replace the directory entry, never truncate an existing inode that may
+        # also be reachable through an outside hard link.
+        if _DESCRIPTOR_PATHS:
+            with _parent_descriptor(p, create=True) as parent:
+                temporary='.aiba-write-'+uuid.uuid4().hex
+                fd=os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=parent)
+                try:
+                    with os.fdopen(fd, 'wb') as stream:
+                        stream.write(data);stream.flush();os.fsync(stream.fileno())
+                    os.replace(temporary, p.name, src_dir_fd=parent, dst_dir_fd=parent)
+                finally:
+                    try:os.unlink(temporary, dir_fd=parent)
+                    except FileNotFoundError:pass
+        else:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            fd,temporary=tempfile.mkstemp(prefix='.aiba-write-',dir=p.parent)
+            try:
+                with os.fdopen(fd,'wb') as stream:
+                    stream.write(data);stream.flush();os.fsync(stream.fileno())
+                os.replace(temporary,p)
+            finally:Path(temporary).unlink(missing_ok=True)
+
     def read_file(self,path:str)->ToolResult:
         p=self._safe(path)
-        if not p.is_file():return ToolResult(False,error='File not found')
-        return ToolResult(True,p.read_text(encoding='utf-8',errors='replace'))
+        try:return ToolResult(True,self._read_text(p,errors='replace'))
+        except OSError as exc:return ToolResult(False,error=f'Workspace read failed: {type(exc).__name__}')
     def write_file(self,path:str,content:str)->ToolResult:
-        p=self._safe(path); p.parent.mkdir(parents=True,exist_ok=True); p.write_bytes(content.encode('utf-8'))
-        return ToolResult(True,{'path':str(p.relative_to(self.workspace)),'bytes':len(content.encode())})
+        p=self._safe(path)
+        try:self._write_bytes(p,content.encode('utf-8'))
+        except OSError as exc:return ToolResult(False,error=f'Workspace write failed: {type(exc).__name__}')
+        return ToolResult(True,{'path':str(p.relative_to(self.workspace)),'bytes':len(content.encode('utf-8'))})
     def delete_file(self,path:str)->ToolResult:
         p=self._safe(path)
-        if not p.is_file():return ToolResult(False,error='File not found or directory deletion disabled')
-        p.unlink(); return ToolResult(True,{'deleted':path})
+        try:
+            if _DESCRIPTOR_PATHS:
+                with _parent_descriptor(p) as parent:
+                    if not stat.S_ISREG(os.stat(p.name,dir_fd=parent,follow_symlinks=False).st_mode):
+                        return ToolResult(False,error='File not found or directory deletion disabled')
+                    os.unlink(p.name,dir_fd=parent)
+            else:
+                if not p.is_file():return ToolResult(False,error='File not found or directory deletion disabled')
+                p.unlink()
+        except OSError as exc:return ToolResult(False,error=f'Workspace delete failed: {type(exc).__name__}')
+        return ToolResult(True,{'deleted':path})
     def _run(self,command:str)->ToolResult:
         d=self.policy.check_command(command)
         if not d.allowed:return ToolResult(False,error=d.reason)
@@ -81,7 +128,7 @@ class Sandbox:
         if not old:
             return ToolResult(False, error="old_text must not be empty")
         try:
-            content = p.read_text(encoding="utf-8")
+            content = self._read_text(p)
         except (OSError, UnicodeDecodeError) as exc:
             return ToolResult(False, error=f"Cannot read text file: {exc}")
         count = content.count(old)
@@ -91,18 +138,10 @@ class Sandbox:
             return ToolResult(False, error=f"old_text found {count} times; pass replace_all=True or add unique context")
         new_content = content.replace(old, new, -1 if replace_all else 1)
         diff = "".join(difflib.unified_diff(content.splitlines(True), new_content.splitlines(True), fromfile=f"a/{path}", tofile=f"b/{path}"))
-        # Atomic write inside the same directory (safe cross-filesystem).
-        fd, tmp = tempfile.mkstemp(dir=str(p.parent), suffix=".tmp")
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                fh.write(new_content)
-            os.replace(tmp, p)
-        except Exception:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+            self._write_bytes(p,new_content.encode('utf-8'))
+        except OSError as exc:
+            return ToolResult(False,error=f'Workspace patch failed: {type(exc).__name__}')
         return ToolResult(True, {"path": path, "replacements": 1 if not replace_all else count, "diff": diff})
 
     def archive(self, path: str, format: str = "zip", name: str | None = None) -> ToolResult:
