@@ -8,6 +8,7 @@ from pathlib import Path
 
 LOCK_NAME = '.aiba-maintenance.lock'
 PENDING_RESTORE = '.aiba-restore-pending'
+PENDING_PRIVACY = '.aiba-privacy-pending'
 
 class MaintenanceBusy(RuntimeError):
     pass
@@ -39,9 +40,9 @@ class ProfileLease:
             else:
                 import fcntl
                 fcntl.flock(fd,(fcntl.LOCK_SH if runtime else fcntl.LOCK_EX)|fcntl.LOCK_NB)
-            if runtime and (root/PENDING_RESTORE).exists():
+            if runtime and ((root/PENDING_RESTORE).exists() or (root/PENDING_PRIVACY).exists()):
                 self.close()
-                raise MaintenanceBusy('Interrupted restore requires offline recovery before runtime startup')
+                raise MaintenanceBusy('Interrupted restore or privacy maintenance requires offline recovery before runtime startup')
         except OSError as exc:
             self.file.close()
             raise MaintenanceBusy('Profile is active. Stop API, workers and CLI runtimes before offline backup, restore or erasure.') from exc

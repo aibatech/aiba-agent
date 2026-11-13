@@ -7,10 +7,16 @@ from privacy.legacy import LegacyMemoryReview
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--data-dir',required=True);p.add_argument('--skills-dir')
-    p.add_argument('operation',choices=['backup','verify','restore','legacy-preview','legacy-assign'])
+    p.add_argument('operation',choices=['backup','verify','restore','legacy-preview','legacy-assign','files-preview','files-assign'])
     p.add_argument('--backup-id');p.add_argument('--confirm');p.add_argument('--database',default='memory.db');p.add_argument('--assignments',help='JSON file mapping reviewed record IDs to exact owner IDs')
+    p.add_argument('--include-backups',action='store_true',help='Explicitly review historical versions when assigning whole-file ownership')
     a=p.parse_args()
-    if a.operation.startswith('legacy'):
+    if a.operation.startswith('files'):
+        from privacy.files import FileOwnershipReview
+        review=FileOwnershipReview(a.data_dir)
+        mapping=json.loads(Path(a.assignments).read_text())
+        result=review.preview(mapping,a.include_backups) if a.operation=='files-preview' else review.assign(mapping,a.confirm,a.include_backups)
+    elif a.operation.startswith('legacy'):
         review=LegacyMemoryReview(a.data_dir,a.database)
         result=review.preview() if a.operation=='legacy-preview' else review.assign(json.loads(Path(a.assignments).read_text()),a.confirm)
     else:

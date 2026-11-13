@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from sqlite_utils import connect
-from operations.maintenance import ProfileLeases, LOCK_NAME, PENDING_RESTORE
+from operations.maintenance import ProfileLeases, LOCK_NAME, PENDING_RESTORE, PENDING_PRIVACY
 
 
 class BackupError(RuntimeError):pass
@@ -30,7 +30,7 @@ class BackupManager:
     def _sources(self):
         for path in sorted(self.data_dir.rglob('*')):
             rel=path.relative_to(self.data_dir)
-            if rel.parts[0]=='backups' or path.name in {'approvals.db','privacy-erasure.json','privacy-deletions.db',LOCK_NAME,PENDING_RESTORE} or path.name.endswith(('-wal','-shm')):continue
+            if rel.parts[0]=='backups' or path.name in {'approvals.db','privacy-erasure.json','privacy-deletions.db','privacy-files.json',LOCK_NAME,PENDING_RESTORE,PENDING_PRIVACY} or path.name.endswith(('-wal','-shm')):continue
             if path.is_symlink():raise BackupError('Profile symlinks cannot be backed up')
             if path.is_file():yield 'data/'+rel.as_posix(),path
         if self.skills_dir:
@@ -45,6 +45,7 @@ class BackupManager:
         with ProfileLeases(self.data_dir,self.skills_dir):return self._create(label)
 
     def _create(self,label=None):
+        if (self.data_dir/PENDING_PRIVACY).exists():raise BackupError('Resume interrupted privacy maintenance before backup')
         if (self.data_dir/PENDING_RESTORE).exists():raise BackupError("Recover the interrupted restore before creating another backup")
         stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ');bid=f'{stamp}-{uuid.uuid4().hex[:8]}'
         with tempfile.TemporaryDirectory(prefix='aiba-backup-',dir=self.root) as temp:
@@ -77,7 +78,7 @@ class BackupManager:
             relative=parts[1:]
             if parts[0]=='skills' and len(relative)<2:raise BackupError('Only installed skill directories may be restored')
         else:raise BackupError('Unsupported backup format')
-        if relative[0]=='backups' or relative[-1] in {'approvals.db','privacy-erasure.json','privacy-deletions.db',LOCK_NAME,PENDING_RESTORE} or relative[-1].endswith(('-wal','-shm')):raise BackupError('Forbidden restore entry')
+        if relative[0]=='backups' or relative[-1] in {'approvals.db','privacy-erasure.json','privacy-deletions.db','privacy-files.json',LOCK_NAME,PENDING_RESTORE,PENDING_PRIVACY} or relative[-1].endswith(('-wal','-shm')):raise BackupError('Forbidden restore entry')
         target=root.joinpath(*relative)
         for node in (target,*target.parents):
             if node==root.parent:break
@@ -93,7 +94,17 @@ class BackupManager:
         return folder,data
 
     def verify(self,bid):
-        folder,manifest=self._manifest(bid);seen=set()
+        if (self.data_dir/PENDING_PRIVACY).exists():raise BackupError('Resume interrupted privacy maintenance before verification or restore')
+        folder,manifest=self._manifest(bid)
+        return self._verify_folder(folder,manifest,bid)
+
+    def _verify_folder(self,folder,manifest,bid):
+        expected={item['name'] for item in manifest['files']} | {'manifest.json'}
+        for node in folder.rglob('*'):
+            if node.is_symlink():raise BackupError('Backup symlinks are forbidden')
+            if node.is_file() and node.relative_to(folder).as_posix() not in expected:
+                raise BackupError('Unmanifested backup file; explicit operator review required')
+        seen=set()
         for item in manifest['files']:
             name=item['name'];target=self._target(name,manifest.get('format'))
             if str(target) in seen:raise BackupError('Duplicate restore target')
@@ -169,7 +180,7 @@ class BackupManager:
         return result
 
     def _folder(self,bid):
-        if not isinstance(bid,str) or not bid or '/' in bid or '\\' in bid or ':' in bid or bid in {'.','..'}:raise BackupError('Invalid backup id')
+        if not isinstance(bid,str) or not bid or '/' in bid or '\\' in bid or ':' in bid or bid.startswith('.'):raise BackupError('Invalid backup id')
         folder=self.root/bid
         if folder.is_symlink() or not folder.is_dir():raise BackupError('Backup not found or unsafe')
         return folder

@@ -22,8 +22,9 @@ SCOPES = {
 
 
 class OwnerErasure:
-    def __init__(self, data_dir):
+    def __init__(self, data_dir, *, include_backups=False):
         self.root = Path(data_dir).resolve()
+        self.include_backups = include_backups
 
     def _databases(self):
         for path in sorted(self.root.glob('*.db')):
@@ -96,6 +97,11 @@ class OwnerErasure:
                     for companion in companions:
                         if companion.is_symlink():raise ValueError('Private file symlinks are forbidden')
                         if companion.is_file():files.add(companion)
+        from privacy.files import selected, read_catalog
+        catalog=read_catalog(self.root)
+        if any(p.relative_to(self.root).as_posix() in catalog and catalog[p.relative_to(self.root).as_posix()]['owner']!=owner for p in files):
+            raise ValueError('Conflicting file provenance requires operator review')
+        files.update(selected(self.root,owner))
         return sorted(files)
 
     def _review_lines(self,owner):
@@ -104,20 +110,31 @@ class OwnerErasure:
             with connect(database) as db:
                 if 'owner' in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
                     task_ids.update(r[0] for r in db.execute('SELECT id FROM tasks WHERE owner=?',(owner,)))
-        folder=self.root/'vault'/'conversation_reviews'
-        if folder.is_symlink():raise ValueError('Review directory symlinks are forbidden')
-        if not folder.exists():return []
-        folder.resolve().relative_to(self.root)
+        hashes={hashlib.sha256(t.encode()).hexdigest() for t in task_ids if isinstance(t,str)}
+        folders=(self.root/'vault'/'conversation_reviews',self.root/'logs')
         changes=[]
-        for path in folder.glob('*.jsonl'):
-            if path.is_symlink():raise ValueError('Review file symlinks are forbidden')
-            keep=[];count=0
-            for line in path.read_bytes().splitlines(keepends=True):
-                try:record=json.loads(line)
-                except (ValueError,UnicodeError):record=None
-                if isinstance(record,dict) and self._belongs(record, owner, task_ids):count+=1
-                else:keep.append(line)
-            if count:changes.append((path,b''.join(keep),count))
+        for folder in folders:
+            if folder.is_symlink():raise ValueError('Journal directory symlinks are forbidden')
+            if not folder.exists():continue
+            folder.resolve().relative_to(self.root)
+            for path in folder.glob('*.jsonl'):
+                if path.is_symlink():raise ValueError('Journal file symlinks are forbidden')
+                keep=[];count=0
+                for line in path.read_bytes().splitlines(keepends=True):
+                    try:record=json.loads(line)
+                    except (ValueError,UnicodeError):record=None
+                    matched=False
+                    if isinstance(record,dict):
+                        matched=self._belongs(record,owner,task_ids)
+                        # Explicit identity disagreement always wins over inference.
+                        if not any(k in record for k in ('owner','user_id')):
+                            token=record.get('task_id_sha256')
+                            matched=matched or (isinstance(token,str) and token in hashes)
+                            context=record.get('context')
+                            if isinstance(context,dict):matched=matched or self._belongs(context,owner,task_ids)
+                    if matched:count+=1
+                    else:keep.append(line)
+                if count:changes.append((path,b''.join(keep),count))
         return changes
 
     def preview(self, owner):
@@ -154,14 +171,26 @@ class OwnerErasure:
         plan = {'profile':str(self.root),'review_records':reviews,'owner': owner, 'rows': rows, 'unattributed_rows': legacy,
                 'files':[{'path':p.relative_to(self.root).as_posix(),'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in self._owned_files(owner)],
                 'limits': ['Offline operation: stop every profile writer first.',
-                           'Unattributed legacy files, logs, source documents, installed skills, backups and external copies are retained.',
+                           'Unattributed/mixed files and diagnostics, shared installed skills and external copies are retained. Local backup redaction requires include_backups review.',
                            'This erases active identity-attributed database records; it is not complete account or forensic erasure.']}
+        selected_paths={item['path'] for item in plan['files']}
+        plan['retained_file_inventory']=[p.relative_to(self.root).as_posix() for p in sorted(self.root.rglob('*'))
+            if p.is_file() and 'backups' not in p.relative_to(self.root).parts
+            and p.relative_to(self.root).as_posix() not in selected_paths
+            and p.suffix!='.db' and not p.name.startswith(('privacy-','.aiba-'))]
+        if self.include_backups:
+            from privacy.backup_redaction import inventory
+            plan['backups'] = inventory(self.root)
+        plan['include_backups'] = self.include_backups
         plan['confirmation'] = hashlib.sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest()
         return plan
 
     def erase(self, owner, confirmation):
         from operations.maintenance import ProfileLease
-        with ProfileLease(self.root):return self._erase(owner,confirmation)
+        with ProfileLease(self.root):
+            from operations.maintenance import PENDING_PRIVACY
+            if (self.root/PENDING_PRIVACY).exists():raise ValueError('Resume interrupted owner erasure first')
+            return self._erase(owner,confirmation)
 
     def _erase(self, owner, confirmation):
         plan = self._preview(owner)
@@ -176,10 +205,29 @@ class OwnerErasure:
                 os.replace(temporary, self.root / LEDGER)
             finally:
                 Path(temporary).unlink(missing_ok=True)
-        # Ledger first: interrupted erasures can safely be resumed.
+        # Record the approved scope before modifying any owner data.
+        from privacy.backup_redaction import write_journal
+        write_journal(self.root,{'owner':owner,'backups':plan.get('backups',[]),
+                                 'include_backups':self.include_backups})
+        return self._finish_erasure(owner)
+
+    def resume(self, owner):
+        from operations.maintenance import ProfileLease
+        with ProfileLease(self.root):return self._finish_erasure(owner)
+
+    def _finish_erasure(self, owner):
+        from privacy.backup_redaction import read_journal, redact_next
+        from operations.maintenance import PENDING_PRIVACY
+        journal=read_journal(self.root)
+        if journal['owner']!=owner or owner not in self._ledger()['owners']:
+            raise ValueError('Pending erasure does not belong to this owner')
+        while read_journal(self.root)['backups']:
+            redact_next(self.root)
         self._erase_records(owner)
-        return {'active_records_erased': True, 'complete_account_erasure': False,
-                'remaining': self._preview(owner), 'restore_protection': True}
+        (self.root/PENDING_PRIVACY).unlink()
+        return {'active_records_erased':True,'complete_account_erasure':False,
+                'remaining':self._preview(owner),'restore_protection':True,
+                'backup_records_redacted':journal.get('include_backups',False)}
 
     def _erase_records(self, owner):
         # Rewrite mixed-owner review journals before deleting attribution rows.

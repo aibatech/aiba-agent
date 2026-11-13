@@ -127,3 +127,12 @@ Implemented conservative job retry and stale-claim review, cooperative cancellat
 
 
 October 31 evidence checkpoint: implementation 755e0e3 has 524 passing local tests (11 optional/platform skips). Required cross-platform CI is Production Gate [41194842493](https://github.com/aibatech/aiba-agent/actions/runs/41194842493), MCP [41194842521](https://github.com/aibatech/aiba-agent/actions/runs/41194842521). Read actual run conclusions before certification. The Windows writer now preserves exact bytes and memory/export/queue/schedule outcomes have postconditions. These repairs do not close every E10 adapter or the live E1/E3/E8 and broader learning gaps, so the objective binary scores remain unchanged.
+
+
+## November 13 — resumable privacy and backup lifecycle
+
+Implemented explicit content-bound source/export ownership review, attributed diagnostic JSONL deletion, retained-file inventory, owner-scoped retained-backup redaction, and interruption journals that block runtime/restore until recovery. Local format-2 snapshots are verified before and after redaction; other owners and shared skills remain. Unknown legacy/mixed files are never guessed. Independent attribution/deletion catalogs survive restore. Tests include actual child-process death and corrupt replacement rejection, not only mocked interruptions.
+
+Evidence: `tests/test_privacy_backup_lifecycle.py` (9 tests); full suite: 557 tests, zero failures, one Windows-only skip; capability manifest, secret scan and diff checks passed. Local pyright was unavailable; required CI type checking remains mandatory. Scope/CLI/recovery: `docs/MEMORY_PRIVACY_RECOVERY.md`. Baseline remote commit `0f7a65a32e6e664540cb3c0f85a0c24f9a950063`, PR #34 open/draft; baseline Production Gate 42462812478 and MCP 42462812544 passed. New candidate CI is required; baseline green is not candidate certification.
+
+Scores remain Memory 9, Execution 6, Learning 7, Security 4, UX 5, Reliability 8. M7/S10 now have implemented standard-profile sources/logs/local backup controls, but custom roots/external copies, retained unattributed data review and complete recovery scope still prevent full-account certification. No public release, merge or deployment. Next: verify candidate cross-platform CI, retain run links, then complete adapter-specific uncertain-outcome recovery and intent-aware learning cohorts; live provider/client/device/VPS/signing certification remains separately required. Release NOT FULLY CERTIFIED.

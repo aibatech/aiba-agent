@@ -11,8 +11,10 @@ def main():
     parser.add_argument('--data-dir', required=True)
     parser.add_argument('--owner', required=True)
     parser.add_argument('--confirm', help='Exact confirmation digest from the current preview')
-    args=parser.parse_args();operation=OwnerErasure(args.data_dir)
-    result=operation.erase(args.owner,args.confirm) if args.confirm else operation.preview(args.owner)
+    parser.add_argument('--include-backups',action='store_true',help='Review and redact attributed records from retained local backups')
+    parser.add_argument('--resume',action='store_true',help='Resume the already approved interrupted operation for this owner')
+    args=parser.parse_args();operation=OwnerErasure(args.data_dir,include_backups=args.include_backups)
+    result=operation.resume(args.owner) if args.resume else (operation.erase(args.owner,args.confirm) if args.confirm else operation.preview(args.owner))
     print(json.dumps(result,indent=2))
 
 if __name__=='__main__':main()

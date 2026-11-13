@@ -14,9 +14,10 @@
 | Reflections/proposals | owner/user_id or owned task ID | Attributable files/companions erased before task attribution rows |
 | Conversation review journals | owned task ID per JSONL record | Matching lines removed atomically; other owners and unknown/malformed lines preserved |
 | Skill outcome records | owner | Owner rows erased; installed shared skills retained |
-| Markdown sources, workspace exports and ordinary files | Not reliably attributed | Retained; source overrides suppress deleted derived memories, but do not wipe originals |
-| Diagnostic logs, custom storage roots, external accounts/copies | Mixed or external | Retained for explicit operator review; no complete-account/forensic-erasure claim |
-| Retained backups | Mixed-owner private snapshots | Retained; must be access-controlled and expired/purged by owner policy; erasure is enforced on supported local restore, not arbitrary external extraction |
+| Markdown sources, workspace exports and ordinary files | Explicit whole-file review in privacy-files.json | Reviewed exact content versions erased; unreviewed, changed and mixed-owner files retained or blocked for review |
+| Diagnostic JSONL logs | Exact owner, owned task ID/hash or attributed context | Matching records removed; conflicting, malformed and unattributed records preserved |
+| Custom storage roots, external accounts/copies | External to the profile | Separate operator inventory and lifecycle required; not automatically erased |
+| Retained local format-2 backups | Manifest plus per-record/file attribution | Explicit --include-backups redacts owner data and verifies replacement snapshots; other owners/shared installed skills preserved |
 | Owner/record deletion ledgers | Minimal owner/record identifiers | Retained independently; never restored from an older profile snapshot |
 
 `privacy-erasure.json` suppresses restored data for erased identities. `privacy-deletions.db` records database filename, record ID, creation timestamp and owner, preventing deletion of a later record that reuses the same ID. Keep both ledgers independently secured and transfer them to a recovery host **before restore**. An old backup alone cannot know about later deletions. Do not reuse erased account identities for a new account without a separate reviewed policy.
@@ -66,3 +67,31 @@ The original local attempt in `docs/certification/memory-evaluation-v1.json` rem
 `python -m unittest discover -s tests -p test_memory_maintenance.py` exercises cross-process locks, runtime/skill-root exclusion, clean-profile restore, database integrity, owner deletion ledger transfer, correction persistence, individual deletion/ID reuse, corruption rejection, process death during replacement, explicit legacy attribution, mixed-owner journal erasure and serialized context bounds. Existing full-profile rollback and migration tests remain in the full suite.
 
 Erasure review now requires the runtime to be stopped for preview as well as execution. Confirmation includes canonical profile and hashes of exact database contents (including dependent plans/embeddings), plus private-file digests. Editing a row without changing its count invalidates confirmation. Re-run preview after every upgrade or data change. `shared` is not an erasable owner; conflicting or malformed attribution is preserved for operator review. Malformed ledgers stop erasure/restore enforcement until repaired from independently secured records. Legacy job JSON is preserved rather than guessed. This is logical active-record deletion, not forensic media sanitization.
+
+
+## Reviewed files and retained backup deletion (November 13)
+
+Stop all profile writers. Inventory the `retained_file_inventory` in the erasure preview. This contains private filenames; do not publish previews as CI artifacts. Never assign a shared or mixed-owner file to one owner. For exclusively owned sources/exports, prepare a local JSON mapping such as `{"vault/notes.md":"alice","export.txt":"alice"}`. Paths are relative to the profile; symlinks, hard-linked files, databases and control files are rejected. Existing conflicting JSON provenance is not overridden.
+
+```sh
+python scripts/profile_maintenance.py --data-dir PROFILE files-preview --assignments reviewed-files.json --include-backups
+python scripts/profile_maintenance.py --data-dir PROFILE files-assign --assignments reviewed-files.json --include-backups --confirm DIGEST
+python scripts/erase_owner.py --data-dir PROFILE --owner alice --include-backups
+python scripts/erase_owner.py --data-dir PROFILE --owner alice --include-backups --confirm ERASURE_DIGEST
+```
+
+The first confirmation binds current file bytes, catalog and the reviewed historical versions. Review **all historical versions**, not only the current file. Changed bytes require a new review. The erasure confirmation separately binds the current profile records and backup manifest inventory. Omitting `--include-backups` leaves snapshots intact with restore-time deletion enforcement. With it, each verified format-2 snapshot is copied privately, redacted, integrity-checked, and replaced before the original snapshot is removed. Other owners and shared installed skills remain. Unmanifested files or corruption stop processing; they are never silently discarded.
+
+A pending privacy journal blocks runtime startup, backup creation and restore. After a crash, retain this journal and its private staging directory, stop all writers, and run:
+
+```sh
+python scripts/erase_owner.py --data-dir PROFILE --owner alice --resume
+```
+
+Resume accepts only the originally approved owner. Incomplete staging is discarded and rebuilt; a prepared replacement must retain its approved digest and integrity. If corrupted, recover its exact verified bytes from independently secured storage or obtain operator recovery assistance; do not remove the marker to bypass checks. The original snapshot is retained until its replacement passes verification. This is process-interruption recovery, not a guarantee against simultaneous media failure or arbitrary noncooperating writers.
+
+`privacy-files.json`, `privacy-erasure.json`, and `privacy-deletions.db` must be secured independently and transferred **before** restoring on a clean host. They are deliberately excluded from snapshots so old copies cannot undo newer ownership/deletion decisions. Keep their minimal suppression metadata after erasure. Legacy format-1 snapshots require offline review/migration: restore into a disposable isolated profile with the independent ledgers, verify attribution and integrity, then create and verify a format-2 snapshot. Do not remove the original until the migrated copy is verified and retention disposal is explicitly authorized.
+
+Contract limits: logical attributable-data erasure inside the configured standard profile and explicitly reviewed local snapshots. Unattributed/mixed legacy records remain for review; custom roots, exported copies outside the profile, external accounts, filesystem snapshots and forensic media sanitization require separate procedures. `complete_account_erasure` remains false. This work does not certify those boundaries.
+
+Reproduce with `python -m unittest discover -s tests -p test_privacy_backup_lifecycle.py`: nine tests use real SQLite/file stores and disposable profiles, including owner isolation, exact confirmation, historical source/export deletion, restore suppression, staged replacement interruption, actual child-process termination, corrupt prepared snapshots, conflicting provenance and unmanifested backup content. External systems are not used.
