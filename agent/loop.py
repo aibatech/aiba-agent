@@ -434,8 +434,8 @@ class AgentLoop:
             task=self.tasks.get(task_id)
             if not user_id or not task or task.get('owner') != user_id:
                 raise PermissionError('Task unavailable to this owner')
-            if task['status'] not in {'interrupted','partial','failed'} or not self.tasks.plan(task_id):
-                raise ValueError('Only interrupted or incomplete planned tasks can resume')
+            if task['status'] not in {'interrupted','partial','failed','cancelled'} or not (self.tasks.plan(task_id) or self.tasks.actions(task_id)):
+                raise ValueError('Only interrupted or incomplete tasks with persisted execution evidence can resume')
             if not self.tasks.begin_resume(task_id,user_id):
                 raise ValueError('Task is already active or no longer resumable')
             token=self._user_context.set(user_id)
@@ -449,9 +449,10 @@ class AgentLoop:
                         prompt_context=self.personal.prompt_context(user_id),
                         blocked_tools=self.personal.blocked_tools(user_id))
                     status=self.engine.execution_status
-                except Exception:
+                except Exception as exc:
                     answer='Task could not resume safely. Inspect attempted steps and reconcile uncertain effects before retrying.'
-                    status='failed';used=[]
+                    from runtime.control import ExecutionStopped
+                    status='cancelled' if isinstance(exc,ExecutionStopped) else 'failed';used=[]
                 self.tasks.finish(task_id,answer,status)
                 self.events.publish('task_finished',task_id=task_id,status=status,tools=used)
                 return {'task_id':task_id,'status':status,'result':answer}
@@ -496,7 +497,9 @@ class AgentLoop:
         outputs = self.skills.execute(name, self.registry, variables or {},
                                       blocked=self.personal.blocked_tools(self._current_user),owner=self._current_user)
         ok = bool(outputs) and all(step['ok'] for step in outputs)
-        return ToolResult(ok, outputs, None if ok else 'Skill stopped because a step failed or was denied')
+        from reasoning.verification import completion_evidence
+        verified=ok and all(completion_evidence(step['tool'],ToolResult(step['ok'],verified=step.get('verified'))) for step in outputs)
+        return ToolResult(ok, outputs, None if ok else 'Skill stopped because a step failed or was denied',verified=verified)
 
     def _verify_memory_write(self, args, result):
         memory_id=args.get('memory_id') or (result.output or {}).get('memory_id')

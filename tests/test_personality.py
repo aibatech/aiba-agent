@@ -290,6 +290,7 @@ class PersonalExperienceTests(unittest.TestCase):
                 return {"type": "final", "response": "ok"}
 
         class DummyTasks:
+            def actions(self, task_id):return []
             def create(self, t): return 1
             def event(self, *a, **k): pass
             def finish(self, *a, **k): pass

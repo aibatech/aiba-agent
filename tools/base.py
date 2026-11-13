@@ -5,6 +5,7 @@ from typing import Any, Callable
 class ToolResult:
     ok: bool; output: Any=None; error: str|None=None
     verified: bool|None=None
+    dispatched: bool|None=None
 @dataclass
 class Tool:
     name: str; description: str; handler: Callable[...,ToolResult]; parameters: dict[str,Any]

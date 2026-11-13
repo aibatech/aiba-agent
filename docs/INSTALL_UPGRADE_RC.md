@@ -93,3 +93,7 @@ Stop every profile writer before upgrading. Preserve independent `privacy-files.
 
 ### Learning feedback migration
 `TaskStore` creates the additive `task_feedback` table on startup. Existing tasks are not silently assigned a workflow or positive feedback. Authenticated operators provide explicit intent labels and assessments through `/v1/tasks/{task_id}/feedback`; see [EXECUTION_LEARNING_RECOVERY.md](EXECUTION_LEARNING_RECOVERY.md). Existing manual skill proposals remain usable. Evidence-linked proposals require their original task store for review/install; changed feedback requires fresh evidence and review. Stop all processes before downgrade, preserve the task database, and do not use an older version to bypass pending review invalidation.
+
+
+### Execution action-journal migration
+The additive `task_actions` table records dispatch fingerprints and recovery status. Stop workers before upgrade/downgrade. Do not downgrade while any action is unresolved: older code cannot enforce the new replay fence. Preserve tasks.db during recovery; owner erasure includes these records. Inspect uncertain destinations before using the authenticated reconcile-action endpoint; approvals remain mandatory after a retry decision. See EXECUTION_LEARNING_RECOVERY.md.

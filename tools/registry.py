@@ -116,6 +116,11 @@ class ToolRegistry:
     def blocked(self, name:str, extra=None):
         return name in (extra or set()) or not self.policy.check_tool(name).allowed or not self._feature_flag_on(name)
     def execute(self,name:str,arguments:dict[str,Any]|None=None,blocked:set[str]|None=None)->ToolResult:
+        result=self._execute(name,arguments,blocked)
+        if result.dispatched is None:result.dispatched=False
+        return result
+
+    def _execute(self,name:str,arguments:dict[str,Any]|None=None,blocked:set[str]|None=None)->ToolResult:
         from runtime.control import checkpoint
         checkpoint()
         args={} if arguments is None else arguments; tool=self._tools.get(name); blocked=blocked or set()
@@ -152,6 +157,7 @@ class ToolRegistry:
         except TypeError as exc:result=ToolResult(False,error=f'Invalid tool arguments: {exc}')
         except Exception as exc:result=ToolResult(False,error=f'{type(exc).__name__}: {exc}')
         if not isinstance(result,ToolResult):result=ToolResult(True,result)
+        result.dispatched=True
         if result.ok and tool.verifier is not None:
             try:
                 result.verified = tool.verifier(args, result) is True

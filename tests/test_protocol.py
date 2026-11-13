@@ -33,6 +33,7 @@ class _Retrieval:
 
 
 class _Tasks:
+    def actions(self, task_id):return []
     def __init__(self):
         self.events = []
 
@@ -59,7 +60,8 @@ class _Registry:
 
     def execute(self, name, args, blocked=None):
         self.executed.append((name, args))
-        return type("R", (), {"ok": True, "output": {"ok": "fine"}, "error": None})
+        from tools.base import ToolResult
+        return ToolResult(True,{"ok":"fine"})
 
 
 class VisibleReasoningTests(unittest.TestCase):
@@ -141,14 +143,14 @@ class EngineProtocolTests(unittest.TestCase):
         bus = _Bus()
         vr = VisibleReasoning(bus.publish, "task-9")
         provider = _Provider([
-            {"type": "tool_call", "tool": "run_shell", "arguments": {"command": "ls"}},
+            {"type": "tool_call", "tool": "list_files", "arguments": {}},
             {"type": "final", "response": "done"},
         ])
         registry = _Registry()
         engine = ReasoningEngine(provider, registry, _Retrieval(), _Tasks(), reasoning=vr)
         answer, used = engine.run("task-9", "list files")
         self.assertEqual(answer, "done")
-        self.assertEqual(used, ["run_shell"])
+        self.assertEqual(used, ["list_files"])
         kinds = sorted(set(p["event"]["kind"] for _, p in bus.events if _ == "reasoning.*"))
         self.assertEqual(kinds, [K_FINAL, K_PLAN, K_RESULT, K_TOOL])
 
@@ -157,8 +159,8 @@ class EngineProtocolTests(unittest.TestCase):
         vr = VisibleReasoning(bus.publish, "task-9")
         # Provider that always returns a tool_call -> never final -> max reached.
         provider = _Provider([
-            {"type": "tool_call", "tool": "run_shell", "arguments": {"command": "ls"}},
-            {"type": "tool_call", "tool": "run_shell", "arguments": {"command": "ls"}},
+            {"type": "tool_call", "tool": "list_files", "arguments": {}},
+            {"type": "tool_call", "tool": "list_files", "arguments": {}},
         ])
         reg = _Registry()
         engine = ReasoningEngine(provider, reg, _Retrieval(), _Tasks(), max_steps=1, reasoning=vr)

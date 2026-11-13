@@ -19,8 +19,9 @@ jobs:
         with:
           python-version: '3.12'
       - run: python scripts/certify_web.py
+      - run: python scripts/certify_web.py --research --output certification/live-research.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: live-web-evidence
-          path: certification/live-web.json
+          path: certification/live-*.json

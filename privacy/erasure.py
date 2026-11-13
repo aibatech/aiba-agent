@@ -160,8 +160,9 @@ class OwnerErasure:
                         predicate = "json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{}' END, '$.user_id')=?"
                         rows.append({'database':path.name, **self._snapshot(db, table, predicate, (owner,))})
                         legacy += db.execute(f"SELECT COUNT(*) FROM {table} WHERE json_extract(CASE WHEN json_valid(payload) THEN payload ELSE '{{}}' END, '$.user_id') IS NULL").fetchone()[0]
-                if 'tasks' in tables and 'task_plans' in tables and 'owner' in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
-                    rows.append({'database':path.name, **self._snapshot(db, 'task_plans', 'task_id IN (SELECT id FROM tasks WHERE owner=?)', (owner,))})
+                if 'tasks' in tables and 'owner' in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
+                    for dependent in ('task_plans','task_actions'):
+                        if dependent in tables:rows.append({'database':path.name, **self._snapshot(db, dependent, 'task_id IN (SELECT id FROM tasks WHERE owner=?)', (owner,))})
                 if 'memories' in tables and 'owner' in {r[1] for r in db.execute('PRAGMA table_info(memories)')}:
                     if 'memory_embeddings' in tables:
                         rows.append({'database':path.name, **self._snapshot(db, 'memory_embeddings', 'memory_id IN (SELECT id FROM memories WHERE owner=?)', (owner,))})
@@ -254,8 +255,9 @@ class OwnerErasure:
                             db.execute('INSERT OR IGNORE INTO memory_source_overrides SELECT source_path FROM memories WHERE owner=? AND source_path IS NOT NULL', (owner,))
                         if 'memory_supersessions' in tables:
                             db.execute('DELETE FROM memory_supersessions WHERE old_id IN (SELECT id FROM memories WHERE owner=?) OR new_id IN (SELECT id FROM memories WHERE owner=?)', (owner, owner))
-                if 'task_plans' in tables and 'tasks' in tables and 'owner' in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
-                    db.execute('DELETE FROM task_plans WHERE task_id IN (SELECT id FROM tasks WHERE owner=?)',(owner,))
+                if 'tasks' in tables and 'owner' in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
+                    for dependent in ('task_plans','task_actions'):
+                        if dependent in tables:db.execute(f'DELETE FROM {dependent} WHERE task_id IN (SELECT id FROM tasks WHERE owner=?)',(owner,))
                 for table, column in SCOPES.items():
                     if table in tables and column in {r[1] for r in db.execute(f'PRAGMA table_info({table})')}:
                         db.execute(f'DELETE FROM {table} WHERE {column}=?', (owner,))

@@ -2,6 +2,7 @@ from __future__ import annotations
 import json,re
 from tools.registry import _scrub_args_for_surface
 from approvals.manager import ApprovalManager
+from reasoning.verification import READ_ONLY_TOOLS, completion_evidence
 
 SYSTEM=(
     'You are AIBA, a calm, capable, playful personal AI agent. Be warm, curious, confident, and honest. '
@@ -28,6 +29,15 @@ SYSTEM=(
 )
 
 class ReasoningEngine:
+    def _dispatch(self,task_id,name,args,blocked_tools):
+        fingerprint=ApprovalManager.action_fingerprint(name,args)
+        consequential=name not in READ_ONLY_TOOLS
+        if consequential:self.tasks.action_start(task_id,name,fingerprint)
+        result=self.registry.execute(name,args,blocked=blocked_tools or set())
+        verified=completion_evidence(name,result)
+        if consequential:self.tasks.action_result(task_id,fingerprint,result,verified)
+        return result,verified
+
     def __init__(self,provider,registry,retrieval,tasks,max_steps=15,reasoning=None):
         self.provider=provider;self.registry=registry;self.retrieval=retrieval;self.tasks=tasks;self.max_steps=max_steps
         self._reasoning=reasoning
@@ -56,6 +66,8 @@ class ReasoningEngine:
             {'role':'user','content':user_input+'\nRelevant durable memory: '+json.dumps(memories,default=str)}
         ];used=[]
         if plan:messages.append({'role':'user','content':'Persisted plan state: '+json.dumps(plan)+'. Inspect existing effects before retrying interrupted steps.'})
+        previous=self.tasks.actions(task_id)
+        if previous:messages.append({'role':'user','content':'Persisted action evidence: '+json.dumps(previous)+'. Never replay verified or unresolved effects. Unresolved effects require operator reconciliation.'})
         if self._reasoning:
             self._reasoning.plan("Received request; retrieving context and available tools.", steps=self.max_steps)
         for step in range(self.max_steps):
@@ -74,7 +86,7 @@ class ReasoningEngine:
                 messages.append({'role':'user','content':'Plan saved. Execute each step with a zero-based plan_step on its tool call. Never treat a saved plan as completed work.'})
                 continue
             if action['type']=='final':
-                if any(not ok for ok in outcomes.values()) or any(item['status'] in {'pending','blocked','running','unknown'} for item in plan):
+                if any(not ok for ok in outcomes.values()) or any(item['status']!='verified' for item in plan) or any(item['status']!='verified' for item in self.tasks.actions(task_id)):
                     self.execution_status = 'partial'
                     return 'I could not verify completion: one or more tool actions failed or were blocked. Review the task progress before retrying.', used
                 if self._reasoning:self._reasoning.final(response_preview=str(action.get('response','')),tool_count=len(used))
@@ -91,11 +103,11 @@ class ReasoningEngine:
                 args={'objectives':[f'{role}: {instruction}']}
                 if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
                 if plan:self.tasks.plan_start(task_id,plan_index,ApprovalManager.action_fingerprint(name,args))
-                res=self.registry.execute(name,args,blocked=blocked_tools or set())
+                res,verified=self._dispatch(task_id,name,args,blocked_tools)
                 if plan:
-                    plan=self.tasks.plan_result(task_id,plan_index,res.ok,getattr(res,'verified',None))
+                    plan=self.tasks.plan_result(task_id,plan_index,res.ok,verified)
                 self.tasks.event(task_id, {'step':step, 'tool_result':{'tool':name,'ok':res.ok,'verified':getattr(res,'verified',None)}})
-                outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok and getattr(res,'verified',None) is not False
+                outcomes[ApprovalManager.action_fingerprint(name,args)] = verified
                 used.append(name)
                 if self._reasoning:self._reasoning.result(name,res.ok,output_preview=str(res.output if res.ok else res.error))
                 messages += [
@@ -108,13 +120,13 @@ class ReasoningEngine:
             name=action.get('tool');args=action.get('arguments') or {}
             if self._reasoning:self._reasoning.tool(name,_scrub_args_for_surface(name,args),tool_index=step)
             if plan:self.tasks.plan_start(task_id,plan_index,ApprovalManager.action_fingerprint(name,args))
-            res=self.registry.execute(name,args,blocked=blocked_tools or set());used.append(name)
+            res,verified=self._dispatch(task_id,name,args,blocked_tools);used.append(name)
             if plan:
-                plan=self.tasks.plan_result(task_id,plan_index,res.ok,getattr(res,'verified',None))
-            outcomes[ApprovalManager.action_fingerprint(name,args)] = res.ok and getattr(res,'verified',None) is not False
+                plan=self.tasks.plan_result(task_id,plan_index,res.ok,verified)
+            outcomes[ApprovalManager.action_fingerprint(name,args)] = verified
             self.tasks.event(task_id, {'step':step, 'tool_result':{'tool':name,'ok':res.ok,'verified':getattr(res,'verified',None)}})
             if self._reasoning:self._reasoning.result(name,res.ok,output_preview=str(res.output if res.ok else res.error))
-            feedback={'ok':res.ok,'output':res.output,'error':res.error}
+            feedback={'ok':res.ok,'verified':verified,'output':res.output,'error':res.error}
             # A pending clarify question has already been published to the connector UI.
             # Stop this reasoning turn so the connector does not duplicate the question
             # as prose; the button callback becomes the user's next turn.

@@ -174,6 +174,7 @@ def create_app(agent):
         authorize(authorization);item=agent.tasks.get(task_id)
         if not item:raise HTTPException(404,'Not found')
         item['plan']=agent.tasks.plan(task_id)
+        item['actions']=agent.tasks.actions(task_id)
         return item
     class ResumeIn(BaseModel):
         owner: str = Field(min_length=1, max_length=200)
@@ -190,6 +191,14 @@ def create_app(agent):
     def reconcile_step(task_id: str, body: ReconcileIn, authorization: str | None = Header(default=None)):
         authorize(authorization)
         return {'plan':agent.tasks.reconcile_step(task_id,body.owner,body.index,body.fingerprint,body.resolution)}
+    class ActionReconcileIn(BaseModel):
+        owner: str = Field(min_length=1,max_length=200)
+        fingerprint: str = Field(min_length=64,max_length=64)
+        resolution: str
+    @app.post('/v1/tasks/{task_id}/reconcile-action')
+    def reconcile_action(task_id: str, body: ActionReconcileIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return {'actions':agent.tasks.reconcile_action(task_id,body.owner,body.fingerprint,body.resolution)}
     class SkillReviewIn(BaseModel):
         steps: list[dict] = Field(min_length=1, max_length=100)
         feedback: str = Field(default='', max_length=5000)

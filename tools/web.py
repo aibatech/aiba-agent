@@ -127,7 +127,7 @@ class WebTools:
             url = f"{endpoint}?{urllib.parse.urlencode({'q': query[:_MAX_QUERY]})}"
             try:
                 status, body = self._fetch(url, {})
-                if status >= 400:
+                if not 200 <= status < 300:
                     errors.append(f"{provider}: HTTP {status}")
                     continue
                 results = _parse_results(body, limit)
@@ -198,7 +198,10 @@ class WebTools:
             results, error = self._search_once(query, limit)
             if error:
                 return ToolResult(False, error=f"Search failed: {error}")
-            return ToolResult(True, {"query": query, "results": results})
+            results=[row for row in results if _public_url(row['url']) and
+                     self._domain_allowed(_domain(row['url']),include_domains,exclude_domains)]
+            return ToolResult(bool(results), {"query": query, "results": results},
+                              None if results else 'No permitted public search results',verified=bool(results))
 
         max_sources = min(max(int(max_sources), 1), _MAX_RESEARCH_SOURCES)
         max_per_domain = min(max(int(max_per_domain), 1), 5)
@@ -255,7 +258,7 @@ class WebTools:
                 source.update({"status": 0, "text": "", "error": f"{type(exc).__name__}: {exc}"})
             sources.append(source)
 
-        usable = bool(sources) and all(200 <= source['status'] < 300 and source.get('text','').strip() for source in sources)
+        usable = bool(sources) and not query_errors and all(200 <= source['status'] < 300 and source.get('text','').strip() for source in sources)
         return ToolResult(
             usable,
             {
@@ -279,6 +282,7 @@ class WebTools:
         urls = urls or []
         if not urls or not isinstance(urls, list):
             return ToolResult(False, error="urls must be a non-empty list")
+        if len(urls)>5:return ToolResult(False,error='At most five URLs per extraction; split the request into explicit batches',verified=False)
         for url in urls:
             if not isinstance(url, str) or not _public_url(url):
                 return ToolResult(
