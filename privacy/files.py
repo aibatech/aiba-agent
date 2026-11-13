@@ -76,10 +76,16 @@ class FileOwnershipReview:
             from privacy.backup_redaction import inventory, manager
             plan['backups']=inventory(self.root)
             for backup in plan['backups']:
-                _,manifest=manager(self.root)._manifest(backup['backup_id'])
+                folder,manifest=manager(self.root)._manifest(backup['backup_id'])
                 for item in manifest['files']:
                     for entry in files:
                         if item['name']=='data/'+entry['path']:
+                            historical=folder/item['name']
+                            if historical.suffix=='.json':
+                                try:metadata=json.loads(historical.read_text(encoding='utf-8'))
+                                except (ValueError,UnicodeError):metadata=None
+                                if isinstance(metadata,dict) and any(metadata[k]!=entry['owner'] for k in ('owner','user_id') if k in metadata):
+                                    raise ValueError('Historical explicit provenance disagrees; preserve it for separate review')
                             entry.setdefault('historical_hashes',[]).append(item['sha256'])
         plan['confirmation']=hashlib.sha256(json.dumps(plan,sort_keys=True).encode()).hexdigest()
         return plan
@@ -89,6 +95,9 @@ class FileOwnershipReview:
 
     def assign(self,assignments,confirmation,include_backups=False):
         with ProfileLease(self.root):
+            from operations.maintenance import PENDING_PRIVACY, PENDING_RESTORE
+            if any((self.root/name).exists() for name in (PENDING_PRIVACY,PENDING_RESTORE)):
+                raise ValueError('Complete pending recovery before changing attribution')
             plan=self._preview(assignments,include_backups)
             if confirmation!=plan['confirmation']:raise ValueError('Review the current file ownership inventory')
             catalog=plan['catalog']

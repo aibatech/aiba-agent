@@ -23,6 +23,9 @@ class LegacyMemoryReview:
     def assign(self,assignments,confirmation):
         if not isinstance(assignments,dict) or not assignments:raise ValueError('Explicit record-to-owner mapping required')
         with ProfileLease(self.root),connect(self.path) as db:
+            from operations.maintenance import PENDING_PRIVACY, PENDING_RESTORE
+            if any((self.root/name).exists() for name in (PENDING_PRIVACY,PENDING_RESTORE)):
+                raise ValueError('Complete pending recovery before changing attribution')
             db.execute('BEGIN IMMEDIATE');rows=self._rows(db)
             if confirmation!=hashlib.sha256(json.dumps(rows,sort_keys=True).encode()).hexdigest():raise ValueError('Legacy inventory changed; review again')
             by_id={r['id']:r for r in rows}

@@ -163,3 +163,19 @@ operation.erase('alice',operation.preview('alice')['confirmation'])
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'record.json').write_text(json.dumps({'owner':'bob','value':'private'}))
             with self.assertRaises(ValueError):FileOwnershipReview(root).preview({'record.json':'alice'})
+
+    def test_historical_provenance_and_pending_recovery_prevent_attribution_changes(self):
+        from privacy.files import FileOwnershipReview
+        from privacy.legacy import LegacyMemoryReview
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);vault,_=self.profile(root)
+            source=root/'record.json';source.write_text(json.dumps({'owner':'bob'}))
+            BackupManager(root).create();source.write_text(json.dumps({'owner':'alice'}))
+            review=FileOwnershipReview(root);mapping={'record.json':'alice'}
+            with self.assertRaises(ValueError):review.preview(mapping,include_backups=True)
+            preview=review.preview(mapping)
+            legacy_id=vault.add('unattributed shared fact',owner='shared')
+            legacy=LegacyMemoryReview(root);old=legacy.preview()
+            (root/PENDING_PRIVACY).write_text(json.dumps({'owner':'alice','backups':[]}))
+            with self.assertRaises(ValueError):review.assign(mapping,preview['confirmation'])
+            with self.assertRaises(ValueError):legacy.assign({str(legacy_id):'alice'},old['confirmation'])
