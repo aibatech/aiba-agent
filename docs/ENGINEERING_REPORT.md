@@ -1,5 +1,7 @@
 # Engineering report — 2026-10-15
 
+Latest verified scores (November 13): **9 / 6 / 8 / 4 / 5 / 8**, in benchmark order. See the current checkpoint at the end; earlier dated entries are historical.
+
 ## Outcome
 
 Substantial implementation and regression remediation completed on `hardening/mission-acceptance-gates`, PR #34. Not fully production certified. The sixty-requirement scorecard explicitly distinguishes passed criteria from partially implemented or untested criteria. Default branch and production deployments were not changed.
@@ -162,3 +164,16 @@ Privacy implementation `e410b43c77d07d1565445b618ef87df31318291c` passed Product
 Next implementation adds persistent authenticated owner feedback, explicit workflow intent cohorts, rejection-aware evidence selection and stale-evidence rejection at review/install after restart. Versioned learning corpus v1 passes locally: 9 verified outcomes, 3 exact cohorts, 0 cross-intent matches, 0 executable auto-proposals. Scripted provider boundary is explicit. Five new regression tests cover feedback, negatives, isolation, restart, erasure and real runtime corpus. L3 is a candidate for closure after required CI; L1 general adaptive performance and L10 host-boundary certification remain open. No score increase before candidate CI.
 
 Learning candidate local verification: 562 tests, zero failures, one Windows-only skip. Capability manifest, secret scan and diff checks passed. Candidate cross-platform/type/security/container/MCP gates remain mandatory.
+
+
+## Current verified checkpoint — November 13, 2026
+
+**Memory 9/10; Execution 6/10; Learning 8/10; Security 4/10; UX 5/10; Reliability 8/10. NOT FULLY CERTIFIED.** This checkpoint supersedes earlier historical score summaries; the original binary rubric is unchanged. Only L3 changed from GAP to PASS, based on implemented owner-labeled reusable-workflow identification and the versioned actual-runtime acceptance corpus. L1 general adaptive performance and L10 host-boundary safeguards remain GAP.
+
+Code commits: privacy lifecycle `e410b43c77d07d1565445b618ef87df31318291c`; learning cohorts `c233a71c028c057a4b23f763f4c85fd447466130`; attribution/recovery follow-up `087e6dabce29bf9970f785d21216737e050a277c`. All were pushed to `hardening/mission-acceptance-gates` in draft PR #34, without merge or deployment. Local and remote trees were compared for equality.
+
+Learning CI: [Production Gate 43347087635](https://github.com/aibatech/aiba-agent/actions/runs/43347087635) and [MCP 43347087123](https://github.com/aibatech/aiba-agent/actions/runs/43347087123) **passed**. Production Gate includes all nine Windows/macOS/Linux Python 3.11–3.13 jobs plus security, capabilities/types, and container checks. Privacy CI: Production Gate 43346393311 and MCP 43346393373 passed. Attribution follow-up CI 43347334976/43347334847 must be observed separately; current status is recorded in PR #34, not inferred from earlier runs.
+
+Final local implementation suite: **563 tests, zero failures, one Windows-only skip**; capability manifest, secret scan and diff checks passed. New modules: ten privacy lifecycle cases and five owner-feedback/intent cases. These use disposable real stores/files and actual runtime/registry; provider tool selection is the labeled scripted boundary. No live account, physical-device, full host security or general intelligence certification is claimed.
+
+Exact continuation: first inspect current PR head and its CI (including documentation-only successor commits), then complete E8/E10 per-adapter uncertain-outcome reconciliation and verification, L1 broader matched adaptive-performance evidence, S5/S7 Windows ACL/junction and host/command boundaries, and the remaining diagnostic/injection scope. M7/S10 still require custom-root/external-copy lifecycle and reviewed legacy attribution. E1/U3/S8 require live-model evaluation; U5/U6/U7/U9 require the connected client, voice/accessibility devices, messaging accounts and permission UX; R4 requires an authorized deployed recovery rehearsal; R10 requires signing identity and signed-artifact upgrade/rollback certification. These remain scored as gaps. No secrets should be pasted into chat. Do not merge, publish or deploy without owner approval.
