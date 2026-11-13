@@ -1,0 +1,29 @@
+{
+  "version": "aiba-memory-v1",
+  "thresholds": {"recall_at_3": 0.8, "mrr_at_3": 0.7, "owner_leaks": 0, "stale_hits": 0, "budget_violations": 0},
+  "char_budget": 600,
+  "memories": [
+    {"key":"car","owner":"alice","content":"My automobile runs entirely on electricity."},
+    {"key":"food","owner":"alice","content":"I follow a vegetarian diet and avoid meat."},
+    {"key":"old_deadline","owner":"alice","content":"The Atlas launch deadline is June 1.","fact_key":"atlas.deadline"},
+    {"key":"deadline","owner":"alice","content":"The Atlas launch deadline is now July 15.","fact_key":"atlas.deadline"},
+    {"key":"goal","owner":"alice","content":"My long-term goal is to open a neighborhood bakery."},
+    {"key":"style","owner":"alice","content":"I prefer concise replies with clear next steps."},
+    {"key":"deleted","owner":"alice","content":"My old phone number ends in 9911.","deleted":true},
+    {"key":"bob_car","owner":"bob","content":"My vehicle uses diesel fuel."},
+    {"key":"bob_deadline","owner":"bob","content":"The Atlas launch deadline is September 20."},
+    {"key":"noise1","owner":"alice","content":"The electric kettle is stored in the kitchen."},
+    {"key":"noise2","owner":"alice","content":"July is usually warm where I live."},
+    {"key":"noise3","owner":"alice","content":"I read a book about medieval history."},
+    {"key":"noise4","owner":"bob","content":"I own a neighborhood bakery and enjoy meat dishes."}
+  ],
+  "queries": [
+    {"owner":"alice","text":"What powers my car?","expected":["car"]},
+    {"owner":"alice","text":"What meals fit my dietary restrictions?","expected":["food"]},
+    {"owner":"alice","text":"When must the Atlas project launch?","expected":["deadline"]},
+    {"owner":"alice","text":"What business do I hope to start?","expected":["goal"]},
+    {"owner":"alice","text":"How should you format your answers to me?","expected":["style"]},
+    {"owner":"bob","text":"What fuel does my car need?","expected":["bob_car"]},
+    {"owner":"bob","text":"When is my Atlas launch scheduled?","expected":["bob_deadline"]}
+  ]
+}

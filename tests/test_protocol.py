@@ -33,6 +33,7 @@ class _Retrieval:
 
 
 class _Tasks:
+    def actions(self, task_id):return []
     def __init__(self):
         self.events = []
 
@@ -59,7 +60,8 @@ class _Registry:
 
     def execute(self, name, args, blocked=None):
         self.executed.append((name, args))
-        return type("R", (), {"ok": True, "output": {"ok": "fine"}, "error": None})
+        from tools.base import ToolResult
+        return ToolResult(True,{"ok":"fine"})
 
 
 class VisibleReasoningTests(unittest.TestCase):
@@ -75,7 +77,7 @@ class VisibleReasoningTests(unittest.TestCase):
         self.assertEqual(payload["task_id"], "task-1")
         self.assertIn("timestamp", payload)
         self.assertEqual(payload["event"]["kind"], K_PLAN)
-        self.assertEqual(payload["event"]["summary"], "do things")
+        self.assertEqual(payload["event"]["summary"], "Preparing the task with available context and tools.")
 
     def test_fans_out_to_specific_and_wildcard(self):
         self.vr.tool("read_file")
@@ -87,15 +89,14 @@ class VisibleReasoningTests(unittest.TestCase):
         self.vr.tool("http", {"url": "https://x", "api_key": "sk-live-secret", "cookie": "sid=1"})
         _, payload = self.bus.events[0]
         args = payload["event"]["arguments"]
-        self.assertEqual(args["api_key"], "[redacted]")
-        self.assertEqual(args["cookie"], "[redacted]")
-        self.assertEqual(args["url"], "https://x")
+        self.assertEqual(args, "[arguments withheld from telemetry]")
+        self.assertNotIn("sk-live-secret",str(payload))
 
-    def test_result_clips_long_output(self):
+    def test_result_withholds_raw_output(self):
         self.vr.result("run_shell", True, output_preview="y" * 500)
         _, payload = self.bus.events[0]
         preview = payload["event"]["output_preview"]
-        self.assertTrue(preview.endswith("..."))
+        self.assertEqual(preview, "[output withheld from telemetry]")
         self.assertLess(len(preview), 220)
 
     def test_all_event_kinds_accepted(self):
@@ -124,6 +125,14 @@ class VisibleReasoningTests(unittest.TestCase):
         self.assertEqual(s["a"]["token"], "[redacted]")
         self.assertEqual(s["a"]["keep"], "ok")
 
+    def test_nested_lists_and_raw_results_do_not_leak(self):
+        secret = "random-owner-confidential-value"
+        self.vr.tool("http", {"headers": [{"authorization": secret}]})
+        self.vr.result("http", False, output_preview=secret)
+        self.vr.error(secret)
+        self.vr.final(secret)
+        self.assertNotIn(secret, str(self.bus.events))
+
     def test_clip(self):
         self.assertEqual(_clip("abc", 5), "abc")
         self.assertEqual(_clip("abcdefgh", 5), "abcde...")
@@ -134,14 +143,14 @@ class EngineProtocolTests(unittest.TestCase):
         bus = _Bus()
         vr = VisibleReasoning(bus.publish, "task-9")
         provider = _Provider([
-            {"type": "tool_call", "tool": "run_shell", "arguments": {"command": "ls"}},
+            {"type": "tool_call", "tool": "list_files", "arguments": {}},
             {"type": "final", "response": "done"},
         ])
         registry = _Registry()
         engine = ReasoningEngine(provider, registry, _Retrieval(), _Tasks(), reasoning=vr)
         answer, used = engine.run("task-9", "list files")
         self.assertEqual(answer, "done")
-        self.assertEqual(used, ["run_shell"])
+        self.assertEqual(used, ["list_files"])
         kinds = sorted(set(p["event"]["kind"] for _, p in bus.events if _ == "reasoning.*"))
         self.assertEqual(kinds, [K_FINAL, K_PLAN, K_RESULT, K_TOOL])
 
@@ -150,8 +159,8 @@ class EngineProtocolTests(unittest.TestCase):
         vr = VisibleReasoning(bus.publish, "task-9")
         # Provider that always returns a tool_call -> never final -> max reached.
         provider = _Provider([
-            {"type": "tool_call", "tool": "run_shell", "arguments": {"command": "ls"}},
-            {"type": "tool_call", "tool": "run_shell", "arguments": {"command": "ls"}},
+            {"type": "tool_call", "tool": "list_files", "arguments": {}},
+            {"type": "tool_call", "tool": "list_files", "arguments": {}},
         ])
         reg = _Registry()
         engine = ReasoningEngine(provider, reg, _Retrieval(), _Tasks(), max_steps=1, reasoning=vr)

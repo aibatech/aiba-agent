@@ -14,3 +14,12 @@ def test_security_policy_declares_formal_trust_model():
     ]
     for phrase in required:
         assert phrase in text, f"SECURITY.md missing required trust-model language: {phrase}"
+
+
+def load_tests(loader, tests, pattern):
+    """Include function-style acceptance cases in the standard CI runner."""
+    import unittest
+    for name, case in sorted(globals().items()):
+        if name.startswith("test_") and callable(case):
+            tests.addTest(unittest.FunctionTestCase(case))
+    return tests

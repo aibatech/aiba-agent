@@ -7,13 +7,39 @@ def now():return datetime.now(timezone.utc).isoformat()
 class TaskStore:
     def __init__(self,path:Path):self.path=path;self._init()
     def _init(self):
-        with connect(self.path) as c:c.execute('CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,input TEXT NOT NULL,status TEXT NOT NULL,steps INTEGER NOT NULL DEFAULT 0,result TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,events TEXT NOT NULL DEFAULT "[]",checkpoint TEXT)')
-    def create(self,text):
+        with connect(self.path) as c:
+            c.execute('CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,input TEXT NOT NULL,status TEXT NOT NULL,steps INTEGER NOT NULL DEFAULT 0,result TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,events TEXT NOT NULL DEFAULT "[]",checkpoint TEXT)')
+            cols={row[1] for row in c.execute('PRAGMA table_info(tasks)')}
+            if 'owner' not in cols:c.execute('ALTER TABLE tasks ADD COLUMN owner TEXT')
+            c.execute('''CREATE TABLE IF NOT EXISTS task_actions(
+                task_id TEXT NOT NULL, fingerprint TEXT NOT NULL, tool TEXT NOT NULL,
+                status TEXT NOT NULL, updated_at TEXT NOT NULL,
+                PRIMARY KEY(task_id,fingerprint))''')
+            c.execute('''CREATE TABLE IF NOT EXISTS task_feedback(
+                task_id TEXT PRIMARY KEY, owner TEXT NOT NULL, workflow_id TEXT NOT NULL,
+                accepted INTEGER NOT NULL, note TEXT NOT NULL, updated_at TEXT NOT NULL)''')
+
+    def feedback(self, task_id, owner, workflow_id, accepted, note=''):
+        """Trusted operator input; never registered as a model-callable tool."""
+        import re
+        if not isinstance(owner,str) or not owner.strip() or owner=='shared':raise ValueError('Exact owner required')
+        if not isinstance(workflow_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',workflow_id):raise ValueError('Explicit workflow identity required')
+        if type(accepted) is not bool or not isinstance(note,str) or len(note)>5000:raise ValueError('Invalid feedback')
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            task=db.execute('SELECT owner,status,events FROM tasks WHERE id=?',(task_id,)).fetchone()
+            if not task or task[0]!=owner:raise ValueError('Task unavailable to this owner')
+            if task[1]=='running' or (accepted and task[1]!='complete'):raise ValueError('Feedback must reflect a terminal task outcome')
+            db.execute('INSERT OR REPLACE INTO task_feedback VALUES(?,?,?,?,?,?)',
+                       (task_id,owner,workflow_id,int(accepted),note,now()))
+        return {'task_id':task_id,'workflow_id':workflow_id,'accepted':accepted}
+    def create(self,text,owner=None):
         i=str(uuid.uuid4());t=now()
-        with connect(self.path) as c:c.execute('INSERT INTO tasks(id,input,status,created_at,updated_at) VALUES(?,?,?,?,?)',(i,text,'running',t,t))
+        with connect(self.path) as c:c.execute('INSERT INTO tasks(id,input,status,created_at,updated_at,owner) VALUES(?,?,?,?,?,?)',(i,text,'running',t,t,owner))
         return i
     def event(self,i,event):
         with connect(self.path) as c:
+            c.execute('BEGIN IMMEDIATE')
             row=c.execute('SELECT events,steps FROM tasks WHERE id=?',(i,)).fetchone();events=json.loads(row[0]);events.append(event)
             c.execute('UPDATE tasks SET events=?,steps=?,checkpoint=?,updated_at=? WHERE id=?',(json.dumps(events),row[1]+1,json.dumps(event),now(),i))
     def finish(self,i,result,status='complete'):
@@ -24,3 +50,120 @@ class TaskStore:
     def get(self,i):
         with connect(self.path) as c:
             c.row_factory=sqlite3.Row;r=c.execute('SELECT * FROM tasks WHERE id=?',(i,)).fetchone();return dict(r) if r else None
+
+    def actions(self,task_id):
+        with connect(self.path) as db:
+            db.row_factory=sqlite3.Row
+            return [dict(r) for r in db.execute('SELECT * FROM task_actions WHERE task_id=? ORDER BY fingerprint',(task_id,))]
+
+    def action_start(self,task_id,name,fingerprint):
+        """Commit before dispatch; unknown effects require an operator decision."""
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('SELECT 1 FROM tasks WHERE id=?',(task_id,)).fetchone():raise ValueError('Unknown task')
+            row=db.execute('SELECT status FROM task_actions WHERE task_id=? AND fingerprint=?',(task_id,fingerprint)).fetchone()
+            if row and row[0]!='retryable':raise ValueError('Action already attempted; reconcile uncertain effects before replay')
+            db.execute('INSERT OR REPLACE INTO task_actions VALUES(?,?,?,?,?)',(task_id,fingerprint,name,'running',now()))
+
+    def action_result(self,task_id,fingerprint,result,verified):
+        status='verified' if verified else ('retryable' if result.dispatched is False else 'unknown')
+        with connect(self.path) as db:
+            db.execute('UPDATE task_actions SET status=?,updated_at=? WHERE task_id=? AND fingerprint=?',
+                       (status,now(),task_id,fingerprint))
+
+    def reconcile_action(self,task_id,owner,fingerprint,resolution):
+        if resolution not in {'verified','retry'}:raise ValueError('Invalid resolution')
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            task=db.execute('SELECT owner,status,events FROM tasks WHERE id=?',(task_id,)).fetchone()
+            if not owner or not task or task[0]!=owner or task[1]=='running':raise ValueError('Stopped task belonging to this owner required')
+            changed=db.execute("UPDATE task_actions SET status=?,updated_at=? WHERE task_id=? AND fingerprint=? AND status IN ('running','unknown')",
+                               ('verified' if resolution=='verified' else 'retryable',now(),task_id,fingerprint)).rowcount
+            if not changed:raise ValueError('Exact unresolved action required')
+            events=json.loads(task[2]);events.append({'action_reconciliation':{'fingerprint':fingerprint,'resolution':resolution,'at':now()}})
+            db.execute('UPDATE tasks SET events=?,updated_at=? WHERE id=?',(json.dumps(events),now(),task_id))
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='task_plans'").fetchone():
+                row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+                if row:
+                    steps=json.loads(row[0])
+                    for step in steps:
+                        if step.get('fingerprint')==fingerprint:
+                            step['status']='verified' if resolution=='verified' else 'pending'
+                            step['reconciliation']={'owner':owner,'fingerprint':fingerprint,'resolution':resolution,'at':now()}
+                    db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
+        return self.actions(task_id)
+
+    def set_plan(self, task_id, steps):
+        if not isinstance(steps,list) or not 1<=len(steps)<=20 or any(not isinstance(s,str) or not s.strip() or len(s)>500 for s in steps):
+            raise ValueError('Plan requires 1-20 short, nonempty steps')
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT checkpoint FROM tasks WHERE id=?',(task_id,)).fetchone()
+            if row is None:raise KeyError(task_id)
+            db.execute('CREATE TABLE IF NOT EXISTS task_plans(task_id TEXT PRIMARY KEY, steps TEXT NOT NULL)')
+            if db.execute('SELECT 1 FROM task_plans WHERE task_id=?',(task_id,)).fetchone():
+                raise ValueError('An active plan cannot be silently replaced')
+            db.execute('INSERT INTO task_plans VALUES (?,?)',(task_id,json.dumps([{'description':s,'status':'pending'} for s in steps])))
+        return self.plan(task_id)
+
+    def plan(self, task_id):
+        with connect(self.path) as db:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='task_plans'").fetchone():return []
+            row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+            return json.loads(row[0]) if row else []
+
+    def plan_result(self, task_id, index, ok, verified=None):
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+            if not row:raise ValueError('No active plan')
+            steps=json.loads(row[0])
+            if type(index) is not int or not 0<=index<len(steps):raise ValueError('Invalid plan step')
+            steps[index]['status']='verified' if ok and verified is True else ('unknown' if ok and verified is False else ('executed' if ok else 'blocked'))
+            db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
+        return steps
+
+    def plan_start(self, task_id, index, fingerprint):
+        """Durably fence a step before dispatch; interrupted effects are never replayed."""
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+            if not row:raise ValueError('No active plan')
+            steps=json.loads(row[0])
+            if type(index) is not int or not 0<=index<len(steps):raise ValueError('Invalid plan step')
+            item=steps[index]
+            if item['status'] != 'pending':
+                raise ValueError('Step already attempted; reconcile its outcome before replay')
+            item.update(status='running',fingerprint=fingerprint)
+            db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
+
+    def reconcile_step(self, task_id, owner, index, fingerprint, resolution):
+        """Operator-only decision after inspecting external state; not a model tool.
+
+        'verified' attests that the intended outcome was independently observed;
+        'retry' attests replay is safe. Both are exact-attempt, owner-bound decisions.
+        """
+        if resolution not in {'verified','retry'}:raise ValueError('Invalid resolution')
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            task=db.execute('SELECT owner,status,events FROM tasks WHERE id=?',(task_id,)).fetchone()
+            if not owner or not task or task[0]!=owner:raise PermissionError('Task unavailable to this owner')
+            if task[1]=='running':raise ValueError('Stop the active task before reconciling effects')
+            row=db.execute('SELECT steps FROM task_plans WHERE task_id=?',(task_id,)).fetchone()
+            if not row:raise ValueError('No active plan')
+            steps=json.loads(row[0])
+            if type(index) is not int or not 0<=index<len(steps):raise ValueError('Invalid plan step')
+            item=steps[index]
+            if item.get('fingerprint')!=fingerprint or item['status'] not in {'running','blocked','unknown','executed'}:
+                raise ValueError('Exact unresolved attempt required')
+            item.update(status='verified' if resolution=='verified' else 'pending',
+                        reconciliation={'owner':owner,'fingerprint':fingerprint,'resolution':resolution,'at':now()})
+            db.execute('UPDATE task_actions SET status=?,updated_at=? WHERE task_id=? AND fingerprint=?',
+                       ('verified' if resolution=='verified' else 'retryable',now(),task_id,fingerprint))
+            db.execute('UPDATE task_plans SET steps=? WHERE task_id=?',(json.dumps(steps),task_id))
+        return steps
+
+    def begin_resume(self, task_id, owner):
+        with connect(self.path) as db:
+            return db.execute("UPDATE tasks SET status='running',updated_at=? WHERE id=? AND owner=? AND status IN ('interrupted','partial','failed','cancelled')",
+                              (now(),task_id,owner)).rowcount == 1

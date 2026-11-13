@@ -325,3 +325,16 @@ class FakeStdioServerRoundTripTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResultStatusCompatibilityTests(unittest.TestCase):
+    def test_error_aliases_fail_closed(self):
+        from types import SimpleNamespace
+        from mcp_client.client import _tool_result_is_error
+        for key in ('is_error','isError'):
+            self.assertTrue(_tool_result_is_error(SimpleNamespace(**{key:True})))
+            self.assertFalse(_tool_result_is_error(SimpleNamespace(**{key:False})))
+        self.assertTrue(_tool_result_is_error(SimpleNamespace(is_error=False,isError=True)))
+        for value in [SimpleNamespace(),SimpleNamespace(is_error='false'),SimpleNamespace(isError=None),
+                      SimpleNamespace(is_error=False,isError=0)]:
+            with self.assertRaises(ValueError):_tool_result_is_error(value)

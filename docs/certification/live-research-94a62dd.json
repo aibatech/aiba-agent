@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-11-13T20:06:38.053003+00:00",
+  "python": "3.12.16",
+  "target": "https://github.com/aibatech/aiba-agent",
+  "mocked": false,
+  "criteria": {
+    "http_status": 200,
+    "nonempty_text": true,
+    "contains": "aiba-agent"
+  },
+  "passed": true,
+  "status": 200,
+  "text_chars": 20000,
+  "text_sha256": "dbb1114fa463e9fb2ada4e3ea4e1d60bb8b9639789961199a7f1f1c0b22c460a",
+  "error": null,
+  "scope": "Live extraction plus official-document discovery and source grounding; no universal ranking-quality claim",
+  "research": {
+    "query": "Python pathlib official documentation",
+    "passed": true,
+    "criteria": {
+      "allowed_domain": "docs.python.org",
+      "required_text": "pathlib",
+      "minimum_sources": 1
+    },
+    "sources": [
+      {
+        "url": "https://docs.python.org/3/library/pathlib.html",
+        "status": 200,
+        "text_sha256": "fb4bdbf2a43221d9e36895c36475c58cde5d8c7b0257c18fdb74e198853ab604"
+      },
+      {
+        "url": "https://docs.python.org/3/library/filesys.html",
+        "status": 200,
+        "text_sha256": "02214b0e84f4df9755cd0d2297124c9066ae3406f8c025091ace5c1a8a0aca93"
+      }
+    ],
+    "error": null
+  },
+  "ci_run": "https://github.com/aibatech/aiba-agent/actions/runs/43498452434",
+  "commit": "94a62ddadd424643313831e1ce748c8f78c654c0"
+}

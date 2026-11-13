@@ -1,0 +1,170 @@
+# AIBA benchmark scorecard
+
+Latest verified scores (November 13): **9 / 6 / 8 / 4 / 5 / 8**, in benchmark order. See the current checkpoint at the end; earlier dated entries are historical.
+
+## Objective rubric
+
+Each benchmark has the ten requirements from the owner specification, worth one point each. PASS requires an implemented path and passing reproducible tests for the entire stated scope. GAP (including partial implementation, missing evidence, skipped required tests, or an external blocker) earns zero. No fractional or inferred credit. Mocked integration evidence certifies only the documented mock boundary, never live accounts or physical devices. These are verified lower bounds, not estimates of product quality.
+
+Target for every benchmark: **10/10**. Release status: **NOT FULLY CERTIFIED**.
+
+| Benchmark | Target | Verified score | Evidence | Remaining gaps |
+|---|---|---|---|---|
+| Memory | 10/10 | 9/10 | Requirement register below; semantic-memory-v1-real.json | 1 requirement |
+| Autonomous Execution | 10/10 | 6/10 | Requirement register below | 4 requirements |
+| Self-Improvement | 10/10 | 8/10 | Requirement register below; learning-intent-v1 corpus | 2 requirements |
+| Privacy & Security | 10/10 | 4/10 | Requirement register below | 6 requirements |
+| Human-Centered UX | 10/10 | 5/10 | Requirement register below | 5 requirements |
+| Production Reliability | 10/10 | 8/10 | Requirement register below | 2 requirements |
+
+## Memory
+
+Test filenames refer to `tests/` unless a different path is shown.
+
+| # | Requirement | Status | Evidence | Scope / gap |
+|---|---|---|---|---|
+| 1 | Persistent conversations | PASS | test_conversation_learning.py; test_mission_e2e.py | Restart and scoped history |
+| 2 | Durable goals/preferences/projects | PASS | test_conversation_learning.py; test_mission_e2e.py | Conservative learner; not all dialogue is durable |
+| 3 | Semantic retrieval | PASS | scripts/evaluate_memory.py; docs/certification/semantic-memory-v1-real.json; CI 41808473216 | Real pinned all-MiniLM-L6-v2 on versioned seven-query corpus: recall@3=1.0, MRR@3=1.0; thresholds 0.8/0.7 fixed before evaluation. Certifies this model/corpus, not arbitrary models or general intelligence |
+| 4 | Context selection/prioritization | PASS | test_memory_maintenance.py; test_memory_semantics.py; real-model CI 41808473216 | Bounded serialized context, relevance/importance/recency and superseded facts tested; zero budget violations, stale hits or owner leaks on real-model v1 corpus |
+| 5 | Updates/corrections | PASS | test_memory_edit.py; test_memory_recovery_acceptance.py | Corrections survive source resync and restart |
+| 6 | Duplicate/conflicting memories | PASS | test_memory_semantics.py; test_memory_recovery_acceptance.py | Owner-scoped dedupe and explicit fact-key supersession, persistent auditable history and deletion |
+| 7 | Deletion/privacy controls | GAP | test_memory_recovery_acceptance.py | Content/profile-bound erasure, dependent-vector cleanup, conflicting ownership preservation and restore suppression tested (test_owner_erasure.py); unattributed legacy files, source documents and external copies remain explicit limits |
+| 8 | User isolation | PASS | test_memory_user_isolation.py; test_memory_ownership.py | Trusted backend must bind header identity to signed-in user |
+| 9 | Persistence after restart | PASS | test_mission_e2e.py | Real runtime restart with scripted provider |
+| 10 | Backup/restore/migration | PASS | test_v13.py; test_full_profile_backup.py; test_memory_maintenance.py; CI 41195850136 | Maintenance coordination, clean-profile recovery, tombstones, migration, corruption and interrupted restore/rollback tests pass across supported OS matrix. Live VPS remains Reliability 4 |
+
+## Autonomous Execution
+
+Test filenames refer to `tests/` unless a different path is shown.
+
+| # | Requirement | Status | Evidence | Scope / gap |
+|---|---|---|---|---|
+| 1 | Multi-step planning | GAP | test_mission_e2e.py | Persistent bounded plans and partial-completion gating tested in test_execution_plans.py; live planner quality remains unverified |
+| 2 | Tool discovery/execution | PASS | test_capability_integration.py; test_mission_e2e.py | Policy and feature flags enforced |
+| 3 | Web research | GAP | test_web.py; test_public_http.py; live CI 41195846751 | Actual public-page extraction passed with pinned HTTP transport; search-provider/research quality certification remains open |
+| 4 | File/workspace operations | PASS | test_sandbox.py; test_mission_e2e.py | Actual write and read-back |
+| 5 | Command/code execution | PASS | test_terminal_backends.py; test_sandbox.py | Supported local test paths; remote host certification separate |
+| 6 | Background/scheduled work | PASS | test_scheduling_intent.py; test_v02.py; test_scheduler_reliability.py | Concurrent ticks and crash after enqueue deduplicated; stale worker completion fenced |
+| 7 | Progress/status | PASS | test_protocol.py; test_execution_recovery_acceptance.py | Events and persistent task/job state |
+| 8 | Retry/timeout/cancellation/recovery | GAP | test_execution_recovery_acceptance.py | Queue retries/cancel/recovery tested; in-flight external cancellation and safe replay remain |
+| 9 | Sensitive authorization | PASS | test_exact_owner_approvals.py; test_approval_replay.py | Exact operation approval through registry |
+| 10 | Verified completion claims | GAP | test_mission_e2e.py | Workspace, host-file, memory and job-registration postconditions plus nested-skill failure propagation tested; other action adapters still need domain-specific outcome verifiers |
+
+## Self-Improvement
+
+Test filenames refer to `tests/` unless a different path is shown.
+
+| # | Requirement | Status | Evidence | Scope / gap |
+|---|---|---|---|---|
+| 1 | Learning from outcomes | GAP | agent/conversation_review.py | Outcome review signals exist; adaptive policy not demonstrated |
+| 2 | Explicit owner feedback | PASS | test_skill_lifecycle.py; test_conversation_review.py | Feedback retained in reviewed proposal |
+| 3 | Reusable successful workflows | PASS | test_learning_feedback.py; test_execution_learning_acceptance.py; benchmarks/learning/v1.json; CI 43347087635 | Explicit owner-labeled intent, three accepted verified traces, rejection-aware cohort, exact evidence revalidation after restart. Actual runtime corpus: 9 verified outcomes, 3 exact cohorts, 0 cross-intent matches, 0 automatic executable proposals. Scripted provider boundary; no general model-improvement claim |
+| 4 | Skill proposals | PASS | test_skill_proposal_safety.py | Advisory, non-executable by default |
+| 5 | Review/validation | PASS | test_skill_lifecycle.py | Known available tools and schema-valid arguments required |
+| 6 | Owner approval before installation | PASS | test_skill_lifecycle.py | Authenticated operator API plus exact review digest; no model tool for approval |
+| 7 | Permission-enforced execution | PASS | test_skill_lifecycle.py | Installation grants no execution privileges |
+| 8 | Versioning/rollback | PASS | test_skill_versioning.py; test_skill_lifecycle.py | Prior version restored; traversal rejected |
+| 9 | Measured improvement | PASS | test_skill_outcomes.py | Matched three-case real-file corpus through review/install/registry: 3/3 successes for both versions, mean tool calls 3 to 2; scoped durable timing/success statistics. No claim of general model intelligence or statistically faster latency |
+| 10 | Unsafe self-modification prevention | GAP | test_agent_skills_guard.py | Registry gates retained; filesystem race and host execution boundaries not fully certified |
+
+## Privacy & Security
+
+Test filenames refer to `tests/` unless a different path is shown.
+
+| # | Requirement | Status | Evidence | Scope / gap |
+|---|---|---|---|---|
+| 1 | Authentication/authorization | PASS | test_product_bridge.py; api_smoke.py | Internal bridge bearer token and required user identity; not end-user authentication |
+| 2 | Least privilege | PASS | test_security_policy_contract.py; test_capability_manifest.py | Disabled/unlisted capabilities denied |
+| 3 | Exact operation approval | PASS | test_exact_owner_approvals.py; test_skill_lifecycle.py | All policy-gated tools now use argument fingerprints |
+| 4 | One-use expiring grants | PASS | test_approval_replay.py; test_product_bridge.py | Durable product challenges; concurrent/restart/user/replay tests |
+| 5 | Secret handling | GAP | test_secret_admin.py | Bounded strict single-line parser, quoted/export assignments, invalid-input atomicity, POSIX pinned descriptors and adversarial swap tests; full dotenv grammar and Windows ACL certification outstanding |
+| 6 | Sensitive redaction | GAP | test_registry_redaction.py | Crash messages/source lines/request paths withheld; audit explicit metadata schema rejects arbitrary fields (test_diagnostic_privacy.py). Reasoning telemetry and external diagnostic surfaces remain unverified |
+| 7 | Host filesystem/command safeguards | GAP | test_host_files.py; test_skill_lifecycle.py | Basic workspace POSIX descriptor-swap and cross-platform hard-link replacement tests pass locally (test_sandbox.py); Windows junction/ACL, host/archive/list and arbitrary execution boundaries remain unverified |
+| 8 | Prompt injection defense | GAP | reasoning/engine.py | Untrusted-data instruction and policy gates; no adversarial model corpus certification |
+| 9 | Confidential audit trail | GAP | test_registry_redaction.py | Explicit audit metadata schema, hashed identifiers, operation fingerprints and EventBus envelope recording tested; host log protection, retention and other diagnostic surfaces not fully certified |
+| 10 | Recovery/owner deletion | GAP | test_memory_recovery_acceptance.py | Approval invalidation on restore; full-data erasure and recovery still incomplete |
+
+## Human-Centered UX
+
+Test filenames refer to `tests/` unless a different path is shown.
+
+| # | Requirement | Status | Evidence | Scope / gap |
+|---|---|---|---|---|
+| 1 | First-time onboarding | PASS | test_ux.py | Automated setup tests |
+| 2 | Provider/model setup | PASS | test_provider_onboarding.py | Atomic provider connection and recovery paths |
+| 3 | Natural conversation | GAP | test_mission_e2e.py | Continuity tested; real model/user quality evaluation missing |
+| 4 | Consistent personality | PASS | test_personality.py | Existing personality tests retained |
+| 5 | Voice | GAP | test_product_bridge.py | Voice-originated text envelope only; microphone/STT/TTS/interruption external |
+| 6 | Accessible web/mobile | GAP | aibatech/aiba_app_full | Separate client repository located; accessibility/device tests not run |
+| 7 | Messaging integrations | GAP | test_messaging_adapters.py | Mocks pass; live Telegram/WhatsApp certification missing |
+| 8 | Task progress | PASS | test_protocol.py | Sanitized event protocol retained |
+| 9 | Understandable permissions | GAP | test_product_bridge.py | Challenge contract implemented; client confirmation UX integration outstanding |
+| 10 | Friendly error recovery | PASS | test_provider_onboarding.py; test_mission_e2e.py | Provider failures surfaced; HTTP rate limiting returns actionable 429 |
+
+## Production Reliability
+
+Test filenames refer to `tests/` unless a different path is shown.
+
+| # | Requirement | Status | Evidence | Scope / gap |
+|---|---|---|---|---|
+| 1 | Windows | PASS | docs/certification/ci-summary.json | Python 3.11–3.13 at implementation SHA 42fcc78 |
+| 2 | macOS | PASS | docs/certification/ci-summary.json | Python 3.11–3.13 at implementation SHA 42fcc78 |
+| 3 | Linux | PASS | scripts/certify_install.py; docs/certification/linux-x86_64.json | Local compile, suite, clean-profile doctor |
+| 4 | Cloud/VPS | GAP | Container CI is separate from deployed VPS | Live ready/restore drill not run |
+| 5 | Automated tests | PASS | scripts/certify_install.py | Unit/integration/security suite |
+| 6 | End-to-end acceptance | PASS | test_mission_e2e.py; test_skill_lifecycle.py | Deterministic real runtime, scripted provider; live cases remain scoped separately |
+| 7 | Provider failure/recovery | PASS | test_mission_e2e.py; test_provider_onboarding.py | Failure status and background propagation; mocked provider |
+| 8 | Database integrity/migration/restore | PASS | test_v13.py; test_memory_recovery_acceptance.py | Database-only scope; restore requires stopped service |
+| 9 | Performance/concurrency/soak | PASS | docs/certification/runtime-soak-68dcd8d.json; Actions 38792886989 | 3600.06 seconds, 4,223,100 requests, zero errors, p95 30 ms; RSS growth 884,736 bytes within 64 MiB budget. HTTP health workload only; live model throughput is not certified |
+| 10 | Install/upgrade/rollback/release | GAP | PRODUCTION_GATE.md | Signing identities, final artifact hashes and release rollback drill outstanding |
+
+October 26 continuation: docs/COMPLETION_TRACKER.md maps all 60 requirements; docs/SECURITY_BOUNDARY_REVIEW.md records dispatch/diagnostic coverage and remaining implementation versus certification gaps. New security regression coverage in test_security_boundaries.py does not close the entire scope of any previously GAP criterion; scores unchanged.
+
+Memory follow-up: see docs/MEMORY_PRIVACY_RECOVERY.md and docs/certification/memory-evaluation-v1.json. Real semantic quality remains explicitly blocked; scores remain unchanged pending candidate CI and acceptance reconciliation.
+
+### October 28 execution/learning candidate
+
+Implemented conservative job retry and stale-claim review, cooperative cancellation, persisted plan dispatch fencing, owner-bound resume/reconciliation, evidence-linked advisory workflow proposals, and failed-page retrieval handling. Added integrated runtime/registry/store/worker acceptance and matched wrong-content skill regression plus rollback. See `docs/EXECUTION_LEARNING_RECOVERY.md` and `docs/COMPLETION_TRACKER.md`. Verified benchmark lower bounds remain Memory 6, Execution 6, Learning 7, Security 4, UX 5, Reliability 8 out of 10. Live web/model/action-adapter and broader learning certification remain incomplete; release not fully certified.
+
+
+October 31 evidence checkpoint: implementation 755e0e3 has 524 passing local tests (11 optional/platform skips). Required cross-platform CI is Production Gate [41194842493](https://github.com/aibatech/aiba-agent/actions/runs/41194842493), MCP [41194842521](https://github.com/aibatech/aiba-agent/actions/runs/41194842521). Read actual run conclusions before certification. The Windows writer now preserves exact bytes and memory/export/queue/schedule outcomes have postconditions. These repairs do not close every E10 adapter or the live E1/E3/E8 and broader learning gaps, so the objective binary scores remain unchanged.
+
+
+## November 13 — resumable privacy and backup lifecycle
+
+Implemented explicit content-bound source/export ownership review, attributed diagnostic JSONL deletion, retained-file inventory, owner-scoped retained-backup redaction, and interruption journals that block runtime/restore until recovery. Local format-2 snapshots are verified before and after redaction; other owners and shared skills remain. Unknown legacy/mixed files are never guessed. Independent attribution/deletion catalogs survive restore. Tests include actual child-process death and corrupt replacement rejection, not only mocked interruptions.
+
+Evidence: `tests/test_privacy_backup_lifecycle.py` (9 tests); full suite: 557 tests, zero failures, one Windows-only skip; capability manifest, secret scan and diff checks passed. Local pyright was unavailable; required CI type checking remains mandatory. Scope/CLI/recovery: `docs/MEMORY_PRIVACY_RECOVERY.md`. Baseline remote commit `0f7a65a32e6e664540cb3c0f85a0c24f9a950063`, PR #34 open/draft; baseline Production Gate 42462812478 and MCP 42462812544 passed. New candidate CI is required; baseline green is not candidate certification.
+
+Scores remain Memory 9, Execution 6, Learning 7, Security 4, UX 5, Reliability 8. M7/S10 now have implemented standard-profile sources/logs/local backup controls, but custom roots/external copies, retained unattributed data review and complete recovery scope still prevent full-account certification. No public release, merge or deployment. Next: verify candidate cross-platform CI, retain run links, then complete adapter-specific uncertain-outcome recovery and intent-aware learning cohorts; live provider/client/device/VPS/signing certification remains separately required. Release NOT FULLY CERTIFIED.
+
+
+### November 13 implementation evidence and next candidate
+Privacy implementation `e410b43c77d07d1565445b618ef87df31318291c` passed Production Gate [43346393311](https://github.com/aibatech/aiba-agent/actions/runs/43346393311) and MCP [43346393373](https://github.com/aibatech/aiba-agent/actions/runs/43346393373). Local tree matched the pushed tree.
+
+Next implementation adds persistent authenticated owner feedback, explicit workflow intent cohorts, rejection-aware evidence selection and stale-evidence rejection at review/install after restart. Versioned learning corpus v1 passes locally: 9 verified outcomes, 3 exact cohorts, 0 cross-intent matches, 0 executable auto-proposals. Scripted provider boundary is explicit. Five new regression tests cover feedback, negatives, isolation, restart, erasure and real runtime corpus. L3 is a candidate for closure after required CI; L1 general adaptive performance and L10 host-boundary certification remain open. No score increase before candidate CI.
+
+Learning candidate local verification: 562 tests, zero failures, one Windows-only skip. Capability manifest, secret scan and diff checks passed. Candidate cross-platform/type/security/container/MCP gates remain mandatory.
+
+
+## Current verified checkpoint — November 13, 2026
+
+**Memory 9/10; Execution 6/10; Learning 8/10; Security 4/10; UX 5/10; Reliability 8/10. NOT FULLY CERTIFIED.** This checkpoint supersedes earlier historical score summaries; the original binary rubric is unchanged. Only L3 changed from GAP to PASS, based on implemented owner-labeled reusable-workflow identification and the versioned actual-runtime acceptance corpus. L1 general adaptive performance and L10 host-boundary safeguards remain GAP.
+
+Code commits: privacy lifecycle `e410b43c77d07d1565445b618ef87df31318291c`; learning cohorts `c233a71c028c057a4b23f763f4c85fd447466130`; attribution/recovery follow-up `087e6dabce29bf9970f785d21216737e050a277c`. All were pushed to `hardening/mission-acceptance-gates` in draft PR #34, without merge or deployment. Local and remote trees were compared for equality.
+
+Learning CI: [Production Gate 43347087635](https://github.com/aibatech/aiba-agent/actions/runs/43347087635) and [MCP 43347087123](https://github.com/aibatech/aiba-agent/actions/runs/43347087123) **passed**. Production Gate includes all nine Windows/macOS/Linux Python 3.11–3.13 jobs plus security, capabilities/types, and container checks. Privacy CI: Production Gate 43346393311 and MCP 43346393373 passed. Attribution follow-up CI 43347334976/43347334847 must be observed separately; current status is recorded in PR #34, not inferred from earlier runs.
+
+Final local implementation suite: **563 tests, zero failures, one Windows-only skip**; capability manifest, secret scan and diff checks passed. New modules: ten privacy lifecycle cases and five owner-feedback/intent cases. These use disposable real stores/files and actual runtime/registry; provider tool selection is the labeled scripted boundary. No live account, physical-device, full host security or general intelligence certification is claimed.
+
+Exact continuation: first inspect current PR head and its CI (including documentation-only successor commits), then complete E8/E10 per-adapter uncertain-outcome reconciliation and verification, L1 broader matched adaptive-performance evidence, S5/S7 Windows ACL/junction and host/command boundaries, and the remaining diagnostic/injection scope. M7/S10 still require custom-root/external-copy lifecycle and reviewed legacy attribution. E1/U3/S8 require live-model evaluation; U5/U6/U7/U9 require the connected client, voice/accessibility devices, messaging accounts and permission UX; R4 requires an authorized deployed recovery rehearsal; R10 requires signing identity and signed-artifact upgrade/rollback certification. These remain scored as gaps. No secrets should be pasted into chat. Do not merge, publish or deploy without owner approval.
+
+
+## November 13 execution-focused candidate
+Implemented mandatory action journaling independent of model plans, conservative replay refusal for uncertain effects, exact owner reconciliation, unplanned-task resume, verified completion gates and nested-skill evidence propagation. Added seven recovery/evidence regressions including actual process death and concurrent claims. Web discovery now enforces destination/domain filters; incomplete query/page coverage cannot report verified success. Live research CI now requires real search discovery and grounded official-document extraction.
+
+E8 is a candidate for closure after cross-platform CI: uncertain external effects require destination inspection and explicit owner review before replay, as permitted by the acceptance contract. E1 still requires actual-model planning evaluation (no provider credentials configured locally); E3 requires the new live research run; E10 still has domain-specific postcondition gaps for arbitrary command/desktop/messaging/extension effects. Existing scores are not increased until complete criterion evidence passes. Current baseline PR head was verified as 2f7f489a85523a4dbd1cea0efe9d72deca34f272, open/draft. No merge or deployment.
+
+
+Execution follow-up: command `expected_files` postconditions, complete patch read-back and archive-name traversal rejection implemented. Runnable real-provider planning corpus/harness added with fixed thresholds and no synthetic certification fallback. Live search/research run [43498452434](https://github.com/aibatech/aiba-agent/actions/runs/43498452434) passed; retained evidence `docs/certification/live-research-94a62dd.json`. Local full suite: **575 tests, zero failures, one Windows-only skip**, capability/secret/diff checks pass. E3 now has its missing live evidence; E8 candidate has real-process interruption, concurrency, timeout/cancellation and exact reconciliation coverage. Required candidate CI must pass before scoring. E1 remains blocked on a configured real model/key; E10 arbitrary desktop/messaging/extension goals still lack automatic domain-specific postconditions and remain explicitly unverified.

@@ -72,44 +72,44 @@ class VisibleReasoning:
 
     def plan(self, summary: str, steps: int | None = None, **extra: Any) -> None:
         """The agent settled on an approach (public summary of intent)."""
-        data = {"summary": summary}
-        if steps is not None:
+        data: dict[str, Any] = {"summary": "Preparing the task with available context and tools."}
+        if type(steps) is int and 0 <= steps <= 2**31 - 1:
             data["steps"] = steps
-        data.update(extra)
+        # Extension metadata is not a trusted diagnostic channel.
         self._emit(K_PLAN, **data)
 
     def tool(self, name: str, arguments: dict | None = None, tool_index: int | None = None, **extra: Any) -> None:
         """A tool call is about to run (sanitised: no secrets in arguments)."""
         data: dict[str, Any] = {"tool": name}
         if arguments is not None:
-            data["arguments"] = _sanitise(arguments)
-        if tool_index is not None:
+            data["arguments"] = "[arguments withheld from telemetry]"
+        if type(tool_index) is int and 0 <= tool_index <= 2**31 - 1:
             data["tool_index"] = tool_index
-        data.update(extra)
+        # Extension metadata is not a trusted diagnostic channel.
         self._emit(K_TOOL, **data)
 
     def result(self, tool: str, ok: bool, output_preview: str | None = None, **extra: Any) -> None:
         """A tool returned (never the full raw output; a short, safe preview)."""
-        data = {"tool": tool, "ok": ok}
+        data = {"tool": tool, "ok": ok is True}
         if output_preview is not None:
-            data["output_preview"] = _clip(output_preview, 200)
-        data.update(extra)
+            data["output_preview"] = "[output withheld from telemetry]"
+        # Extension metadata is not a trusted diagnostic channel.
         self._emit(K_RESULT, **data)
 
     def final(self, response_preview: str | None = None, tool_count: int | None = None, **extra: Any) -> None:
         """The task finished with a final answer."""
         data: dict[str, Any] = {}
         if response_preview is not None:
-            data["response_preview"] = _clip(response_preview, 200)
-        if tool_count is not None:
+            data["response_preview"] = "[response withheld from telemetry]"
+        if type(tool_count) is int and 0 <= tool_count <= 2**31 - 1:
             data["tool_count"] = tool_count
-        data.update(extra)
+        # Extension metadata is not a trusted diagnostic channel.
         self._emit(K_FINAL, **data)
 
     def error(self, detail: str, **extra: Any) -> None:
         """The task failed (public, sanitised reason only)."""
-        data = {"detail": _clip(detail, 200)}
-        data.update(extra)
+        data = {"detail": "Task failed; inspect the owner-visible task result"}
+        # Extension metadata is not a trusted diagnostic channel.
         self._emit(K_ERROR, **data)
 
 
@@ -128,6 +128,8 @@ def _sanitise(arguments: dict) -> dict:
             out[k] = v[:200] + "..."
         elif isinstance(v, dict):
             out[k] = _sanitise(v)
+        elif isinstance(v, (list, tuple)):
+            out[k] = [_sanitise({"item": item})["item"] for item in v]
         else:
             out[k] = v
     return out

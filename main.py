@@ -78,7 +78,10 @@ def main():
     elif args.migrate:print(json.dumps(agent.migrations.apply(),indent=2));agent.close()
     elif args.backup:print(json.dumps(agent.backups.create('manual CLI backup'),indent=2));agent.close()
     elif args.verify_backup:print(json.dumps(agent.backups.verify(args.verify_backup),indent=2));agent.close()
-    elif args.restore_backup:print(json.dumps(agent.backups.restore(args.restore_backup,args.confirm_restore),indent=2));agent.close()
+    elif args.restore_backup:
+        agent.close()
+        if agent.worker.thread and agent.worker.thread.is_alive():raise RuntimeError('Wait for the active worker to stop before restoring')
+        print(json.dumps(agent.backups.restore(args.restore_backup,args.confirm_restore),indent=2))
     elif args.computer_pair:
         cap=['screen','mouse','keyboard','scroll','open_url']
         token=agent.computer_node.pair(args.computer_name, capabilities=cap)

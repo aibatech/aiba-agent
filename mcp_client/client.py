@@ -93,6 +93,17 @@ def _truncate_text(text: str, limit: int) -> str:
     return text[:limit] + "\n...[output truncated by AIBA MCP output policy]"
 
 
+def _tool_result_is_error(result: Any) -> bool:
+    """Accept SDK field naming variants without treating unknown state as success."""
+    missing = object()
+    flags = [getattr(result, name, missing) for name in ("is_error", "isError")]
+    present = [flag for flag in flags if flag is not missing]
+    if not present or any(type(flag) is not bool for flag in present):
+        raise ValueError("MCP result has no valid boolean error status")
+    # A contradictory alias must never conceal a declared failure.
+    return any(present)
+
+
 def _content_to_text(result: Any, byte_limit: int) -> str:
     """Render an MCP ``CallToolResult`` to plain bounded text.
 
@@ -545,7 +556,7 @@ class MCPClientController:
                         timeout=srv.call_timeout_s,
                     )
                     text = _content_to_text(tool_result, srv.max_output_bytes)
-                    return text, bool(getattr(tool_result, "is_error", False))
+                    return text, _tool_result_is_error(tool_result)
 
         # stdio_client itself performs the spawn; bound it too so a wedged launcher
         # cannot hang us. The context manager teardown kills the process group.
@@ -598,7 +609,7 @@ class MCPClientController:
                         timeout=srv.call_timeout_s,
                     )
                     text = _content_to_text(tool_result, srv.max_output_bytes)
-                    return text, bool(getattr(tool_result, "is_error", False))
+                    return text, _tool_result_is_error(tool_result)
 
 
 def _run_coro_on_fresh_loop(coro: Any) -> Any:

@@ -16,3 +16,12 @@ def test_system_distinguishes_background_queue_from_schedule():
 def test_system_requires_success_before_schedule_confirmation():
     assert "never claim it was scheduled before" in SYSTEM
     assert "tool succeeds" in SYSTEM
+
+
+def load_tests(loader, tests, pattern):
+    """Include function-style acceptance cases in the standard CI runner."""
+    import unittest
+    for name, case in sorted(globals().items()):
+        if name.startswith("test_") and callable(case):
+            tests.addTest(unittest.FunctionTestCase(case))
+    return tests

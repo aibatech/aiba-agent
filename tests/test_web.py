@@ -75,6 +75,21 @@ class WebSearchTests(unittest.TestCase):
         self.assertEqual(row["title"], "Example Title")
         self.assertEqual(row["url"], "https://example.com/")
 
+    def test_shallow_discovery_filters_private_and_excluded_destinations(self):
+        body=_DDG_SAMPLE+'<a class="result__a" href="http://127.0.0.1/private">Private</a>'
+        result=WebTools(fetch=lambda *a:(200,body)).web_search('test',exclude_domains=['example.com'])
+        self.assertTrue(result.ok)
+        self.assertEqual([r['url'] for r in result.output['results']],['https://second.example.org/report'])
+
+    def test_partial_query_coverage_cannot_claim_verified_research(self):
+        def fetch(url,headers):
+            if 'q=unavailable' in url:return 503,'Unavailable'
+            return _fake_fetch(url,headers)
+        result=WebTools(fetch=fetch).web_search('test',deep=True,queries=['unavailable'])
+        self.assertFalse(result.ok);self.assertFalse(result.verified)
+        self.assertTrue(result.output['sources'])
+        self.assertTrue(result.output['coverage']['query_errors'])
+
     def test_deep_research_returns_grounded_diverse_sources(self):
         res = WebTools(fetch=_fake_fetch).web_search(
             "test query",
@@ -181,7 +196,9 @@ class WebExtractTests(unittest.TestCase):
 
     def test_extract_up_to_five(self):
         res = self.wt.web_extract(["https://example.com"] * 8)
-        self.assertEqual(len(res.output["pages"]), 5)
+        self.assertFalse(res.ok)
+        self.assertFalse(res.verified)
+        self.assertIn('five',res.error)
 
 
 class WebToolRegistrationTests(unittest.TestCase):

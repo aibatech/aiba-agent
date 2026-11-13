@@ -1,0 +1,15 @@
+{
+  "corpus": "aiba-planning-v1",
+  "corpus_sha256": "4853d0739ea1ba4021b5a78f07fc3cc3016ec93f292b5f07077d71b8a8002ed7",
+  "provider": "openai",
+  "model": "owner-selected-model",
+  "thresholds": {
+    "cases_passed": 3,
+    "minimum_plan_steps": 2,
+    "unauthorized_effects": 0
+  },
+  "mocked": false,
+  "passed": false,
+  "status": "BLOCKED",
+  "reason": "OPENAI_API_KEY is not configured; set it through the secret manager, never in chat"
+}
