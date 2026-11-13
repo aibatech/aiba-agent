@@ -11,6 +11,24 @@ class TaskStore:
             c.execute('CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,input TEXT NOT NULL,status TEXT NOT NULL,steps INTEGER NOT NULL DEFAULT 0,result TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,events TEXT NOT NULL DEFAULT "[]",checkpoint TEXT)')
             cols={row[1] for row in c.execute('PRAGMA table_info(tasks)')}
             if 'owner' not in cols:c.execute('ALTER TABLE tasks ADD COLUMN owner TEXT')
+            c.execute('''CREATE TABLE IF NOT EXISTS task_feedback(
+                task_id TEXT PRIMARY KEY, owner TEXT NOT NULL, workflow_id TEXT NOT NULL,
+                accepted INTEGER NOT NULL, note TEXT NOT NULL, updated_at TEXT NOT NULL)''')
+
+    def feedback(self, task_id, owner, workflow_id, accepted, note=''):
+        """Trusted operator input; never registered as a model-callable tool."""
+        import re
+        if not isinstance(owner,str) or not owner.strip() or owner=='shared':raise ValueError('Exact owner required')
+        if not isinstance(workflow_id,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,100}',workflow_id):raise ValueError('Explicit workflow identity required')
+        if type(accepted) is not bool or not isinstance(note,str) or len(note)>5000:raise ValueError('Invalid feedback')
+        with connect(self.path) as db:
+            db.execute('BEGIN IMMEDIATE')
+            task=db.execute('SELECT owner,status FROM tasks WHERE id=?',(task_id,)).fetchone()
+            if not task or task[0]!=owner:raise ValueError('Task unavailable to this owner')
+            if task[1]=='running' or (accepted and task[1]!='complete'):raise ValueError('Feedback must reflect a terminal task outcome')
+            db.execute('INSERT OR REPLACE INTO task_feedback VALUES(?,?,?,?,?,?)',
+                       (task_id,owner,workflow_id,int(accepted),note,now()))
+        return {'task_id':task_id,'workflow_id':workflow_id,'accepted':accepted}
     def create(self,text,owner=None):
         i=str(uuid.uuid4());t=now()
         with connect(self.path) as c:c.execute('INSERT INTO tasks(id,input,status,created_at,updated_at,owner) VALUES(?,?,?,?,?,?)',(i,text,'running',t,t,owner))

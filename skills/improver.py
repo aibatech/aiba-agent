@@ -11,10 +11,11 @@ FORBIDDEN_SKILL_TOOLS = {'run_skill', 'create_skill', 'approve_skill', 'install_
 
 
 class SkillImprover:
-    def __init__(self, manager: SkillManager, proposals_dir: Path):
+    def __init__(self, manager: SkillManager, proposals_dir: Path, tasks=None):
         self.manager = manager
         self.proposals_dir = proposals_dir
         proposals_dir.mkdir(parents=True, exist_ok=True)
+        self.tasks = tasks
 
     def _path(self, task_id: str) -> Path:
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', task_id):
@@ -30,7 +31,7 @@ class SkillImprover:
         return json.loads(path.read_text(encoding='utf-8'))
 
     @staticmethod
-    def _digest(data: dict) -> str:
+    def _digest(data: object) -> str:
         return hashlib.sha256(json.dumps(data, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
     def propose(self, task_id: str, task: str, tools: list[str], result: str) -> Path:
@@ -47,6 +48,7 @@ class SkillImprover:
     def review(self, task_id: str, steps: list[dict], registry, feedback: str = '', version: str = '0.1.0') -> dict:
         path = self._path(task_id)
         data = self._load(path)
+        self._validate_evidence(data)
         if not steps:
             raise ValueError('Review requires executable steps with explicit arguments')
         for step in steps:
@@ -67,6 +69,7 @@ class SkillImprover:
 
     def approve(self, proposal_path: Path, reviewed_digest: str | None = None):
         data = self._load(proposal_path)
+        self._validate_evidence(data)
         if (data.get('status') != 'reviewed' or not data.get('executable') or not data.get('steps')
                 or reviewed_digest != self._digest(data)):
             raise ValueError('Explicit approval of the exact reviewed proposal is required')
@@ -75,11 +78,7 @@ class SkillImprover:
         proposal_path.write_text(json.dumps(data, indent=2), encoding='utf-8')
         return skill
 
-    def propose_from_outcomes(self, task_id, tasks, owner, feedback=''):
-        """Require three successful, verified, owner-matched task traces.
-
-        Tool sequences are evidence for a review opportunity, never executable code.
-        """
+    def _evidence(self, task_id, tasks, owner):
         task=tasks.get(task_id)
         if not task or task.get('owner') != owner or task['status'] != 'complete':
             raise ValueError('A completed task belonging to this owner is required')
@@ -94,9 +93,32 @@ class SkillImprover:
         import sqlite3
         with connect(tasks.path) as db:
             db.row_factory=sqlite3.Row
-            rows=db.execute("SELECT * FROM tasks WHERE owner=? AND status='complete' ORDER BY created_at DESC LIMIT 100",(owner,)).fetchall()
+            feedback=db.execute('SELECT * FROM task_feedback WHERE task_id=? AND owner=?',(task_id,owner)).fetchone()
+            if not feedback or not feedback['accepted']:raise ValueError('Explicit accepted workflow feedback required')
+            rows=db.execute('''SELECT t.*,f.workflow_id,f.accepted,f.note,f.updated_at AS feedback_at
+                FROM tasks t JOIN task_feedback f ON f.task_id=t.id AND f.owner=t.owner
+                WHERE t.owner=? AND f.workflow_id=? ORDER BY t.created_at DESC,t.id LIMIT 100''',
+                (owner,feedback['workflow_id'])).fetchall()
+        if any(not r['accepted'] or r['status']!='complete' or signature(r)!=observed for r in rows):
+            raise ValueError('Workflow has rejected, unverified or divergent outcomes; resolve feedback before proposing')
         matches=[r['id'] for r in rows if signature(r)==observed]
         if len(matches)<3:raise ValueError('At least three matched verified task outcomes are required')
+        return task,observed,matches,feedback['workflow_id'],self._digest([dict(r) for r in rows])
+
+    def _validate_evidence(self,data):
+        if 'evidence_digest' not in data:return
+        if self.tasks is None:raise ValueError('Outcome store required to revalidate learned evidence')
+        *_,digest=self._evidence(data['task_id'],self.tasks,data['owner'])
+        if digest!=data['evidence_digest']:raise ValueError('Workflow evidence changed; repeat proposal and review')
+
+    def propose_from_outcomes(self, task_id, tasks, owner, feedback=''):
+        """Require explicit matching intent, accepted feedback and verified outcomes.
+
+        No arguments are inferred. All proposals remain advisory until reviewed.
+        """
+        if self.tasks is not None and self.tasks.path.resolve()!=tasks.path.resolve():raise ValueError('Unexpected task outcome store')
+        self.tasks=tasks
+        task,observed,matches,workflow,digest=self._evidence(task_id,tasks,owner)
         path=self._path(task_id)
         if path.exists():
             data=self._load(path)
@@ -105,7 +127,7 @@ class SkillImprover:
         else:
             path=self.propose(task_id,task['input'],observed,'Repeated verified workflow; owner review required')
             data=self._load(path)
-        data.update(owner=owner,evidence_task_ids=matches,feedback=feedback,
-                    evidence_limit='Matching tool sequences do not prove equivalent intent or safe arguments')
+        data.update(owner=owner,evidence_task_ids=matches,feedback=feedback,workflow_id=workflow,evidence_digest=digest,
+                    evidence_limit='Owner-labeled intent and accepted outcomes do not infer safe arguments or certify general improvement')
         path.write_text(json.dumps(data,indent=2),encoding='utf-8')
         return path

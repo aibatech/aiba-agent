@@ -87,7 +87,7 @@ class AgentLoop:
         self._owner_users = frozenset(self._owner_users) | {'default'}
         self.personal=PersonalExperience(self.settings.root_dir,self.settings.data_dir)
         self.queue=JobQueue(self.settings.jobs_db_path);self.scheduler=Scheduler(self.settings.schedules_db_path,self.queue)
-        self.skills=SkillManager(self.settings.skills_dir,self.settings.data_dir/"skill_outcomes.db");self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals')
+        self.skills=SkillManager(self.settings.skills_dir,self.settings.data_dir/"skill_outcomes.db");self.improver=SkillImprover(self.skills,self.settings.vault_dir/'skill_proposals',self.tasks)
         self.computer_node, self.computer = make_computer(self.settings, self.audit)  # gate + controller
         self.vision=VisionAnalyzer(self.settings.vision_model)
         self.clarify=Clarify(on_pending=self._on_clarify_pending)

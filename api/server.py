@@ -197,6 +197,15 @@ def create_app(agent):
     class SkillEvidenceIn(BaseModel):
         owner: str = Field(min_length=1, max_length=200)
         feedback: str = Field(default='', max_length=5000)
+    class TaskFeedbackIn(BaseModel):
+        owner: str = Field(min_length=1,max_length=200)
+        workflow_id: str = Field(min_length=1,max_length=100)
+        accepted: bool
+        note: str = Field(default='',max_length=5000)
+    @app.post('/v1/tasks/{task_id}/feedback')
+    def task_feedback(task_id: str, body: TaskFeedbackIn, authorization: str | None = Header(default=None)):
+        authorize(authorization)
+        return agent.tasks.feedback(task_id,body.owner,body.workflow_id,body.accepted,body.note)
     @app.post('/v1/tasks/{task_id}/propose-workflow')
     def propose_workflow(task_id: str, body: SkillEvidenceIn, authorization: str | None = Header(default=None)):
         authorize(authorization)

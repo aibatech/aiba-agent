@@ -13,7 +13,7 @@
 | Jobs/schedules | payload.user_id | Exact owner matches erased; unattributed payloads retained |
 | Reflections/proposals | owner/user_id or owned task ID | Attributable files/companions erased before task attribution rows |
 | Conversation review journals | owned task ID per JSONL record | Matching lines removed atomically; other owners and unknown/malformed lines preserved |
-| Skill outcome records | owner | Owner rows erased; installed shared skills retained |
+| Skill outcome records and task feedback | owner | Owner rows erased, including feedback notes/workflow labels; installed shared skills retained |
 | Markdown sources, workspace exports and ordinary files | Explicit whole-file review in privacy-files.json | Reviewed exact content versions erased; unreviewed, changed and mixed-owner files retained or blocked for review |
 | Diagnostic JSONL logs | Exact owner, owned task ID/hash or attributed context | Matching records removed; conflicting, malformed and unattributed records preserved |
 | Custom storage roots, external accounts/copies | External to the profile | Separate operator inventory and lifecycle required; not automatically erased |

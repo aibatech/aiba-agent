@@ -1,0 +1,10 @@
+{
+  "version": "aiba-learning-intent-v1",
+  "boundary": "Actual runtime, registry, files and memory; scripted provider supplies tool selection. No live-model planning-quality claim.",
+  "thresholds": {"verified_outcomes": 9, "exact_cohorts": 3, "cross_intent_matches": 0, "automatic_executable_proposals": 0},
+  "workflows": [
+    {"id": "project-note", "tool": "write_file", "path": "project.txt", "values": ["Atlas launch", "Budget review", "Notebook draft"]},
+    {"id": "shopping-note", "tool": "write_file", "path": "shopping.txt", "values": ["Rice and beans", "Tea and lemons", "Soap and towels"]},
+    {"id": "durable-preference", "tool": "remember", "values": ["I prefer concise replies", "I prefer morning meetings", "I prefer metric units"]}
+  ]
+}

@@ -88,6 +88,7 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
                 tid=tasks.create('save goal',owner=owner);ids.append(tid)
                 tasks.event(tid,{'tool_result':{'tool':'write_file','ok':ok,'verified':ok}})
                 tasks.finish(tid,'done','complete' if ok else 'failed')
+                if ok:tasks.feedback(tid,owner,'save-goal',True)
                 if len(ids)==1:
                     with self.assertRaises(ValueError):improver.propose_from_outcomes(tid,tasks,'alice')
             with self.assertRaises(ValueError):improver.propose_from_outcomes(ids[-1],tasks,'bob')
@@ -183,6 +184,7 @@ class ExecutionLearningAcceptanceTests(unittest.TestCase):
                     with patch.object(loop.engine.provider,'complete',side_effect=lambda *a,**k:next(actions)),loop.approvals.request_scope([loop.approvals.action_fingerprint('write_file',args)]):
                         result=loop.handle_result('Save '+goal,user_id='alice')
                     self.assertEqual(result['status'],'complete');ids.append(result['task_id'])
+                    loop.tasks.feedback(result['task_id'],'alice','save-goal',True)
                 path=loop.improver.propose_from_outcomes(ids[-1],loop.tasks,'alice','Keep exact content')
                 evidence=json.loads(path.read_text())
                 self.assertEqual(set(evidence['evidence_task_ids']),set(ids))

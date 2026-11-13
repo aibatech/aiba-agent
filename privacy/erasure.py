@@ -15,7 +15,7 @@ LEDGER = 'privacy-erasure.json'
 # Static identifiers only: caller data is always bound as a SQL parameter.
 SCOPES = {
     'conversation_messages': 'user_key', 'conversations': 'user_key',
-    'skill_runs': 'owner',
+    'skill_runs': 'owner', 'task_feedback': 'owner',
     'sessions': 'user_key', 'tasks': 'owner', 'memories': 'owner',
     'memory_facts': 'owner', 'approval_challenges': 'principal',
 }
