@@ -140,9 +140,11 @@ class Sandbox:
         diff = "".join(difflib.unified_diff(content.splitlines(True), new_content.splitlines(True), fromfile=f"a/{path}", tofile=f"b/{path}"))
         try:
             self._write_bytes(p,new_content.encode('utf-8'))
+            if self._read_text(p)!=new_content:
+                return ToolResult(False,error='Patched content failed read-back verification',verified=False)
         except OSError as exc:
             return ToolResult(False,error=f'Workspace patch failed: {type(exc).__name__}')
-        return ToolResult(True, {"path": path, "replacements": 1 if not replace_all else count, "diff": diff})
+        return ToolResult(True, {"path": path, "replacements": 1 if not replace_all else count, "diff": diff},verified=True)
 
     def archive(self, path: str, format: str = "zip", name: str | None = None) -> ToolResult:
         """Create a zip or tarball of a workspace path. The archive is written
@@ -159,6 +161,8 @@ class Sandbox:
         ext = {"zip": "zip", "tar": "tar", "gztar": "tar.gz"}[fmt]
         stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         base = (name or f"{src.name or 'archive'}_{stamp}")
+        if not isinstance(base,str) or base in {'.','..'} or Path(base).name!=base or any(c in base for c in ('/', '\\', ':')):
+            return ToolResult(False,error='Archive name must be a single workspace filename')
         if base.endswith(f".{ext}"):
             base = base[: -len(ext) - 1]
         dest_dir = self._safe(".archives")

@@ -149,3 +149,37 @@ ReasoningEngine(Provider(),Registry(),Retrieval(),TaskStore(root/'tasks.db')).ru
             finally:release.set();thread.join(5)
             self.assertFalse(thread.is_alive());self.assertEqual(later,[])
             self.assertEqual(queue.get(job)['status'],'cancelled')
+
+    def test_command_file_postconditions_use_actual_bytes_not_exit_status(self):
+        from agent.enhanced_loop import AgentLoop
+        from test_phase9_loop import make_settings
+        with tempfile.TemporaryDirectory() as tmp:
+            loop=AgentLoop(settings=make_settings(Path(tmp)),interactive=False,start_worker=False)
+            try:
+                args={'code':"from pathlib import Path; Path('made.txt').write_bytes(b'exact\\n')",'expected_files':[{'path':'made.txt','content':'exact\n'}]}
+                with loop.approvals.request_scope([ApprovalManager.action_fingerprint('run_python',args)]):
+                    result=loop.registry.execute('run_python',args)
+                self.assertTrue(result.ok);self.assertTrue(result.verified)
+                args={'code':'pass','expected_files':[{'path':'made.txt','content':'wrong'}]}
+                with loop.approvals.request_scope([ApprovalManager.action_fingerprint('run_python',args)]):
+                    result=loop.registry.execute('run_python',args)
+                self.assertFalse(result.ok);self.assertFalse(result.verified)
+                args={'code':'pass'}
+                with loop.approvals.request_scope([ApprovalManager.action_fingerprint('run_python',args)]):
+                    result=loop.registry.execute('run_python',args)
+                self.assertTrue(result.ok);self.assertIsNone(result.verified)
+            finally:loop.close()
+
+    def test_patch_noop_and_archive_name_traversal_are_rejected(self):
+        from tools.sandbox import Sandbox
+        from test_sandbox import _Policy
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);sandbox=Sandbox(root,10,_Policy(root));(root/'file.txt').write_text('old')
+            with patch.object(sandbox,'_write_bytes',return_value=None):
+                result=sandbox.patch_file('file.txt','old','new')
+            self.assertFalse(result.ok);self.assertFalse(result.verified)
+            self.assertTrue(sandbox.patch_file('file.txt','old','new').verified)
+            for name in ('../escaped','/tmp/escaped','..\\escaped','C:escaped'):
+                with patch('tools.sandbox.shutil.make_archive') as archive:
+                    self.assertFalse(sandbox.archive('file.txt',name=name).ok)
+                    archive.assert_not_called()

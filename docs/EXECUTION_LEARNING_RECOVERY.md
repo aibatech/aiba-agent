@@ -53,3 +53,17 @@ Completion now requires verified plan steps and resolved consequential actions. 
 Reproduce: `python -m unittest discover -s tests -p test_execution_evidence.py`. Seven cases cover actual child-process termination after a durable file effect, restart/replay refusal, exact owner reconciliation, concurrent claims, timeout, cancellation during a running worker handler, fresh approval on retry, no-plan completion gating and owner-scoped erasure. External-service behavior is represented only at the unavailable boundary; actual task stores/engine/registry/worker paths are exercised where stated.
 
 Web extraction rejects requests exceeding five URLs instead of silently omitting pages. Shallow discovery applies public-target and domain filters. Partial query failures cannot claim fully verified research. `scripts/certify_web.py --research` now exercises actual search-provider discovery plus extraction from official Python documentation, with fixed domain/content criteria and retained hashes. Unavailable search providers are failures, not fabricated passes.
+
+### Command postconditions and planner evaluation
+
+`run_python` and `run_shell` accept optional `expected_files`: 1–10 objects with exact workspace `path` and UTF-8 `content` (at most 1 MB each). These postconditions are part of the exact approved arguments. Successful execution is followed by independent file-byte comparison; a zero-exit no-op or wrong content fails verification. Without postconditions the operation may execute, but its arbitrary downstream goal remains unverified. This does not certify remote destinations or every possible command effect. `patch_file` now reads back the complete intended content; archive output names reject traversal before archive creation.
+
+Versioned actual-model planning evaluation is runnable with:
+
+```
+python scripts/evaluate_planning.py --provider openai --model YOUR_CONFIGURED_MODEL
+```
+
+The CLI requires a real provider credential from the environment/secret manager and never silently substitutes a fake. It uses disposable settings, actual runtime, stores, policy, exact approvals and workspace tools. The corpus `benchmarks/execution/planning-v1.json` defines three read/transform/write tasks and fixed thresholds (3/3 correct files, at least two verified plan steps each, zero unauthorized files) before evaluation. Only exact expected writes are approved. The harness unit test checks both passing scripted mechanics and rejection of false completion/wrong output; these unit results do not certify model quality. Local live evaluation is explicitly BLOCKED because OPENAI_API_KEY is not configured, retained in `docs/certification/planning-v1-blocked.json`. No model was selected or billed.
+
+Real research evidence is retained in `docs/certification/live-research-94a62dd.json`: actual search-provider discovery, two official docs.python.org pages with HTTP 200, required pathlib content and content hashes. Actions run 43498452434 passed with no mocks. This certifies the supported discovery/extraction path on the stated target, not universal search relevance.

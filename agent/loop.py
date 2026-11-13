@@ -228,8 +228,9 @@ class AgentLoop:
         self.registry.register(Tool('patch_file','Apply a find-and-replace edit to a workspace text file, atomically, and return the diff.',self.sandbox.patch_file,{'type':'object','properties':{'path':{'type':'string'},'old':{'type':'string'},'new':{'type':'string'},'replace_all':{'type':'boolean'}},'required':['path','old','new'],'additionalProperties':False}))
         self.registry.register(Tool('archive','Create a zip or tarball of a workspace path, written inside the workspace.',self.sandbox.archive,{'type':'object','properties':{'path':{'type':'string'},'format':{'type':'string'},'name':{'type':'string'}},'required':['path'],'additionalProperties':False}))
         self.registry.register(Tool('extract_archive','Extract a zip/tar archive into a workspace destination, blocking zip-slip.',self.sandbox.extract_archive,{'type':'object','properties':{'path':{'type':'string'},'dest':{'type':'string'}},'required':['path'],'additionalProperties':False}))
-        self.registry.register(Tool('run_shell','Run command in sandbox.',self.sandbox.run_shell,{'type':'object','properties':{'command':{'type':'string'}},'required':['command'],'additionalProperties':False}))
-        self.registry.register(Tool('run_python','Run Python in sandbox.',self.sandbox.run_python,{'type':'object','properties':{'code':{'type':'string'}},'required':['code'],'additionalProperties':False}))
+        expected_files={'type':'array','items':{'type':'object','properties':{'path':{'type':'string'},'content':{'type':'string'}},'required':['path','content'],'additionalProperties':False}}
+        self.registry.register(Tool('run_shell','Run an approved command. Optionally supply expected_files for exact workspace read-back; exit zero alone does not prove the requested outcome.',lambda command,expected_files=None:self._run_command_with_evidence('shell',command,expected_files),{'type':'object','properties':{'command':{'type':'string'},'expected_files':expected_files},'required':['command'],'additionalProperties':False}))
+        self.registry.register(Tool('run_python','Run approved Python. Optionally supply expected_files for exact workspace read-back; exit zero alone does not prove the requested outcome.',lambda code,expected_files=None:self._run_command_with_evidence('python',code,expected_files),{'type':'object','properties':{'code':{'type':'string'},'expected_files':expected_files},'required':['code'],'additionalProperties':False}))
         # Owner-escalation host access: capability exists, but every host operation
         # remains approval-gated by ToolRegistry and subject to OS permissions.
         host=HostFiles()
@@ -500,6 +501,23 @@ class AgentLoop:
         from reasoning.verification import completion_evidence
         verified=ok and all(completion_evidence(step['tool'],ToolResult(step['ok'],verified=step.get('verified'))) for step in outputs)
         return ToolResult(ok, outputs, None if ok else 'Skill stopped because a step failed or was denied',verified=verified)
+
+    def _run_command_with_evidence(self, kind, payload, expected_files=None):
+        from reasoning.verification import verify_file_write
+        if expected_files is not None:
+            if not isinstance(expected_files,list) or not 1<=len(expected_files)<=10:
+                return ToolResult(False,error='Supply 1-10 exact workspace file postconditions')
+            for item in expected_files:
+                if not isinstance(item,dict) or set(item)!={'path','content'} or not all(isinstance(item[k],str) for k in item) or len(item['content'].encode('utf-8'))>1000000:
+                    return ToolResult(False,error='Invalid or oversized file postcondition')
+                self.sandbox.resolve(item['path'])
+        result=self.sandbox.run_python(payload) if kind=='python' else self.sandbox.run_shell(payload)
+        if result.ok and expected_files is not None:
+            try:result.verified=all(verify_file_write(self.sandbox.resolve,item,result) for item in expected_files)
+            except Exception:result.verified=False
+            if not result.verified:
+                result.ok=False;result.error='Command returned successfully but requested file outcomes were not verified; inspect state before retrying'
+        return result
 
     def _verify_memory_write(self, args, result):
         memory_id=args.get('memory_id') or (result.output or {}).get('memory_id')
